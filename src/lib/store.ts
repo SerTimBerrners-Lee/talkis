@@ -28,7 +28,7 @@ export interface AppSettings {
 }
 
 const MODIFIERS = ["Ctrl", "Alt", "Option", "Shift", "Command", "Cmd", "Meta", "Control"];
-export const DEFAULT_HOTKEY = "Ctrl+Alt+Space";
+export const DEFAULT_HOTKEY = "Command+Space";
 
 function isMacPlatform(): boolean {
   if (typeof navigator === "undefined") return false;
