@@ -38,6 +38,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [history, setHistory] = useState<HistoryEntry[]>(initialHistory);
   const [copied, setCopied] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retrySucceededId, setRetrySucceededId] = useState<string | null>(null);
 
   useEffect(() => {
     getHistory().then(setHistory);
@@ -70,7 +71,11 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
 
     try {
       const settings = await getSettings();
-      await retryHistoryEntry(entry, settings);
+      await retryHistoryEntry(entry, settings, { shouldPaste: false });
+      setRetrySucceededId(entry.id);
+      setTimeout(() => {
+        setRetrySucceededId((current) => (current === entry.id ? null : current));
+      }, 1800);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось повторно отправить запись.";
       alert(message);
@@ -224,23 +229,23 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                   )}
                                 </div>
                                  {item.status === "failed" ? (
-                                   <button
-                                     onClick={() => retryEntry(item)}
-                                     className="btn"
-                                     disabled={retryingId === item.id}
-                                     style={{ minWidth: 96, height: 32, minHeight: 32, padding: "0 10px", flexShrink: 0, borderRadius: 999 }}
-                                     title="Отправить повторно"
-                                   >
-                                     <RotateCcw size={12} strokeWidth={2} style={{ opacity: retryingId === item.id ? 0.45 : 1 }} />
-                                     <span style={{ opacity: retryingId === item.id ? 0.6 : 1 }}>
-                                       {retryingId === item.id ? "Повтор..." : "Повторить"}
-                                     </span>
-                                  </button>
+                                    <button
+                                      onClick={() => retryEntry(item)}
+                                      className="btn"
+                                      disabled={retryingId === item.id}
+                                      style={{ minWidth: 96, height: 32, minHeight: 32, padding: "0 10px", flexShrink: 0, borderRadius: 999 }}
+                                      title="Отправить повторно"
+                                    >
+                                      <RotateCcw size={12} strokeWidth={2} style={{ opacity: retryingId === item.id ? 0.45 : 1 }} />
+                                      <span style={{ opacity: retryingId === item.id ? 0.6 : 1 }}>
+                                        {retryingId === item.id ? "Повтор..." : "Повторить"}
+                                      </span>
+                                    </button>
                                 ) : (
-                                 <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Скопировать">
-                                   {copied === item.id ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
-                                 </button>
-                               )}
+                                  <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title={retrySucceededId === item.id ? "Успешно" : "Скопировать"}>
+                                    {copied === item.id || retrySucceededId === item.id ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
+                                  </button>
+                                )}
                                <button onClick={() => deleteEntry(item.id)} className="btn btn-danger" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Удалить">
                                  <Trash2 size={12} strokeWidth={2} />
                                </button>

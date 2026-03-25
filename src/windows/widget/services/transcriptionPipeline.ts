@@ -179,6 +179,7 @@ export async function processRecordingBlob({
 export async function retryHistoryEntry(
   entry: HistoryEntry,
   settings: AppSettings,
+  options?: { shouldPaste?: boolean },
 ): Promise<RetryHistoryEntryResult> {
   if (!entry.audioBase64) {
     throw new Error("У этой записи нет сохраненного аудио для повторной отправки.");
@@ -189,6 +190,7 @@ export async function retryHistoryEntry(
     language: entry.language || settings.language,
     style: entry.style || settings.style,
   };
+  const shouldPaste = options?.shouldPaste ?? false;
 
   try {
     const result = await transcribeAudio({
@@ -210,7 +212,14 @@ export async function retryHistoryEntry(
     };
 
     await saveAndEmitHistoryEntry(updatedEntry, "update");
-    await pasteCleanedText(result.cleaned);
+
+    if (shouldPaste) {
+      try {
+        await pasteCleanedText(result.cleaned);
+      } catch (pasteError) {
+        logError("PASTE", `Retry paste failed: ${formatErrorMessage(pasteError)}`);
+      }
+    }
 
     return {
       hasTranscription: true,
