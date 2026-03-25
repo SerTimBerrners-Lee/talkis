@@ -18,16 +18,20 @@ interface HistoryGroup {
 
 type HistoryFilter = "all" | "failed";
 
-const HISTORY_LIST_PANEL_HEIGHT = 420;
+const ALL_FILTER_WIDTH = 118;
+const FAILED_FILTER_WIDTH = 156;
+const FILTER_TRACK_PADDING = 3;
 
 function FilterChip({
   active,
   label,
   onClick,
+  width,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
+  width: number;
 }): ReactElement {
   return (
     <button
@@ -36,12 +40,12 @@ function FilterChip({
         position: "relative",
         zIndex: 1,
         minHeight: 28,
-        minWidth: 118,
+        width,
         padding: "0 12px",
         border: "none",
         borderRadius: 999,
         background: "transparent",
-        color: active ? "var(--text-hi)" : "var(--text-mid)",
+        color: active ? "#fff" : "var(--text-mid)",
         fontSize: 12,
         fontWeight: 600,
         cursor: "pointer",
@@ -225,7 +229,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
               display: "inline-flex",
               alignItems: "center",
               gap: 0,
-              padding: 3,
+              padding: FILTER_TRACK_PADDING,
               width: "fit-content",
               borderRadius: 999,
               background: "rgba(255,255,255,0.6)",
@@ -236,21 +240,22 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             <div
               style={{
                 position: "absolute",
-                top: 3,
-                left: historyFilter === "all" ? 3 : 121,
-                width: historyFilter === "all" ? 118 : 142,
+                top: FILTER_TRACK_PADDING,
+                left: historyFilter === "all" ? FILTER_TRACK_PADDING : FILTER_TRACK_PADDING + ALL_FILTER_WIDTH,
+                width: historyFilter === "all" ? ALL_FILTER_WIDTH : FAILED_FILTER_WIDTH,
                 height: 28,
                 borderRadius: 999,
-                background: "rgba(255,255,255,0.96)",
-                border: "1px solid rgba(0,0,0,0.05)",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                background: "#000",
+                border: "1px solid #000",
+                boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
                 transition: "left 0.2s ease, width 0.2s ease",
               }}
             />
-            <FilterChip active={historyFilter === "all"} label="Все записи" onClick={() => setHistoryFilter("all")} />
+            <FilterChip active={historyFilter === "all"} label="Все записи" width={ALL_FILTER_WIDTH} onClick={() => setHistoryFilter("all")} />
             <FilterChip
               active={historyFilter === "failed"}
               label={`Нужен повтор${failedCount > 0 ? ` (${failedCount})` : ""}`}
+              width={FAILED_FILTER_WIDTH}
               onClick={() => setHistoryFilter("failed")}
             />
           </div>
@@ -258,11 +263,8 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
 
         <div
           style={{
-            minHeight: HISTORY_LIST_PANEL_HEIGHT,
-            maxHeight: HISTORY_LIST_PANEL_HEIGHT,
-            overflowY: "scroll",
-            scrollbarGutter: "stable",
-            paddingRight: 4,
+            display: "grid",
+            gap: 20,
           }}
         >
           {history.length === 0 ? (
