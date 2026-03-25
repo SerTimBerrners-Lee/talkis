@@ -15,6 +15,8 @@ interface HistoryGroup {
   items: HistoryEntry[];
 }
 
+type HistoryFilter = "all" | "failed";
+
 function formatDayLabel(timestamp: string): string {
   const entryDate = new Date(timestamp);
   const today = new Date();
@@ -38,6 +40,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [history, setHistory] = useState<HistoryEntry[]>(initialHistory);
   const [copied, setCopied] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
 
   useEffect(() => {
     getHistory().then(setHistory);
@@ -80,9 +83,13 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   };
 
   const groupedHistory = useMemo<HistoryGroup[]>(() => {
+    const visibleHistory = historyFilter === "failed"
+      ? history.filter((item) => item.status === "failed")
+      : history;
+
     const groups: HistoryGroup[] = [];
 
-    for (const item of history) {
+    for (const item of visibleHistory) {
       const label = formatDayLabel(item.timestamp);
       const existing = groups[groups.length - 1];
 
@@ -99,7 +106,12 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     }
 
     return groups;
-  }, [history]);
+  }, [history, historyFilter]);
+
+  const failedCount = useMemo(
+    () => history.filter((item) => item.status === "failed").length,
+    [history],
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -148,7 +160,9 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             </h2>
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {history.length > 0
-                ? `Последние записи доступны для копирования и удаления.`
+                ? failedCount > 0
+                  ? `Есть ${failedCount} ${failedCount === 1 ? "запись" : failedCount < 5 ? "записи" : "записей"}, которые можно отправить повторно.`
+                  : `Последние записи доступны для копирования и удаления.`
                 : `Записей пока нет. Удерживайте ${HOTKEY_LABEL} для записи.`}
             </div>
           </div>
@@ -169,6 +183,40 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
           )}
         </div>
 
+        {history.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => setHistoryFilter("all")}
+              className="btn"
+              style={{
+                minHeight: 32,
+                padding: "0 12px",
+                borderRadius: 999,
+                background: historyFilter === "all" ? "#000" : "rgba(255,255,255,0.78)",
+                borderColor: historyFilter === "all" ? "#000" : "var(--border)",
+                color: historyFilter === "all" ? "#fff" : "var(--text-hi)",
+              }}
+            >
+              Все записи
+            </button>
+
+            <button
+              onClick={() => setHistoryFilter("failed")}
+              className="btn"
+              style={{
+                minHeight: 32,
+                padding: "0 12px",
+                borderRadius: 999,
+                background: historyFilter === "failed" ? "rgba(143,45,32,0.12)" : "rgba(255,255,255,0.78)",
+                borderColor: historyFilter === "failed" ? "rgba(143,45,32,0.18)" : "var(--border)",
+                color: historyFilter === "failed" ? "var(--danger)" : "var(--text-hi)",
+              }}
+            >
+              Нужен повтор {failedCount > 0 ? `(${failedCount})` : ""}
+            </button>
+          </div>
+        )}
+
         {history.length === 0 ? (
           <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center" }}>
             <div style={{ width: 56, height: 56, borderRadius: 999, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
@@ -177,6 +225,13 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
             <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
               Записей пока нет. Удерживайте <b>{HOTKEY_LABEL}</b> для записи.
+            </p>
+          </div>
+        ) : groupedHistory.length === 0 ? (
+          <div style={{ padding: "28px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center", color: "var(--text-mid)" }}>
+            <div className="label" style={{ marginBottom: 10 }}>Ничего не найдено</div>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>
+              Сейчас нет записей, которым нужен повтор.
             </p>
           </div>
         ) : (
