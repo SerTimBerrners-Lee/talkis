@@ -122,8 +122,8 @@ export function SettingsApp() {
 
           </aside>
 
-          <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", position: "relative", background: "rgba(250,249,246,0.72)" }}>
-            <div style={{ maxWidth: 920, margin: "0 auto" }}>
+          <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "rgba(250,249,246,0.72)" }}>
+            <div style={{ maxWidth: 920, margin: "0 auto", minWidth: 0, overflowX: "hidden" }}>
               {loadError && (
                 <div className="card" style={{ marginBottom: 14, padding: "12px 14px", background: "rgba(143,45,32,0.08)", border: "1px solid rgba(143,45,32,0.18)", color: "var(--danger)" }}>
                   {loadError}

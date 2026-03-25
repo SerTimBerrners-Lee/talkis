@@ -76,6 +76,12 @@ select {
   isolation: isolate;
 }
 
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 .app-root::before {
   content: "";
   position: absolute;
@@ -253,6 +259,7 @@ select {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: fixed;
 }
 
 .b-table th {
@@ -269,6 +276,8 @@ select {
   padding: 11px 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   color: var(--text-mid);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .b-table tr:hover td {

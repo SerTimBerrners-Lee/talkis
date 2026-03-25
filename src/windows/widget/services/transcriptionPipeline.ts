@@ -50,6 +50,37 @@ function formatErrorMessage(error: unknown): string {
   }
 }
 
+function toUserFacingErrorMessage(error: unknown): string {
+  const raw = formatErrorMessage(error);
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes("unsupported_country_region_territory") || normalized.includes("country, region, or territory not supported")) {
+    return "Сервис распознавания сейчас недоступен в вашем регионе. Попробуйте другой endpoint или VPN.";
+  }
+
+  if (normalized.includes("403") || normalized.includes("forbidden")) {
+    return "Сервис отклонил запрос. Проверьте API-ключ, регион доступа или настройки endpoint.";
+  }
+
+  if (normalized.includes("401") || normalized.includes("unauthorized") || normalized.includes("invalid api key")) {
+    return "Не удалось авторизоваться в API. Проверьте ваш ключ доступа.";
+  }
+
+  if (normalized.includes("429") || normalized.includes("rate limit") || normalized.includes("quota")) {
+    return "Превышен лимит запросов или закончилась квота API. Попробуйте позже.";
+  }
+
+  if (normalized.includes("network") || normalized.includes("fetch") || normalized.includes("failed to fetch") || normalized.includes("timed out")) {
+    return "Не удалось связаться с сервером. Проверьте интернет и попробуйте снова.";
+  }
+
+  if (normalized.includes("500") || normalized.includes("502") || normalized.includes("503") || normalized.includes("504") || normalized.includes("server")) {
+    return "Сервис временно недоступен. Попробуйте повторить отправку чуть позже.";
+  }
+
+  return "Не удалось обработать запись. Попробуйте отправить ее повторно.";
+}
+
 async function transcribeAudio({
   audioBase64,
   settings,
@@ -134,7 +165,7 @@ export async function processRecordingBlob({
       raw: "",
       cleaned: "",
       status: "failed",
-      errorMessage: formatErrorMessage(error),
+      errorMessage: toUserFacingErrorMessage(error),
       audioBase64: base64Audio,
       language: settings.language,
       style: settings.style || "classic",
@@ -189,7 +220,7 @@ export async function retryHistoryEntry(
     const failedEntry: HistoryEntry = {
       ...entry,
       status: "failed",
-      errorMessage: formatErrorMessage(error),
+      errorMessage: toUserFacingErrorMessage(error),
     };
 
     await saveAndEmitHistoryEntry(failedEntry, "update");

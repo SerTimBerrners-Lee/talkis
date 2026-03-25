@@ -200,9 +200,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             </h2>
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {history.length > 0
-                ? failedCount > 0
-                  ? `Есть ${failedCount} ${failedCount === 1 ? "запись" : failedCount < 5 ? "записи" : "записей"}, которые можно отправить повторно.`
-                  : `Последние записи доступны для копирования и удаления.`
+                ? `Последние записи доступны для копирования и удаления.`
                 : `Записей пока нет. Удерживайте ${HOTKEY_LABEL} для записи.`}
             </div>
           </div>
@@ -306,33 +304,33 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                             })}
                           </td>
                           <td style={{ verticalAlign: "top" }}>
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                               <div style={{ flex: 1, display: "grid", gap: 8 }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+                               <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 8 }}>
+                                  {item.status === "failed" ? (
+                                    <>
+                                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(143,45,32,0.08)", border: "1px solid rgba(143,45,32,0.14)", color: "var(--danger)", fontSize: 12, lineHeight: 1.4, width: "fit-content" }}>
+                                        <AlertCircle size={13} strokeWidth={2} />
+                                        <span>Обработка не завершилась</span>
+                                      </div>
+                                      <div style={{ color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                                        {item.errorMessage || "Аудио сохранено локально. Можно отправить повторно."}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span style={{ color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>{item.cleaned}</span>
+                                  )}
+                                </div>
                                  {item.status === "failed" ? (
-                                   <>
-                                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(143,45,32,0.08)", border: "1px solid rgba(143,45,32,0.14)", color: "var(--danger)", fontSize: 12, lineHeight: 1.4, width: "fit-content" }}>
-                                       <AlertCircle size={13} strokeWidth={2} />
-                                       <span>Обработка не завершилась</span>
-                                     </div>
-                                     <div style={{ color: "var(--text-mid)", lineHeight: 1.7 }}>
-                                       {item.errorMessage || "Аудио сохранено локально. Можно отправить повторно."}
-                                     </div>
-                                   </>
-                                 ) : (
-                                   <span style={{ color: "var(--text-mid)", lineHeight: 1.7 }}>{item.cleaned}</span>
-                                 )}
-                               </div>
-                                {item.status === "failed" ? (
-                                  <button
-                                    onClick={() => retryEntry(item)}
-                                    className="btn btn-primary"
-                                    disabled={retryingId === item.id}
-                                    style={{ minWidth: 112, height: 32, minHeight: 32, padding: "0 12px", flexShrink: 0, borderRadius: 8 }}
-                                    title="Отправить повторно"
-                                  >
-                                    <RotateCcw size={12} strokeWidth={2} /> {retryingId === item.id ? "Повтор..." : "Повторить"}
-                                 </button>
-                               ) : (
+                                   <button
+                                     onClick={() => retryEntry(item)}
+                                     className="btn"
+                                     disabled={retryingId === item.id}
+                                     style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }}
+                                     title="Отправить повторно"
+                                   >
+                                     <RotateCcw size={12} strokeWidth={2} style={{ opacity: retryingId === item.id ? 0.45 : 1 }} />
+                                  </button>
+                                ) : (
                                  <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Скопировать">
                                    {copied === item.id ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
                                  </button>
