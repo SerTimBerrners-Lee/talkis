@@ -17,6 +17,8 @@ interface HistoryGroup {
 
 type HistoryFilter = "all" | "failed";
 
+const HISTORY_LIST_PANEL_HEIGHT = 420;
+
 function formatDayLabel(timestamp: string): string {
   const entryDate = new Date(timestamp);
   const today = new Date();
@@ -184,17 +186,30 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
         </div>
 
         {history.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: 4,
+              width: "fit-content",
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.72)",
+              border: "1px solid rgba(0,0,0,0.08)",
+            }}
+          >
             <button
               onClick={() => setHistoryFilter("all")}
               className="btn"
               style={{
                 minHeight: 32,
-                padding: "0 12px",
+                minWidth: 116,
+                padding: "0 14px",
                 borderRadius: 999,
-                background: historyFilter === "all" ? "#000" : "rgba(255,255,255,0.78)",
-                borderColor: historyFilter === "all" ? "#000" : "var(--border)",
+                background: historyFilter === "all" ? "#000" : "transparent",
+                borderColor: historyFilter === "all" ? "#000" : "transparent",
                 color: historyFilter === "all" ? "#fff" : "var(--text-hi)",
+                boxShadow: "none",
               }}
             >
               Все записи
@@ -205,11 +220,13 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
               className="btn"
               style={{
                 minHeight: 32,
-                padding: "0 12px",
+                minWidth: 146,
+                padding: "0 14px",
                 borderRadius: 999,
-                background: historyFilter === "failed" ? "rgba(143,45,32,0.12)" : "rgba(255,255,255,0.78)",
-                borderColor: historyFilter === "failed" ? "rgba(143,45,32,0.18)" : "var(--border)",
-                color: historyFilter === "failed" ? "var(--danger)" : "var(--text-hi)",
+                background: historyFilter === "failed" ? "#000" : "transparent",
+                borderColor: historyFilter === "failed" ? "#000" : "transparent",
+                color: historyFilter === "failed" ? "#fff" : "var(--text-hi)",
+                boxShadow: "none",
               }}
             >
               Нужен повтор {failedCount > 0 ? `(${failedCount})` : ""}
@@ -235,7 +252,8 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             </p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ minHeight: HISTORY_LIST_PANEL_HEIGHT, maxHeight: HISTORY_LIST_PANEL_HEIGHT, overflowY: "auto", paddingRight: 4 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             {groupedHistory.map((group) => (
               <div key={group.id} style={{ display: "grid", gap: 8 }}>
                 <div className="label" style={{ paddingLeft: 4 }}>{group.label}</div>
@@ -272,15 +290,15 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                    <span style={{ color: "var(--text-mid)", lineHeight: 1.7 }}>{item.cleaned}</span>
                                  )}
                                </div>
-                               {item.status === "failed" ? (
-                                 <button
-                                   onClick={() => retryEntry(item)}
-                                   className="btn"
-                                   disabled={retryingId === item.id}
-                                   style={{ minWidth: 98, height: 32, minHeight: 32, padding: "0 10px", flexShrink: 0, borderRadius: 8 }}
-                                   title="Отправить повторно"
-                                 >
-                                   <RotateCcw size={12} strokeWidth={2} /> {retryingId === item.id ? "Повтор..." : "Повторить"}
+                                {item.status === "failed" ? (
+                                  <button
+                                    onClick={() => retryEntry(item)}
+                                    className="btn btn-primary"
+                                    disabled={retryingId === item.id}
+                                    style={{ minWidth: 112, height: 32, minHeight: 32, padding: "0 12px", flexShrink: 0, borderRadius: 8 }}
+                                    title="Отправить повторно"
+                                  >
+                                    <RotateCcw size={12} strokeWidth={2} /> {retryingId === item.id ? "Повтор..." : "Повторить"}
                                  </button>
                                ) : (
                                  <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Скопировать">
@@ -298,6 +316,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                   </table>
               </div>
             ))}
+            </div>
           </div>
         )}
       </section>
