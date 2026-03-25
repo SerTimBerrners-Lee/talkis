@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import type { ReactElement } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { clearHistory, DEFAULT_HOTKEY, deleteHistoryEntry, formatHotkeyLabel, getHistory, getSettings, HistoryEntry } from "../../../lib/store";
 import { AlertCircle, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
@@ -18,6 +19,39 @@ interface HistoryGroup {
 type HistoryFilter = "all" | "failed";
 
 const HISTORY_LIST_PANEL_HEIGHT = 420;
+
+function FilterChip({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}): ReactElement {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        position: "relative",
+        zIndex: 1,
+        minHeight: 28,
+        minWidth: 118,
+        padding: "0 12px",
+        border: "none",
+        borderRadius: 999,
+        background: "transparent",
+        color: active ? "var(--text-hi)" : "var(--text-mid)",
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+        transition: "color 0.18s ease",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
 function formatDayLabel(timestamp: string): string {
   const entryDate = new Date(timestamp);
@@ -190,71 +224,67 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 4,
-              padding: 4,
+              gap: 0,
+              padding: 3,
               width: "fit-content",
               borderRadius: 999,
-              background: "rgba(255,255,255,0.72)",
-              border: "1px solid rgba(0,0,0,0.08)",
+              background: "rgba(255,255,255,0.6)",
+              border: "1px solid rgba(0,0,0,0.06)",
+              position: "relative",
             }}
           >
-            <button
-              onClick={() => setHistoryFilter("all")}
-              className="btn"
+            <div
               style={{
-                minHeight: 32,
-                minWidth: 116,
-                padding: "0 14px",
+                position: "absolute",
+                top: 3,
+                left: historyFilter === "all" ? 3 : 121,
+                width: historyFilter === "all" ? 118 : 142,
+                height: 28,
                 borderRadius: 999,
-                background: historyFilter === "all" ? "#000" : "transparent",
-                borderColor: historyFilter === "all" ? "#000" : "transparent",
-                color: historyFilter === "all" ? "#fff" : "var(--text-hi)",
-                boxShadow: "none",
+                background: "rgba(255,255,255,0.96)",
+                border: "1px solid rgba(0,0,0,0.05)",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                transition: "left 0.2s ease, width 0.2s ease",
               }}
-            >
-              Все записи
-            </button>
-
-            <button
+            />
+            <FilterChip active={historyFilter === "all"} label="Все записи" onClick={() => setHistoryFilter("all")} />
+            <FilterChip
+              active={historyFilter === "failed"}
+              label={`Нужен повтор${failedCount > 0 ? ` (${failedCount})` : ""}`}
               onClick={() => setHistoryFilter("failed")}
-              className="btn"
-              style={{
-                minHeight: 32,
-                minWidth: 146,
-                padding: "0 14px",
-                borderRadius: 999,
-                background: historyFilter === "failed" ? "#000" : "transparent",
-                borderColor: historyFilter === "failed" ? "#000" : "transparent",
-                color: historyFilter === "failed" ? "#fff" : "var(--text-hi)",
-                boxShadow: "none",
-              }}
-            >
-              Нужен повтор {failedCount > 0 ? `(${failedCount})` : ""}
-            </button>
+            />
           </div>
         )}
 
-        {history.length === 0 ? (
-          <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center" }}>
-            <div style={{ width: 56, height: 56, borderRadius: 999, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-              <span className="headline-accent" style={{ fontSize: 24, fontStyle: "italic" }}>◎</span>
+        <div
+          style={{
+            minHeight: HISTORY_LIST_PANEL_HEIGHT,
+            maxHeight: HISTORY_LIST_PANEL_HEIGHT,
+            overflowY: "scroll",
+            scrollbarGutter: "stable",
+            paddingRight: 4,
+          }}
+        >
+          {history.length === 0 ? (
+            <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center" }}>
+              <div style={{ width: 56, height: 56, borderRadius: 999, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                <span className="headline-accent" style={{ fontSize: 24, fontStyle: "italic" }}>◎</span>
+              </div>
+              <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
+              <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
+                Записей пока нет. Удерживайте <b>{HOTKEY_LABEL}</b> для записи.
+              </p>
             </div>
-            <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
-            <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
-              Записей пока нет. Удерживайте <b>{HOTKEY_LABEL}</b> для записи.
-            </p>
-          </div>
-        ) : groupedHistory.length === 0 ? (
-          <div style={{ padding: "28px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center", color: "var(--text-mid)" }}>
-            <div className="label" style={{ marginBottom: 10 }}>Ничего не найдено</div>
-            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>
-              Сейчас нет записей, которым нужен повтор.
-            </p>
-          </div>
-        ) : (
-          <div style={{ minHeight: HISTORY_LIST_PANEL_HEIGHT, maxHeight: HISTORY_LIST_PANEL_HEIGHT, overflowY: "auto", paddingRight: 4 }}>
+          ) : groupedHistory.length === 0 ? (
+            <div style={{ padding: "28px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center", color: "var(--text-mid)" }}>
+              <div className="label" style={{ marginBottom: 10 }}>Ничего не найдено</div>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7 }}>
+                Сейчас нет записей, которым нужен повтор.
+              </p>
+            </div>
+          ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            {groupedHistory.map((group) => (
+              {groupedHistory.map((group) => (
               <div key={group.id} style={{ display: "grid", gap: 8 }}>
                 <div className="label" style={{ paddingLeft: 4 }}>{group.label}</div>
                 <table className="b-table" style={{ background: "transparent" }}>
@@ -315,10 +345,10 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                     </tbody>
                   </table>
               </div>
-            ))}
+              ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </section>
     </div>
   );
