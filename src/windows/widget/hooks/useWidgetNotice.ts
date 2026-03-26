@@ -1,42 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
-import {
-  IDLE_WIDGET_HEIGHT,
-  IDLE_WIDGET_WIDTH,
-  NOTICE_TIMEOUT_MS,
-  RECORDING_WIDGET_HEIGHT,
-  RECORDING_WIDGET_WIDTH,
-  WidgetNoticeState,
-  WidgetNoticeTone,
-  WidgetState,
-} from "../widgetConstants";
+import { NOTICE_TIMEOUT_MS, WidgetNoticeTone, WidgetState } from "../widgetConstants";
 
 interface UseWidgetNoticeParams {
-  noticeVisibleRef: MutableRefObject<boolean>;
   stateRef: MutableRefObject<WidgetState>;
-  resizeWidget: (width: number, height: number) => Promise<void>;
 }
 
 interface UseWidgetNoticeResult {
-  notice: WidgetNoticeState | null;
   showNotice: (message: string, tone?: WidgetNoticeTone) => void;
 }
 
-function getBaseDimensionsForState(state: WidgetState): { width: number; height: number } {
-  if (state === "recording") {
-    return { width: RECORDING_WIDGET_WIDTH, height: RECORDING_WIDGET_HEIGHT };
-  }
-
-  if (state === "processing") {
-    return { width: RECORDING_WIDGET_WIDTH, height: RECORDING_WIDGET_HEIGHT };
-  }
-
-  return { width: IDLE_WIDGET_WIDTH, height: IDLE_WIDGET_HEIGHT };
-}
-
-export function useWidgetNotice({ noticeVisibleRef, stateRef, resizeWidget }: UseWidgetNoticeParams): UseWidgetNoticeResult {
-  const [notice, setNotice] = useState<WidgetNoticeState | null>(null);
+export function useWidgetNotice({ stateRef }: UseWidgetNoticeParams): UseWidgetNoticeResult {
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showNotice = useCallback(
@@ -45,21 +21,18 @@ export function useWidgetNotice({ noticeVisibleRef, stateRef, resizeWidget }: Us
         clearTimeout(noticeTimerRef.current);
       }
 
-      noticeVisibleRef.current = true;
-      const baseDimensions = getBaseDimensionsForState(stateRef.current);
-      void resizeWidget(baseDimensions.width, baseDimensions.height);
+      void invoke("show_widget_notice", {
+        message,
+        tone,
+        anchorState: stateRef.current,
+      });
 
-      setNotice({ message, tone });
       noticeTimerRef.current = setTimeout(() => {
-        setNotice(null);
+        void invoke("hide_widget_notice");
         noticeTimerRef.current = null;
-
-        noticeVisibleRef.current = false;
-        const baseDimensions = getBaseDimensionsForState(stateRef.current);
-        void resizeWidget(baseDimensions.width, baseDimensions.height);
       }, NOTICE_TIMEOUT_MS);
     },
-    [noticeVisibleRef, resizeWidget, stateRef],
+    [stateRef],
   );
 
   useEffect(() => {
@@ -68,12 +41,11 @@ export function useWidgetNotice({ noticeVisibleRef, stateRef, resizeWidget }: Us
         clearTimeout(noticeTimerRef.current);
       }
 
-      noticeVisibleRef.current = false;
+      void invoke("hide_widget_notice");
     };
-  }, [noticeVisibleRef]);
+  }, []);
 
   return {
-    notice,
     showNotice,
   };
 }

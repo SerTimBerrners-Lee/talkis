@@ -2,18 +2,17 @@ import { useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AlertCircle, Bell } from "lucide-react";
 
 import { saveWidgetPosition } from "../../lib/store";
 import { Waveform } from "../../components/Waveform";
 import { useWidgetController } from "./hooks/useWidgetController";
-import { NOTICE_AREA_HEIGHT, WIDGET_SHELL_HEIGHT, WIDGET_SHELL_WIDTH, WidgetNoticeState } from "./widgetConstants";
+import { WIDGET_SHELL_HEIGHT, WIDGET_SHELL_WIDTH } from "./widgetConstants";
 
 export function Widget() {
   const widgetWindow = getCurrentWindow();
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragTriggeredRef = useRef(false);
-  const { state, stream, notice, lockedRecording } = useWidgetController();
+  const { state, stream, lockedRecording } = useWidgetController();
 
   const handleDragPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
@@ -70,121 +69,38 @@ export function Widget() {
         background: "transparent",
         overflow: "visible",
         pointerEvents: "none",
-        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: NOTICE_AREA_HEIGHT,
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "center",
-          overflow: "visible",
-        }}
-      >
-        {notice && <WidgetNotice message={notice.message} tone={notice.tone} />}
-      </div>
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          bottom: 0,
-          transform: "translateX(-50%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "visible",
-        }}
-      >
-        {state === "idle" && (
-          <IdlePill
-            onClick={handleIdleClick}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
-        {state === "recording" && (
-          <RecordingPill
-            stream={stream}
-            locked={lockedRecording}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
-        {state === "processing" && (
-          <ProcessingPill
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function WidgetNotice({ message, tone }: WidgetNoticeState) {
-  const Icon = tone === "error" ? AlertCircle : Bell;
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        marginTop: 2,
-        width: 212,
-        minHeight: 52,
-        padding: "10px 34px 10px 14px",
-        borderRadius: 16,
-        fontSize: 11,
-        lineHeight: 1.4,
-        letterSpacing: "0.01em",
-        color: "rgba(0,0,0,0.82)",
-        background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(244,239,231,0.96) 100%)",
-        border: "1px solid rgba(0,0,0,0.08)",
-        boxShadow: "0 14px 28px rgba(0,0,0,0.12)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
-        pointerEvents: "none",
-        animation: "widget-notice-in 0.22s cubic-bezier(0.22, 1, 0.36, 1)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          width: 18,
-          height: 18,
-          color: tone === "error" ? "#c45a48" : "#61758a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Icon size={11} strokeWidth={2.2} />
-      </div>
-      <div
-        style={{
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          paddingRight: 4,
-        }}
-      >
-        {message}
-      </div>
+      {state === "idle" && (
+        <IdlePill
+          onClick={handleIdleClick}
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
+      {state === "recording" && (
+        <RecordingPill
+          stream={stream}
+          locked={lockedRecording}
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
+      {state === "processing" && (
+        <ProcessingPill
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
     </div>
   );
 }
