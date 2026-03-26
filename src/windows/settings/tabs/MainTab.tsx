@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getHistory, deleteHistoryEntry, clearHistory, HistoryEntry, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
-import { Copy, Trash2, Check } from "lucide-react";
+import { clearHistory, DEFAULT_HOTKEY, deleteHistoryEntry, formatHotkeyLabel, getHistory, getSettings, HistoryEntry } from "../../../lib/store";
+import { AlertCircle, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
 import { HISTORY_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
+import { retryHistoryEntry } from "../../widget/services/transcriptionPipeline";
 
 interface MainTabProps {
   initialHistory?: HistoryEntry[];
@@ -36,14 +37,21 @@ const HOTKEY_LABEL = formatHotkeyLabel(DEFAULT_HOTKEY);
 export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [history, setHistory] = useState<HistoryEntry[]>(initialHistory);
   const [copied, setCopied] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retrySucceededId, setRetrySucceededId] = useState<string | null>(null);
 
   useEffect(() => {
     getHistory().then(setHistory);
 
     const unlistenHistory = listen<HistoryEntry>(HISTORY_UPDATED_EVENT, (event) => {
       setHistory((current) => {
-        const next = [event.payload, ...current.filter((item) => item.id !== event.payload.id)];
-        return next.slice(0, 500);
+        const existingIndex = current.findIndex((item) => item.id === event.payload.id);
+
+        if (existingIndex === -1) {
+          return [event.payload, ...current].slice(0, 500);
+        }
+
+        return current.map((item) => (item.id === event.payload.id ? event.payload : item));
       });
     });
 
@@ -61,6 +69,33 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     await navigator.clipboard.writeText(text);
     setCopied(id);
     setTimeout(() => setCopied((current) => (current === id ? null : current)), 1500);
+  };
+
+  const retryEntry = async (entry: HistoryEntry) => {
+    setRetryingId(entry.id);
+
+    try {
+      const settings = await getSettings();
+      await retryHistoryEntry(entry, settings, { shouldPaste: false });
+      setRetrySucceededId(entry.id);
+      setTimeout(() => {
+        setRetrySucceededId((current) => (current === entry.id ? null : current));
+      }, 1800);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось повторно отправить запись.";
+
+      setHistory((current) => current.map((item) => (
+        item.id === entry.id
+          ? {
+              ...item,
+              status: "failed",
+              errorMessage: message,
+            }
+          : item
+      )));
+    } finally {
+      setRetryingId((current) => (current === entry.id ? null : current));
+    }
   };
 
   const groupedHistory = useMemo<HistoryGroup[]>(() => {
@@ -153,19 +188,25 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
           )}
         </div>
 
-        {history.length === 0 ? (
-          <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center" }}>
-            <div style={{ width: 56, height: 56, borderRadius: 999, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-              <span className="headline-accent" style={{ fontSize: 24, fontStyle: "italic" }}>◎</span>
+        <div
+          style={{
+            display: "grid",
+            gap: 20,
+          }}
+        >
+          {history.length === 0 ? (
+            <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center" }}>
+              <div style={{ width: 56, height: 56, borderRadius: 999, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                <span className="headline-accent" style={{ fontSize: 24, fontStyle: "italic" }}>◎</span>
+              </div>
+              <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
+              <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
+                Записей пока нет. Удерживайте <b>{HOTKEY_LABEL}</b> для записи.
+              </p>
             </div>
-            <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
-            <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
-              Записей пока нет. Удерживайте <b>{HOTKEY_LABEL}</b> для записи.
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            {groupedHistory.map((group) => (
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {groupedHistory.map((group) => (
               <div key={group.id} style={{ display: "grid", gap: 8 }}>
                 <div className="label" style={{ paddingLeft: 4 }}>{group.label}</div>
                 <table className="b-table" style={{ background: "transparent" }}>
@@ -185,14 +226,43 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                             })}
                           </td>
                           <td style={{ verticalAlign: "top" }}>
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                              <span style={{ flex: 1, color: "var(--text-mid)", lineHeight: 1.7 }}>{item.cleaned}</span>
-                              <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Скопировать">
-                                {copied === item.id ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
-                              </button>
-                              <button onClick={() => deleteEntry(item.id)} className="btn btn-danger" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Удалить">
-                                <Trash2 size={12} strokeWidth={2} />
-                              </button>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+                               <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 8 }}>
+                                  {item.status === "failed" ? (
+                                    <>
+                                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(143,45,32,0.08)", border: "1px solid rgba(143,45,32,0.14)", color: "var(--danger)", fontSize: 12, lineHeight: 1.4, width: "fit-content" }}>
+                                        <AlertCircle size={13} strokeWidth={2} />
+                                        <span>Обработка не завершилась</span>
+                                      </div>
+                                      <div style={{ color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                                        {item.errorMessage || "Аудио сохранено локально. Можно отправить повторно."}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span style={{ color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>{item.cleaned}</span>
+                                  )}
+                                </div>
+                                 {item.status === "failed" ? (
+                                    <button
+                                      onClick={() => retryEntry(item)}
+                                      className="btn"
+                                      disabled={retryingId === item.id}
+                                      style={{ minWidth: 96, height: 32, minHeight: 32, padding: "0 10px", flexShrink: 0, borderRadius: 999 }}
+                                      title="Отправить повторно"
+                                    >
+                                      <RotateCcw size={12} strokeWidth={2} style={{ opacity: retryingId === item.id ? 0.45 : 1 }} />
+                                      <span style={{ opacity: retryingId === item.id ? 0.6 : 1 }}>
+                                        {retryingId === item.id ? "Повтор..." : "Повторить"}
+                                      </span>
+                                    </button>
+                                ) : (
+                                  <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title={retrySucceededId === item.id ? "Успешно" : "Скопировать"}>
+                                    {copied === item.id || retrySucceededId === item.id ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
+                                  </button>
+                                )}
+                               <button onClick={() => deleteEntry(item.id)} className="btn btn-danger" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Удалить">
+                                 <Trash2 size={12} strokeWidth={2} />
+                               </button>
                             </div>
                           </td>
                         </tr>
@@ -200,9 +270,10 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                     </tbody>
                   </table>
               </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );

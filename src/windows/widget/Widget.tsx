@@ -1,90 +1,153 @@
-import type { ReactNode } from "react";
+import { useRef } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { saveWidgetPosition } from "../../lib/store";
 import { Waveform } from "../../components/Waveform";
 import { useWidgetController } from "./hooks/useWidgetController";
-import { IDLE_WIDGET_HEIGHT, IDLE_WIDGET_WIDTH, WidgetNoticeState } from "./widgetConstants";
+import { WIDGET_SHELL_HEIGHT, WIDGET_SHELL_WIDTH } from "./widgetConstants";
 
 export function Widget() {
-  const { state, stream, notice, lockedRecording } = useWidgetController();
+  const widgetWindow = getCurrentWindow();
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragTriggeredRef = useRef(false);
+  const { state, stream, lockedRecording } = useWidgetController();
+
+  const handleDragPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    dragStartRef.current = { x: event.clientX, y: event.clientY };
+    dragTriggeredRef.current = false;
+  };
+
+  const handleDragPointerMove = async (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragStartRef.current || dragTriggeredRef.current || (event.buttons & 1) === 0) {
+      return;
+    }
+
+    const deltaX = Math.abs(event.clientX - dragStartRef.current.x);
+    const deltaY = Math.abs(event.clientY - dragStartRef.current.y);
+
+    if (deltaX < 4 && deltaY < 4) {
+      return;
+    }
+
+    dragTriggeredRef.current = true;
+
+    try {
+      await widgetWindow.startDragging();
+      const position = await widgetWindow.outerPosition();
+      await saveWidgetPosition({ x: position.x, y: position.y });
+    } catch {
+      dragTriggeredRef.current = false;
+    }
+  };
+
+  const handleDragPointerUp = () => {
+    window.setTimeout(() => {
+      dragStartRef.current = null;
+      dragTriggeredRef.current = false;
+    }, 0);
+  };
+
+  const handleIdleClick = async () => {
+    if (dragTriggeredRef.current) {
+      return;
+    }
+
+    await invoke("open_settings");
+  };
 
   return (
     <div
       style={{
         width: "100vw",
         height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
         background: "transparent",
         overflow: "visible",
         pointerEvents: "none",
-        position: "relative",
-      }}
-    >
-      {state === "idle" && <IdlePill />}
-      {state === "recording" && <RecordingPill stream={stream} locked={lockedRecording} />}
-      {state === "processing" && <ProcessingPill />}
-      {notice && <WidgetNotice message={notice.message} tone={notice.tone} />}
-    </div>
-  );
-}
-
-function WidgetNotice({ message, tone }: WidgetNoticeState) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: 10,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: 220,
-        padding: "8px 10px",
-        borderRadius: 12,
-        fontSize: 11,
-        lineHeight: 1.35,
-        textAlign: "center",
-        color: tone === "error" ? "#8f2d20" : "#243b53",
-        background: tone === "error" ? "rgba(143,45,32,0.12)" : "rgba(36,59,83,0.12)",
-        border: tone === "error" ? "1px solid rgba(143,45,32,0.22)" : "1px solid rgba(36,59,83,0.2)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        pointerEvents: "none",
-      }}
-    >
-      {message}
-    </div>
-  );
-}
-
-function IdlePill() {
-  return (
-    <div
-      style={{
-        width: IDLE_WIDGET_WIDTH,
-        height: IDLE_WIDGET_HEIGHT,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "transparent",
-        cursor: "pointer",
-        pointerEvents: "auto",
       }}
-      onClick={() => invoke("open_settings")}
     >
-      <div
-        style={{
-          width: 38,
-          height: 16,
-          borderRadius: 999,
-          background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(245,241,234,0.98) 100%)",
-          border: "1px solid rgba(0,0,0,0.1)",
-          boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
-          backdropFilter: "blur(18px)",
-          WebkitBackdropFilter: "blur(18px)",
-        }}
-      />
+      {state === "idle" && (
+        <IdlePill
+          onClick={handleIdleClick}
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
+      {state === "recording" && (
+        <RecordingPill
+          stream={stream}
+          locked={lockedRecording}
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
+      {state === "processing" && (
+        <ProcessingPill
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
+    </div>
+  );
+}
+
+interface DragHandlers {
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: () => void;
+  onPointerCancel: () => void;
+}
+
+function IdlePill({ onClick, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: DragHandlers & { onClick: () => void }) {
+  return (
+    <ActiveWidgetShell
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      cursor="pointer"
+      onClick={() => {
+        void onClick();
+      }}
+    >
+      <WidgetCoreShell />
+    </ActiveWidgetShell>
+  );
+}
+
+function WidgetCoreShell({ children }: { children?: ReactNode }) {
+  return (
+    <div
+      style={{
+        width: 50,
+        height: 18,
+        borderRadius: 999,
+        background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(245,241,234,0.98) 100%)",
+        border: "1px solid rgba(0,0,0,0.1)",
+        boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+      }}
+    >
+      {children}
     </div>
   );
 }
@@ -94,107 +157,114 @@ interface RecordingPillProps {
   locked: boolean;
 }
 
-function ActiveWidgetShell({ children }: { children: ReactNode }) {
+function ActiveWidgetShell({ children, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onClick, cursor = "grab" }: { children: ReactNode; onClick?: () => void; cursor?: string } & DragHandlers) {
   return (
     <div
       style={{
-        width: 96,
-        height: 28,
+        width: WIDGET_SHELL_WIDTH,
+        height: WIDGET_SHELL_HEIGHT,
         borderRadius: 999,
-        background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(245,241,234,0.96) 100%)",
-        border: "1px solid rgba(0,0,0,0.1)",
-        boxShadow: "0 14px 28px rgba(0,0,0,0.14)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
+        background: "transparent",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "0 10px",
         pointerEvents: "auto",
         transformOrigin: "center center",
-        transition:
-          "width 0.18s ease, height 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
-        overflow: "hidden",
+        transition: "transform 0.18s ease",
+        overflow: "visible",
+        cursor,
       }}
+      onClick={() => {
+        onClick?.();
+      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={(event) => {
+        void onPointerMove(event);
+      }}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
       {children}
     </div>
   );
 }
 
-function RecordingPill({ stream, locked }: RecordingPillProps) {
+function RecordingPill({ stream, locked, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: RecordingPillProps & DragHandlers) {
   return (
-    <ActiveWidgetShell>
-      <div
-        style={{
-          width: "100%",
-          height: 16,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          paddingRight: locked ? 4 : 0,
-        }}
-      >
-        <Waveform stream={stream} isActive={true} />
-        {locked && (
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              flexShrink: 0,
-              borderRadius: 999,
-              background: "#d92d20",
-              boxShadow: "0 0 0 3px rgba(217,45,32,0.14)",
-            }}
-          />
-        )}
-      </div>
+    <ActiveWidgetShell
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+    >
+      <WidgetCoreShell>
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: locked ? "0 10px 0 3px" : "0 3px",
+          }}
+        >
+          <Waveform stream={stream} isActive={true} />
+          {locked && (
+            <span
+              style={{
+                position: "absolute",
+                top: "50%",
+                right: 4,
+                width: 4,
+                height: 4,
+                borderRadius: 999,
+                background: "#d92d20",
+                boxShadow: "0 0 0 2px rgba(217,45,32,0.14)",
+                transform: "translateY(-50%)",
+              }}
+            />
+          )}
+        </div>
+      </WidgetCoreShell>
     </ActiveWidgetShell>
   );
 }
 
-function ProcessingPill() {
+function ProcessingPill({ onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: DragHandlers) {
   return (
-    <div
-      style={{
-        width: 26,
-        height: 26,
-        borderRadius: 999,
-        background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(244,239,231,0.96) 100%)",
-        border: "1px solid rgba(0,0,0,0.08)",
-        boxShadow: "0 10px 20px rgba(0,0,0,0.08)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        pointerEvents: "auto",
-      }}
+    <ActiveWidgetShell
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "center",
-          gap: 3,
-          height: 8,
-        }}
-      >
-        {[0, 1, 2].map((index) => (
-          <span
-            key={index}
-            style={{
-              width: 3,
-              height: 3,
-              borderRadius: 999,
-              background: index === 1 ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.46)",
-              animation: `widget-processing-dot 0.72s ease-in-out ${index * 0.12}s infinite`,
-              boxShadow: index === 1 ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
-            }}
-          />
-        ))}
-      </div>
-    </div>
+      <WidgetCoreShell>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            gap: 3,
+            width: 20,
+            height: 9,
+          }}
+        >
+          {[0, 1, 2].map((index) => (
+            <span
+              key={index}
+              style={{
+                width: 3,
+                height: 3,
+                borderRadius: 999,
+                background: index === 1 ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.46)",
+                animation: `widget-processing-dot 0.72s ease-in-out ${index * 0.12}s infinite`,
+                boxShadow: index === 1 ? "0 1px 2px rgba(0,0,0,0.12)" : "none",
+              }}
+            />
+          ))}
+        </div>
+      </WidgetCoreShell>
+    </ActiveWidgetShell>
   );
 }

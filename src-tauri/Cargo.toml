@@ -1,7 +1,7 @@
 [package]
 name = "talk-flow"
 version = "0.1.0"
-description = "TalkFlow - Voice to Text macOS Widget"
+description = "Talk Flow - Voice to Text macOS Widget"
 authors = ["trixter"]
 edition = "2021"
 
@@ -31,3 +31,4 @@ include_dir = "0.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow"] }
+objc2-foundation = "0.3"

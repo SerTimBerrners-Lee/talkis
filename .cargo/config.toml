@@ -1,2 +1,2 @@
 [build]
-target-dir = "/Users/trixter/.cargo-target/talk-flow"
+target-dir = "/tmp/talk-flow-target"

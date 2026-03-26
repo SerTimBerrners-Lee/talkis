@@ -143,7 +143,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         <OptionCard
           disabled
           icon={<Crown size={20} strokeWidth={1.8} />}
-          title="Подписка TalkFlow"
+          title="Подписка Talk Flow"
           description="Скоро. Сейчас приложение работает только с вашим OpenAI API-ключом."
           badge="Soon"
         />
@@ -178,7 +178,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               />
             </div>
             <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-              Ключ используется для Whisper (распознавание) и GPT-4o mini (обработка) и не отправляется на сервер TalkFlow.
+              Ключ используется для Whisper (распознавание) и GPT-4o mini (обработка) и не отправляется на сервер Talk Flow.
             </div>
           </div>
         )}
@@ -190,7 +190,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 Ключ можно получить на <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span> в разделе API Keys.
               </>
             ) : (
-              <>Подписка TalkFlow пока недоступна. Для работы приложения используйте свой OpenAI API-ключ.</>
+              <>Подписка Talk Flow пока недоступна. Для работы приложения используйте свой OpenAI API-ключ.</>
             )}
           </div>
         </div>

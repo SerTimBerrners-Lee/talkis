@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleName</key>
+  <string>Talk Flow</string>
+  <key>CFBundleDisplayName</key>
+  <string>Talk Flow</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Предоставьте доступ к микрофону, чтобы TalkFlow мог записывать ваш голос для перевода в текст.</string>
+  <string>Предоставьте доступ к микрофону, чтобы Talk Flow мог записывать ваш голос для перевода в текст.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

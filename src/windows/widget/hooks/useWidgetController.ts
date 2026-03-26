@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { AppSettings, DEFAULT_HOTKEY, getSettings } from "../../../lib/store";
+import { AppSettings, DEFAULT_HOTKEY, getSettings, getWidgetPosition } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
-import { IDLE_WIDGET_HEIGHT, IDLE_WIDGET_WIDTH, WidgetNoticeState, WidgetState } from "../widgetConstants";
+import { WidgetNoticeState, WidgetState } from "../widgetConstants";
 import { useWidgetHotkey } from "./useWidgetHotkey";
 import { useWidgetNotice } from "./useWidgetNotice";
 import { useWidgetRecording } from "./useWidgetRecording";
@@ -32,6 +34,7 @@ function formatErrorMessage(error: unknown): string {
 }
 
 export function useWidgetController(): WidgetControllerState {
+  const widgetWindow = getCurrentWindow();
   const [state, setState] = useState<WidgetState>("idle");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -89,6 +92,31 @@ export function useWidgetController(): WidgetControllerState {
     settingsRef.current = settings;
   }, [settings]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreWidgetPosition = async () => {
+      try {
+        const savedPosition = await getWidgetPosition();
+        if (!savedPosition || cancelled) {
+          return;
+        }
+
+        await widgetWindow.setPosition(new PhysicalPosition(savedPosition.x, savedPosition.y));
+      } catch (error) {
+        if (!cancelled) {
+          logError("WIDGET", `Failed to restore widget position: ${formatErrorMessage(error)}`);
+        }
+      }
+    };
+
+    void restoreWidgetPosition();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [widgetWindow]);
+
   const resizeWidget = useCallback(async (width: number, height: number) => {
     try {
       await invoke("widget_resize", { width, height });
@@ -97,7 +125,7 @@ export function useWidgetController(): WidgetControllerState {
     }
   }, []);
 
-  const { notice, showNotice } = useWidgetNotice({ stateRef, resizeWidget });
+  const { showNotice } = useWidgetNotice({ stateRef });
 
   const showError = useCallback(
     (message: string) => {
@@ -110,7 +138,6 @@ export function useWidgetController(): WidgetControllerState {
       setLockedRecordingMode(false);
       setState("idle");
       setStream(null);
-      void resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
       showNotice(message, "error");
     },
     [clearReleaseStopTimer, resizeWidget, setLockedRecordingMode, showNotice],
@@ -129,6 +156,7 @@ export function useWidgetController(): WidgetControllerState {
     clearReleaseStopTimer,
     resizeWidget,
     showError,
+    showNotice,
     stopAndProcessRef,
   });
 
@@ -162,7 +190,7 @@ export function useWidgetController(): WidgetControllerState {
   return {
     state,
     stream,
-    notice,
+    notice: null,
     lockedRecording,
   };
 }

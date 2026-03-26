@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag to publish, for example v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release-macos:
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.13
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run release checks
+        run: bunx tsc --noEmit && bun run smoke:hotkey && bun run build
+
+      - name: Build macOS bundles
+        run: bun run tauri build
+
+      - name: Archive macOS app bundle
+        run: ditto -c -k --sequesterRsrc --keepParent "/tmp/talk-flow-target/release/bundle/macos/Talk Flow.app" "Talk Flow-${{ env.RELEASE_TAG }}-macos.zip"
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Talk Flow ${{ env.RELEASE_TAG }}
+          body: |
+            Automated release for ${{ env.RELEASE_TAG }}.
+
+            Current workflow publishes macOS artifacts.
+            Windows and Linux are intentionally disabled until platform-specific support is implemented.
+          draft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          files: |
+            /tmp/talk-flow-target/release/bundle/dmg/*.dmg
+            Talk Flow-${{ env.RELEASE_TAG }}-macos.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  disabled-platform-placeholders:
+    if: ${{ false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: windows
+          - runner: ubuntu-22.04
+            target: linux
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Placeholder
+        run: |
+          echo "${{ matrix.target }} releases are intentionally disabled until platform support is implemented."

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all windows",
-  "windows": ["widget", "settings"],
+  "windows": ["widget", "settings", "widget-notice"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -11,6 +11,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-set-focus",
+    "core:window:allow-set-position",
     "core:window:allow-show",
     "opener:default",
     "global-shortcut:allow-register",
