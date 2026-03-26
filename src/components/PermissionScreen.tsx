@@ -8,6 +8,7 @@ import {
   requestMicrophonePermission,
 } from "../lib/permissions";
 import { logError } from "../lib/logger";
+import { IDLE_WIDGET_HEIGHT, IDLE_WIDGET_WIDTH } from "../windows/widget/widgetConstants";
 
 interface PermissionRowProps {
   icon: React.ReactNode;
@@ -120,7 +121,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
       return;
     }
 
-    await invoke("widget_resize", { width: 44, height: 44 });
+    await invoke("widget_resize", { width: IDLE_WIDGET_WIDTH, height: IDLE_WIDGET_HEIGHT });
     onComplete();
   };
 
@@ -161,7 +162,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
           <div style={{ display: "grid", gap: 10 }}>
             <div className="label kicker">System Access</div>
             <h1 className="headline-accent" style={{ fontSize: 40, lineHeight: 0.96, margin: 0, fontWeight: 700 }}>
-              Доступы для TalkFlow
+              Доступы для Talk Flow
             </h1>
             <p style={{ margin: 0, maxWidth: 560, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
               Интерфейс уже готов. Осталось выдать системные разрешения для записи с микрофона и работы глобальной горячей клавиши.
@@ -202,7 +203,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
               <AlertCircle size={15} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
                 {micStatus === "denied"
-                  ? "Если микрофон был отклонен ранее, откройте Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включите TalkFlow вручную."
+                  ? "Если микрофон был отклонен ранее, откройте Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включите Talk Flow вручную."
                   : "macOS применяет доступ к универсальному доступу не мгновенно. После изменения системной настройки просто вернитесь в приложение и продолжите."}
               </div>
             </div>

@@ -45,8 +45,13 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
 
     const unlistenHistory = listen<HistoryEntry>(HISTORY_UPDATED_EVENT, (event) => {
       setHistory((current) => {
-        const next = [event.payload, ...current.filter((item) => item.id !== event.payload.id)];
-        return next.slice(0, 500);
+        const existingIndex = current.findIndex((item) => item.id === event.payload.id);
+
+        if (existingIndex === -1) {
+          return [event.payload, ...current].slice(0, 500);
+        }
+
+        return current.map((item) => (item.id === event.payload.id ? event.payload : item));
       });
     });
 
@@ -78,7 +83,16 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
       }, 1800);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось повторно отправить запись.";
-      alert(message);
+
+      setHistory((current) => current.map((item) => (
+        item.id === entry.id
+          ? {
+              ...item,
+              status: "failed",
+              errorMessage: message,
+            }
+          : item
+      )));
     } finally {
       setRetryingId((current) => (current === entry.id ? null : current));
     }

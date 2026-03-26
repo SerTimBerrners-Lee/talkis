@@ -8,7 +8,11 @@ use crate::logger;
 /// Paste text by writing to clipboard and simulating Cmd+V
 #[tauri::command]
 pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+
     let char_count = text.chars().count();
+    let previous_clipboard_text = app.clipboard().read_text().ok();
+
     logger::log_info(
         "PASTE",
         &format!("Scheduling paste on main thread, chars={}", char_count),
@@ -18,8 +22,6 @@ pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), Strin
     let (tx, rx) = mpsc::channel::<Result<(), String>>();
 
     app.run_on_main_thread(move || {
-        use tauri_plugin_clipboard_manager::ClipboardExt;
-
         let result = (|| -> Result<(), String> {
             logger::log_info(
                 "PASTE",
@@ -47,11 +49,19 @@ pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), Strin
 
             std::thread::sleep(Duration::from_millis(120));
 
-            logger::log_info("PASTE", "Clearing clipboard after paste");
-            handle
-                .clipboard()
-                .write_text(String::new())
-                .map_err(|e| format!("Clipboard clear failed: {}", e))?;
+            if let Some(previous_text) = previous_clipboard_text {
+                logger::log_info("PASTE", "Restoring previous clipboard text after paste");
+                handle
+                    .clipboard()
+                    .write_text(previous_text)
+                    .map_err(|e| format!("Clipboard restore failed: {}", e))?;
+            } else {
+                logger::log_info("PASTE", "Previous clipboard text unavailable, clearing clipboard");
+                handle
+                    .clipboard()
+                    .clear()
+                    .map_err(|e| format!("Clipboard clear failed: {}", e))?;
+            }
 
             Ok(())
         })();

@@ -4,11 +4,7 @@ import type { MutableRefObject } from "react";
 import {
   IDLE_WIDGET_HEIGHT,
   IDLE_WIDGET_WIDTH,
-  NOTICE_AREA_HEIGHT,
   NOTICE_TIMEOUT_MS,
-  NOTICE_WIDGET_GAP,
-  NOTICE_WIDGET_WIDTH,
-  PROCESSING_WIDGET_SIZE,
   RECORDING_WIDGET_HEIGHT,
   RECORDING_WIDGET_WIDTH,
   WidgetNoticeState,
@@ -17,6 +13,7 @@ import {
 } from "../widgetConstants";
 
 interface UseWidgetNoticeParams {
+  noticeVisibleRef: MutableRefObject<boolean>;
   stateRef: MutableRefObject<WidgetState>;
   resizeWidget: (width: number, height: number) => Promise<void>;
 }
@@ -32,22 +29,13 @@ function getBaseDimensionsForState(state: WidgetState): { width: number; height:
   }
 
   if (state === "processing") {
-    return { width: PROCESSING_WIDGET_SIZE, height: PROCESSING_WIDGET_SIZE };
+    return { width: RECORDING_WIDGET_WIDTH, height: RECORDING_WIDGET_HEIGHT };
   }
 
   return { width: IDLE_WIDGET_WIDTH, height: IDLE_WIDGET_HEIGHT };
 }
 
-function getNoticeDimensions(state: WidgetState): { width: number; height: number } {
-  const base = getBaseDimensionsForState(state);
-
-  return {
-    width: Math.max(base.width, NOTICE_WIDGET_WIDTH),
-    height: base.height + NOTICE_AREA_HEIGHT + NOTICE_WIDGET_GAP,
-  };
-}
-
-export function useWidgetNotice({ stateRef, resizeWidget }: UseWidgetNoticeParams): UseWidgetNoticeResult {
+export function useWidgetNotice({ noticeVisibleRef, stateRef, resizeWidget }: UseWidgetNoticeParams): UseWidgetNoticeResult {
   const [notice, setNotice] = useState<WidgetNoticeState | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,19 +45,21 @@ export function useWidgetNotice({ stateRef, resizeWidget }: UseWidgetNoticeParam
         clearTimeout(noticeTimerRef.current);
       }
 
-      const noticeDimensions = getNoticeDimensions(stateRef.current);
-      void resizeWidget(noticeDimensions.width, noticeDimensions.height);
+      noticeVisibleRef.current = true;
+      const baseDimensions = getBaseDimensionsForState(stateRef.current);
+      void resizeWidget(baseDimensions.width, baseDimensions.height);
 
       setNotice({ message, tone });
       noticeTimerRef.current = setTimeout(() => {
         setNotice(null);
         noticeTimerRef.current = null;
 
+        noticeVisibleRef.current = false;
         const baseDimensions = getBaseDimensionsForState(stateRef.current);
         void resizeWidget(baseDimensions.width, baseDimensions.height);
       }, NOTICE_TIMEOUT_MS);
     },
-    [resizeWidget, stateRef],
+    [noticeVisibleRef, resizeWidget, stateRef],
   );
 
   useEffect(() => {
@@ -77,8 +67,10 @@ export function useWidgetNotice({ stateRef, resizeWidget }: UseWidgetNoticeParam
       if (noticeTimerRef.current) {
         clearTimeout(noticeTimerRef.current);
       }
+
+      noticeVisibleRef.current = false;
     };
-  }, []);
+  }, [noticeVisibleRef]);
 
   return {
     notice,

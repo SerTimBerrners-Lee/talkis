@@ -14,6 +14,7 @@ export interface ProcessRecordingBlobParams {
 export interface ProcessRecordingBlobResult {
   durationSeconds: number;
   hasTranscription: boolean;
+  pasteErrorMessage?: string;
 }
 
 export interface RetryHistoryEntryResult {
@@ -81,6 +82,10 @@ function toUserFacingErrorMessage(error: unknown): string {
   return "Не удалось обработать запись. Попробуйте отправить ее повторно.";
 }
 
+function toUserFacingPasteErrorMessage(): string {
+  return "Текст распознан, но вставить его не удалось. Скопируйте его из истории.";
+}
+
 async function transcribeAudio({
   audioBase64,
   settings,
@@ -133,6 +138,7 @@ export async function processRecordingBlob({
   const buffer = await blob.arrayBuffer();
   const base64Audio = arrayBufferToBase64(buffer);
   const durationSeconds = Math.floor((Date.now() - recordingStartTimestamp) / 1000);
+
   try {
     const result = await transcribeAudio({
       audioBase64: base64Audio,
@@ -155,9 +161,22 @@ export async function processRecordingBlob({
     };
 
     await saveAndEmitHistoryEntry(historyEntry, "add");
-    await pasteCleanedText(result.cleaned);
+
+    try {
+      await pasteCleanedText(result.cleaned);
+    } catch (pasteError) {
+      logError("PASTE", `Paste failed after successful transcription: ${formatErrorMessage(pasteError)}`);
+
+      return {
+        durationSeconds,
+        hasTranscription: true,
+        pasteErrorMessage: toUserFacingPasteErrorMessage(),
+      };
+    }
+
     return { durationSeconds, hasTranscription: true };
   } catch (error) {
+    const userFacingErrorMessage = toUserFacingErrorMessage(error);
     const failedEntry: HistoryEntry = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -165,14 +184,14 @@ export async function processRecordingBlob({
       raw: "",
       cleaned: "",
       status: "failed",
-      errorMessage: toUserFacingErrorMessage(error),
+      errorMessage: userFacingErrorMessage,
       audioBase64: base64Audio,
       language: settings.language,
       style: settings.style || "classic",
     };
 
     await saveAndEmitHistoryEntry(failedEntry, "add");
-    throw error;
+    throw new Error(userFacingErrorMessage);
   }
 }
 
@@ -226,13 +245,14 @@ export async function retryHistoryEntry(
       updatedEntry,
     };
   } catch (error) {
+    const userFacingErrorMessage = toUserFacingErrorMessage(error);
     const failedEntry: HistoryEntry = {
       ...entry,
       status: "failed",
-      errorMessage: toUserFacingErrorMessage(error),
+      errorMessage: userFacingErrorMessage,
     };
 
     await saveAndEmitHistoryEntry(failedEntry, "update");
-    throw error;
+    throw new Error(userFacingErrorMessage);
   }
 }

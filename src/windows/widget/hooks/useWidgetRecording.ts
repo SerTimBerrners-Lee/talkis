@@ -8,9 +8,9 @@ import {
   IDLE_WIDGET_WIDTH,
   MIN_AUDIO_BLOB_BYTES,
   MIN_RECORDING_DURATION_MS,
-  PROCESSING_WIDGET_SIZE,
   RECORDING_WIDGET_HEIGHT,
   RECORDING_WIDGET_WIDTH,
+  WidgetNoticeTone,
   WidgetState,
 } from "../widgetConstants";
 import { createRecordingRuntimeController } from "../services/recordingRuntime";
@@ -29,6 +29,7 @@ interface UseWidgetRecordingParams {
   clearReleaseStopTimer: () => void;
   resizeWidget: (width: number, height: number) => Promise<void>;
   showError: (message: string) => void;
+  showNotice: (message: string, tone?: WidgetNoticeTone) => void;
   stopAndProcessRef: MutableRefObject<() => Promise<void>>;
 }
 
@@ -110,6 +111,7 @@ export function useWidgetRecording({
   clearReleaseStopTimer,
   resizeWidget,
   showError,
+  showNotice,
   stopAndProcessRef,
 }: UseWidgetRecordingParams): UseWidgetRecordingResult {
   const runtimeRef = useRef(createRecordingRuntimeController());
@@ -255,7 +257,7 @@ export function useWidgetRecording({
     await runtimeRef.current.stop();
     setStream(null);
 
-    await resizeWidget(PROCESSING_WIDGET_SIZE, PROCESSING_WIDGET_SIZE);
+    await resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
     setState("processing");
 
     try {
@@ -294,22 +296,19 @@ export function useWidgetRecording({
       runtimeRef.current.reset();
       setState("idle");
       await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
+
+      if (pipelineResult.pasteErrorMessage) {
+        showNotice(pipelineResult.pasteErrorMessage, "info");
+      }
+
       return;
     } catch (error) {
       const errorMessage = formatErrorMessage(error);
       logError("API", `Processing error: ${errorMessage}`);
 
-      let message = "Ошибка обработки";
-      if (errorMessage.includes("Whisper") || errorMessage.includes("API")) {
-        message = `Ошибка API: ${errorMessage}`;
-      } else if (errorMessage.includes("network") || errorMessage.includes("fetch")) {
-        message = "Ошибка сети. Проверьте интернет-соединение.";
-      } else if (errorMessage && errorMessage !== "{}") {
-        message = errorMessage;
-      }
+      const message = errorMessage && errorMessage !== "{}" ? errorMessage : "Ошибка обработки";
 
       runtimeRef.current.reset();
-      await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
       showError(message);
       return;
     }
@@ -324,6 +323,7 @@ export function useWidgetRecording({
     setStream,
     settings,
     showError,
+    showNotice,
   ]);
 
   useEffect(() => {

@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AppSettings, DEFAULT_HOTKEY, getSettings, getWidgetPosition } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
-import { WidgetNoticeState, WidgetState } from "../widgetConstants";
+import { NOTICE_AREA_HEIGHT, NOTICE_WIDGET_GAP, NOTICE_WIDGET_WIDTH, WidgetNoticeState, WidgetState } from "../widgetConstants";
 import { useWidgetHotkey } from "./useWidgetHotkey";
 import { useWidgetNotice } from "./useWidgetNotice";
 import { useWidgetRecording } from "./useWidgetRecording";
@@ -43,6 +43,7 @@ export function useWidgetController(): WidgetControllerState {
 
   const recordingStartRef = useRef<number>(0);
   const stateRef = useRef<WidgetState>("idle");
+  const noticeVisibleRef = useRef(false);
   const settingsRef = useRef<AppSettings | null>(null);
   const registeredHotkeyRef = useRef<string | null>(null);
   const hotkeyHeldRef = useRef(false);
@@ -119,13 +120,16 @@ export function useWidgetController(): WidgetControllerState {
 
   const resizeWidget = useCallback(async (width: number, height: number) => {
     try {
-      await invoke("widget_resize", { width, height });
+      const nextWidth = noticeVisibleRef.current ? Math.max(width, NOTICE_WIDGET_WIDTH) : width;
+      const nextHeight = noticeVisibleRef.current ? height + NOTICE_AREA_HEIGHT + NOTICE_WIDGET_GAP : height;
+
+      await invoke("widget_resize", { width: nextWidth, height: nextHeight });
     } catch (error) {
       logError("WIDGET", `Resize failed: ${formatErrorMessage(error)}`);
     }
-  }, []);
+  }, [noticeVisibleRef]);
 
-  const { notice, showNotice } = useWidgetNotice({ stateRef, resizeWidget });
+  const { notice, showNotice } = useWidgetNotice({ noticeVisibleRef, stateRef, resizeWidget });
 
   const showError = useCallback(
     (message: string) => {
@@ -156,6 +160,7 @@ export function useWidgetController(): WidgetControllerState {
     clearReleaseStopTimer,
     resizeWidget,
     showError,
+    showNotice,
     stopAndProcessRef,
   });
 

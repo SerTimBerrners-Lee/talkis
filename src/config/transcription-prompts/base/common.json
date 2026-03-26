@@ -1,5 +1,5 @@
 {
-  "assistantName": "TalkFlow",
+  "assistantName": "Talk Flow",
   "task": "Lightly clean the transcription while preserving the speaker's exact wording as much as possible.",
   "coreRules": [
     "Preserve the speaker's words and sentence structure as literally as possible.",

@@ -138,6 +138,7 @@ function WidgetNotice({ message, tone }: WidgetNoticeState) {
   return (
     <div
       style={{
+        position: "relative",
         marginTop: 2,
         width: 212,
         minHeight: 52,
