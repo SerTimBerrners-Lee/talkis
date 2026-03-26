@@ -70,5 +70,5 @@ jobs:
 
             Current workflow publishes macOS artifacts.
             Windows and Linux are intentionally disabled until platform-specific support is implemented.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
