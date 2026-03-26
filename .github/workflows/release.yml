@@ -35,7 +35,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run release checks
-        run: bun run check:release
+        run: bunx tsc --noEmit && bun run smoke:hotkey && bun run build
 
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
