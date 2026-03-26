@@ -299,13 +299,14 @@ function RecordingPill({ stream, locked, onPointerDown, onPointerMove, onPointer
             <span
               style={{
                 position: "absolute",
-                top: 4,
+                top: "50%",
                 right: 4,
                 width: 4,
                 height: 4,
                 borderRadius: 999,
                 background: "#d92d20",
                 boxShadow: "0 0 0 2px rgba(217,45,32,0.14)",
+                transform: "translateY(-50%)",
               }}
             />
           )}
