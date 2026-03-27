@@ -36,6 +36,9 @@ bun run tauri dev
 # Build for production
 bun run tauri build
 
+# Build signed local macOS release artifact
+bun run build:release:macos
+
 # TypeScript check
 bunx tsc --noEmit
 

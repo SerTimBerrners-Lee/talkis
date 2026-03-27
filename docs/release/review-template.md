@@ -19,7 +19,7 @@ Copy this file to `docs/release/review-vX.Y.Z.md` for each release.
 ## Checks run
 
 - `bun run check:release`
-- `bun run tauri build`
+- `bun run build:release:macos`
 - Additional manual checks:
 
 ## Manual review

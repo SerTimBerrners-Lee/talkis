@@ -1,7 +1,7 @@
 {
   "name": "talk-flow",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "packageManager": "bun@1.2.13",
   "scripts": {
@@ -11,6 +11,8 @@
     "test": "bun test",
     "smoke:hotkey": "bun test src/windows/widget/services/hotkeyFsm.test.js",
     "check:release": "bun run check && bun run smoke:hotkey && bun run build",
+    "postprocess:macos-release": "VERSION=$(python3 -c \"import json; print(json.load(open('package.json'))['version'])\") && bash scripts/postprocess-macos-release.sh \"$VERSION\"",
+    "build:release:macos": "bun run tauri build && bun run postprocess:macos-release",
     "preview": "vite preview",
     "tauri": "tauri",
     "logs": "tail -f ~/.talkflow/talkflow.log",

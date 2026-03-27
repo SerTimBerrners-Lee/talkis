@@ -18,7 +18,7 @@ This file defines the mandatory release workflow for Talk Flow. Follow it for ev
 3. Refresh `README.md` before every release so the documented behavior, supported platforms, commands, and release notes are current.
 4. Run the release checks locally:
    - `bun run check:release`
-   - `bun run tauri build`
+   - `bun run build:release:macos`
 5. Perform a detailed self-review of the full release diff.
 6. Write the review results to `docs/release/review-vX.Y.Z.md` using the review template.
 7. If there are blockers, risks, or recommendations that need a decision, ask the user before merging to `main`.
@@ -34,7 +34,7 @@ This file defines the mandatory release workflow for Talk Flow. Follow it for ev
 - Widget position, notices, and onboarding permissions behave correctly.
 - Short or noisy recordings do not paste obvious hallucinated text.
 - `bun run check:release` passes.
-- Local production build passes.
+- Local production build passes via `bun run build:release:macos`.
 - Version numbers and release tag match.
 - The GitHub Actions release workflow still matches the documented process.
 

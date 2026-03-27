@@ -77,9 +77,18 @@ interface PermissionScreenProps {
   onComplete: () => void;
 }
 
+interface AppRuntimeInfo {
+  executablePath: string;
+  bundlePath: string;
+  launchedViaTranslocation: boolean;
+  launchedFromMountedVolume: boolean;
+  shouldMoveToApplications: boolean;
+}
+
 export function PermissionScreen({ onComplete }: PermissionScreenProps) {
   const [micStatus, setMicStatus] = useState<PermissionStatus>("unknown");
   const [accStatus, setAccStatus] = useState<PermissionStatus>("unknown");
+  const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo | null>(null);
 
   const refreshAccessibilityStatus = useCallback(async () => {
     const nextStatus = await checkAccessibilityPermission();
@@ -108,6 +117,14 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
   useEffect(() => {
     void refreshAllPermissions();
   }, [refreshAllPermissions]);
+
+  useEffect(() => {
+    invoke<AppRuntimeInfo>("get_app_runtime_info")
+      .then(setRuntimeInfo)
+      .catch((error) => {
+        void logError("PERMISSIONS", `Failed to load runtime info: ${error instanceof Error ? error.message : String(error)}`);
+      });
+  }, []);
 
   useEffect(() => {
     if (accStatus !== "prompting") {
@@ -169,6 +186,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
   };
 
   const canContinue = micStatus === "granted" && accStatus === "granted";
+  const shouldShowInstallWarning = Boolean(runtimeInfo?.shouldMoveToApplications);
 
   return (
     <div
@@ -213,6 +231,30 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
           </div>
 
           <div style={{ display: "grid", gap: 14 }}>
+            {shouldShowInstallWarning && (
+              <div
+                className="card"
+                style={{
+                  padding: 18,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  background: "rgba(143,45,32,0.08)",
+                  border: "1px solid rgba(143,45,32,0.18)",
+                }}
+              >
+                <AlertCircle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }} />
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>
+                    Сначала переместите приложение в Applications
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
+                    Текущая сборка запущена из временного или смонтированного места (`/Volumes` или App Translocation). Для релизной версии macOS может не применять универсальный доступ корректно в таком режиме. Переместите `Talk Flow.app` в `Applications`, откройте его оттуда и только потом выдавайте доступ.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <PermissionRow
               icon={<Mic size={18} strokeWidth={1.75} />}
               title="Микрофон"
@@ -245,9 +287,11 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
             >
               <AlertCircle size={15} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                {micStatus === "denied"
+              {micStatus === "denied"
                   ? "Если микрофон был отклонен ранее, откройте Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включите Talk Flow вручную."
-                  : "macOS применяет доступ к универсальному доступу не мгновенно. После изменения системной настройки просто вернитесь в приложение и продолжите."}
+                  : shouldShowInstallWarning
+                    ? "После перемещения приложения в Applications откройте его заново и повторите выдачу доступа."
+                    : "macOS применяет доступ к универсальному доступу не мгновенно. После изменения системной настройки просто вернитесь в приложение и продолжите."}
               </div>
             </div>
           )}

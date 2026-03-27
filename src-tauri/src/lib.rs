@@ -24,6 +24,16 @@ struct WidgetNoticePayload {
     tone: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppRuntimeInfo {
+    executable_path: String,
+    bundle_path: String,
+    launched_via_translocation: bool,
+    launched_from_mounted_volume: bool,
+    should_move_to_applications: bool,
+}
+
 fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
     if let Some(win) = app.get_webview_window(NOTICE_WINDOW_LABEL) {
         return Ok(win);
@@ -131,6 +141,28 @@ async fn hide_widget_notice(app: AppHandle) -> Result<(), String> {
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> u8;
+    fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> u8;
+}
+
+fn build_runtime_info() -> Result<AppRuntimeInfo, String> {
+    let executable_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let executable_path_str = executable_path.to_string_lossy().to_string();
+    let bundle_path = executable_path
+        .ancestors()
+        .find(|path| path.extension().map(|ext| ext == "app").unwrap_or(false))
+        .map(|path| path.to_path_buf())
+        .unwrap_or_else(|| executable_path.clone());
+    let bundle_path_str = bundle_path.to_string_lossy().to_string();
+    let launched_via_translocation = executable_path_str.contains("/AppTranslocation/");
+    let launched_from_mounted_volume = bundle_path_str.starts_with("/Volumes/");
+
+    Ok(AppRuntimeInfo {
+        executable_path: executable_path_str,
+        bundle_path: bundle_path_str,
+        launched_via_translocation,
+        launched_from_mounted_volume,
+        should_move_to_applications: launched_via_translocation || launched_from_mounted_volume,
+    })
 }
 
 #[tauri::command]
@@ -338,6 +370,11 @@ async fn open_accessibility_settings() -> Result<(), String> {
 async fn check_accessibility_permission() -> Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
+        let trusted = unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) != 0 };
+        if trusted {
+            return Ok(true);
+        }
+
         return Ok(unsafe { AXIsProcessTrusted() != 0 });
     }
 
@@ -345,6 +382,11 @@ async fn check_accessibility_permission() -> Result<bool, String> {
     {
         Ok(true)
     }
+}
+
+#[tauri::command]
+fn get_app_runtime_info() -> Result<AppRuntimeInfo, String> {
+    build_runtime_info()
 }
 
 #[tauri::command]
@@ -430,6 +472,7 @@ pub fn run() {
             logger::clear_logs,
             open_accessibility_settings,
             check_accessibility_permission,
+            get_app_runtime_info,
             get_cleanup_prompt_preview,
             start_native_hotkey_capture,
             stop_native_hotkey_capture,
