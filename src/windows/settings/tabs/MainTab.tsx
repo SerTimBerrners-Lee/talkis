@@ -37,6 +37,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [retrySucceededId, setRetrySucceededId] = useState<string | null>(null);
   const [hotkeyLabel, setHotkeyLabel] = useState(formatHotkeyLabel(DEFAULT_HOTKEY));
+  const [isClearArmed, setIsClearArmed] = useState(false);
 
   useEffect(() => {
     const syncHotkeyLabel = async () => {
@@ -72,6 +73,20 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const deleteEntry = async (id: string) => {
     await deleteHistoryEntry(id);
     setHistory((h) => h.filter((x) => x.id !== id));
+  };
+
+  const clearAllHistory = async () => {
+    if (!isClearArmed) {
+      setIsClearArmed(true);
+      setTimeout(() => {
+        setIsClearArmed((current) => current ? false : current);
+      }, 2500);
+      return;
+    }
+
+    await clearHistory();
+    setHistory([]);
+    setIsClearArmed(false);
   };
 
   const copyText = async (id: string, text: string) => {
@@ -183,16 +198,14 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
 
           {history.length > 0 && (
             <button
-              onClick={async () => {
-                if (confirm("Очистить историю?")) {
-                  await clearHistory();
-                  setHistory([]);
-                }
+              onClick={() => {
+                void clearAllHistory();
               }}
-              className="btn btn-danger"
+              className={isClearArmed ? "btn btn-danger" : "btn"}
               style={{ minHeight: 34, padding: "0 12px" }}
+              title={isClearArmed ? "Нажмите еще раз, чтобы очистить всю историю" : "Очистить всю историю"}
             >
-              <Trash2 size={12} strokeWidth={2} /> Очистить
+              <Trash2 size={12} strokeWidth={2} /> {isClearArmed ? "Подтвердить" : "Очистить"}
             </button>
           )}
         </div>
