@@ -173,8 +173,8 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.6` to build and publish a GitHub Release
-- Or run the workflow manually and provide a tag like `v0.1.6`
+- Push a tag like `v0.1.7` to build and publish a GitHub Release
+- Or run the workflow manually and provide a tag like `v0.1.7`
 - The current workflow publishes all currently supported release artifacts, which is macOS only right now
 - Windows and Linux are listed in the matrix but intentionally disabled until platform-specific support is added
 - For macOS release builds, move `Talk Flow.app` to `Applications` before granting Accessibility access

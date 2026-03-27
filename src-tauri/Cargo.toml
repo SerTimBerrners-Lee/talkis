@@ -1,6 +1,6 @@
 [package]
 name = "talk-flow"
-version = "0.1.6"
+version = "0.1.7"
 description = "Talk Flow - Voice to Text macOS Widget"
 authors = ["trixter"]
 edition = "2021"

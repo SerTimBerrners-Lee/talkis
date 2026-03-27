@@ -167,6 +167,12 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
     }
 
     try {
+      await invoke("reset_accessibility_permission");
+    } catch (e) {
+      void logError("PERMISSIONS", `Failed to reset accessibility permission: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    try {
       await invoke("open_accessibility_settings");
       setAccStatus("prompting");
     } catch (e) {
@@ -285,7 +291,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
               }}
               helpText={shouldShowInstallWarning
                 ? `Сейчас приложение запущено не из Applications: ${runtimeInfo?.bundlePath ?? "неизвестный путь"}`
-                : "Откроются системные настройки macOS. После выдачи доступа вернитесь сюда и нажмите «Продолжить»."}
+                : "Откроются системные настройки macOS. Перед этим приложение сбросит старую запись Accessibility для `com.trixter.talkflow`, чтобы новая версия могла запросить доступ заново."}
             />
           </div>
 

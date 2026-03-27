@@ -11,6 +11,7 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 const NOTICE_WINDOW_LABEL: &str = "widget-notice";
 const NOTICE_EVENT: &str = "widget-notice:update";
 const SETTINGS_NAVIGATE_EVENT: &str = "settings-navigate";
+const APP_BUNDLE_ID: &str = "com.trixter.talkflow";
 const NOTICE_WIDTH: f64 = 212.0;
 const NOTICE_HEIGHT: f64 = 52.0;
 const NOTICE_GAP: f64 = 2.0;
@@ -367,6 +368,28 @@ async fn open_accessibility_settings() -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn reset_accessibility_permission() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("tccutil")
+            .arg("reset")
+            .arg("Accessibility")
+            .arg(APP_BUNDLE_ID)
+            .status()
+            .map_err(|e| format!("Failed to reset accessibility permission: {}", e))?;
+
+        if !status.success() {
+            return Err(format!(
+                "tccutil reset Accessibility {} failed with status {}",
+                APP_BUNDLE_ID, status
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn check_accessibility_permission() -> Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
@@ -471,6 +494,7 @@ pub fn run() {
             logger::get_log_path_cmd,
             logger::clear_logs,
             open_accessibility_settings,
+            reset_accessibility_permission,
             check_accessibility_permission,
             get_app_runtime_info,
             get_cleanup_prompt_preview,
