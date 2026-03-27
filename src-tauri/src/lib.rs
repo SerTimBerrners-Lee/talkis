@@ -1,4 +1,5 @@
 mod ai;
+mod hotkey_capture;
 mod logger;
 mod paste;
 mod prompt_config;
@@ -9,9 +10,13 @@ use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 const NOTICE_WINDOW_LABEL: &str = "widget-notice";
 const NOTICE_EVENT: &str = "widget-notice:update";
-const NOTICE_WIDTH: f64 = 228.0;
-const NOTICE_HEIGHT: f64 = 68.0;
+const SETTINGS_NAVIGATE_EVENT: &str = "settings-navigate";
+const NOTICE_WIDTH: f64 = 212.0;
+const NOTICE_HEIGHT: f64 = 52.0;
 const NOTICE_GAP: f64 = 2.0;
+const WIDGET_DEFAULT_BOTTOM_MARGIN: i32 = 16;
+const WIDGET_WIDTH: f64 = 50.0;
+const WIDGET_HEIGHT: f64 = 18.0;
 
 #[derive(Clone, Serialize)]
 struct WidgetNoticePayload {
@@ -36,13 +41,12 @@ fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWindow, 
     .transparent(true)
     .always_on_top(true)
     .skip_taskbar(true)
+    .accept_first_mouse(true)
     .focused(false)
     .visible(false)
     .shadow(false)
     .build()
     .map_err(|e| e.to_string())?;
-
-    let _ = win.set_ignore_cursor_events(true);
 
     Ok(win)
 }
@@ -77,6 +81,22 @@ fn position_widget_notice_window(
     Ok(())
 }
 
+fn calculate_default_widget_position(
+    monitor: &tauri::Monitor,
+    width: f64,
+    height: f64,
+) -> tauri::PhysicalPosition<i32> {
+    let work_area = monitor.work_area();
+    let scale_factor = monitor.scale_factor();
+    let width_px = (width * scale_factor).round() as i32;
+    let height_px = (height * scale_factor).round() as i32;
+    let bottom_margin_px = ((WIDGET_DEFAULT_BOTTOM_MARGIN as f64) * scale_factor).round() as i32;
+    let x = work_area.position.x + ((work_area.size.width as i32 - width_px) / 2);
+    let y = work_area.position.y + work_area.size.height as i32 - height_px - bottom_margin_px;
+
+    tauri::PhysicalPosition { x, y }
+}
+
 #[tauri::command]
 async fn show_widget_notice(app: AppHandle, message: String, tone: String, _anchor_state: String) -> Result<(), String> {
     let widget_window = app
@@ -93,6 +113,7 @@ async fn show_widget_notice(app: AppHandle, message: String, tone: String, _anch
     )
     .map_err(|e| e.to_string())?;
 
+    let _ = notice_window.set_ignore_cursor_events(false);
     notice_window.show().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -137,6 +158,57 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
     .center()
     .build()
     .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "macos")]
+    if let Err(err) = apply_vibrancy(&win, NSVisualEffectMaterial::HudWindow, None, None) {
+        logger::log_error(
+            "WINDOW",
+            &format!("Failed to apply vibrancy to settings window: {}", err),
+        );
+    }
+
+    if let Err(err) = win.show() {
+        logger::log_error(
+            "WINDOW",
+            &format!("Failed to show new settings window: {}", err),
+        );
+    }
+    if let Err(err) = win.set_focus() {
+        logger::log_error(
+            "WINDOW",
+            &format!("Failed to focus new settings window: {}", err),
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_settings_tab(app: AppHandle, tab: String) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("settings") {
+        if let Err(err) = win.show() {
+            logger::log_error("WINDOW", &format!("Failed to show settings window: {}", err));
+        }
+        if let Err(err) = win.set_focus() {
+            logger::log_error("WINDOW", &format!("Failed to focus settings window: {}", err));
+        }
+
+        app.emit_to("settings", SETTINGS_NAVIGATE_EVENT, serde_json::json!({ "tab": tab }))
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let url = format!("index.html?window=settings&tab={}", tab);
+
+    let win = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url.into()))
+        .title("Talk Flow - Settings")
+        .inner_size(920.0, 680.0)
+        .min_inner_size(820.0, 560.0)
+        .decorations(false)
+        .transparent(true)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "macos")]
     if let Err(err) = apply_vibrancy(&win, NSVisualEffectMaterial::HudWindow, None, None) {
@@ -231,14 +303,8 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
                 );
             }
         } else if let Ok(Some(monitor)) = win.primary_monitor() {
-            let screen_size = monitor.size();
-            let scale_factor = monitor.scale_factor();
-            let x = (screen_size.width as f64 / scale_factor - width) / 2.0;
-            let center_y = screen_size.height as f64 / scale_factor - 105.0;
-            let y = center_y - (height / 2.0);
-            if let Err(err) =
-                win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
-            {
+            let position = calculate_default_widget_position(&monitor, width, height);
+            if let Err(err) = win.set_position(tauri::Position::Physical(position)) {
                 logger::log_error("WINDOW", &format!("Failed to reposition widget window: {}", err));
             }
         }
@@ -289,6 +355,16 @@ fn get_cleanup_prompt_preview(
     prompt_config::build_cleanup_prompt_preview(&language, &style)
 }
 
+#[tauri::command]
+fn start_native_hotkey_capture(window: tauri::WebviewWindow) -> Result<(), String> {
+    hotkey_capture::start_capture(&window)
+}
+
+#[tauri::command]
+fn stop_native_hotkey_capture(window: tauri::WebviewWindow) -> Result<(), String> {
+    hotkey_capture::stop_capture(&window)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -309,24 +385,10 @@ pub fn run() {
                         ns_win.setAcceptsMouseMovedEvents(true);
                     }
                 }
-                let width = 62.0;
-                let height = 62.0;
+                let width = WIDGET_WIDTH;
+                let height = WIDGET_HEIGHT;
 
                 if let Ok(Some(monitor)) = win.primary_monitor() {
-                    let screen_size = monitor.size();
-                    let scale_factor = monitor.scale_factor();
-                    let x = (screen_size.width as f64 / scale_factor - width) / 2.0;
-                    let center_y = screen_size.height as f64 / scale_factor - 105.0;
-                    let y = center_y - (height / 2.0);
-
-                    if let Err(err) =
-                        win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
-                    {
-                        logger::log_error(
-                            "WINDOW",
-                            &format!("Failed to position widget window during setup: {}", err),
-                        );
-                    }
                     if let Err(err) = win.set_size(tauri::Size::Logical(tauri::LogicalSize {
                         width,
                         height,
@@ -334,6 +396,14 @@ pub fn run() {
                         logger::log_error(
                             "WINDOW",
                             &format!("Failed to size widget window during setup: {}", err),
+                        );
+                    }
+
+                    let position = calculate_default_widget_position(&monitor, width, height);
+                    if let Err(err) = win.set_position(tauri::Position::Physical(position)) {
+                        logger::log_error(
+                            "WINDOW",
+                            &format!("Failed to position widget window during setup: {}", err),
                         );
                     }
                 }
@@ -349,6 +419,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_settings,
+            open_settings_tab,
             widget_resize,
             show_widget_notice,
             hide_widget_notice,
@@ -360,6 +431,8 @@ pub fn run() {
             open_accessibility_settings,
             check_accessibility_permission,
             get_cleanup_prompt_preview,
+            start_native_hotkey_capture,
+            stop_native_hotkey_capture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Talk Flow");

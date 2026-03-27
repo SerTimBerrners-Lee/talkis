@@ -15,6 +15,7 @@ export interface HistoryEntry {
 
 export interface AppSettings {
   apiKey: string;
+  hotkey: string;
   language: string;
   doubleTapTimeout: number;
   style: "classic" | "business" | "tech";
@@ -32,8 +33,44 @@ export interface WidgetPosition {
   y: number;
 }
 
-const MODIFIERS = ["Ctrl", "Alt", "Option", "Shift", "Command", "Cmd", "Meta", "Control"];
-export const DEFAULT_HOTKEY = "Command+Space";
+const MODIFIER_ORDER = ["Control", "Alt", "Shift", "Command"] as const;
+const MODIFIER_ALIASES: Record<string, (typeof MODIFIER_ORDER)[number]> = {
+  ctrl: "Control",
+  control: "Control",
+  alt: "Alt",
+  option: "Alt",
+  shift: "Shift",
+  cmd: "Command",
+  command: "Command",
+  meta: "Command",
+};
+const MAIN_KEY_ALIASES: Record<string, string> = {
+  esc: "Escape",
+  escape: "Escape",
+  return: "Enter",
+  enter: "Enter",
+  tab: "Tab",
+  space: "Space",
+  spacebar: "Space",
+  backspace: "Backspace",
+  delete: "Delete",
+  del: "Delete",
+  insert: "Insert",
+  home: "Home",
+  end: "End",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+  arrowup: "Up",
+  up: "Up",
+  arrowdown: "Down",
+  down: "Down",
+  arrowleft: "Left",
+  left: "Left",
+  arrowright: "Right",
+  right: "Right",
+};
+const FUNCTION_KEY_PATTERN = /^F(?:[1-9]|1[0-2])$/;
+export const DEFAULT_HOTKEY = "Command+Shift+Space";
 
 function isMacPlatform(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -65,44 +102,130 @@ export function formatHotkeyLabel(hotkey: string): string {
   return formatted.join(" + ");
 }
 
+function normalizeHotkeyPart(part: string): string | null {
+  const trimmed = part.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const lower = trimmed.toLowerCase();
+  const modifier = MODIFIER_ALIASES[lower];
+  if (modifier) {
+    return modifier;
+  }
+
+  const aliasedMainKey = MAIN_KEY_ALIASES[lower];
+  if (aliasedMainKey) {
+    return aliasedMainKey;
+  }
+
+  const upper = trimmed.toUpperCase();
+  if (FUNCTION_KEY_PATTERN.test(upper)) {
+    return upper;
+  }
+
+  if (/^[A-Z0-9]$/i.test(trimmed)) {
+    return upper;
+  }
+
+  return null;
+}
+
+function isModifier(part: string): part is (typeof MODIFIER_ORDER)[number] {
+  return MODIFIER_ORDER.includes(part as (typeof MODIFIER_ORDER)[number]);
+}
+
+function isFunctionKey(part: string): boolean {
+  return FUNCTION_KEY_PATTERN.test(part);
+}
+
 export function validateHotkey(hotkey: string): { valid: boolean; error?: string } {
-  const parts = hotkey.split("+").map(p => p.trim());
-  const modifiers = parts.filter(p => MODIFIERS.includes(p));
-  const mainKeys = parts.filter(p => !MODIFIERS.includes(p));
-  
-  if (parts.length < 2) {
-    return { 
-      valid: false, 
-      error: "Минимум 2 клавиши: модификатор + основная клавиша" 
-    };
-  }
-  
-  if (mainKeys.length === 0) {
-    return { 
-      valid: false, 
-      error: "Добавьте основную клавишу (Space, A, F1 и т.д.)" 
-    };
-  }
-  
-  if (mainKeys.length > 1) {
-    return { 
-      valid: false, 
-      error: "Только одна основная клавиша" 
+  const parts = hotkey.split("+").map((part) => normalizeHotkeyPart(part));
+  if (parts.some((part) => part === null)) {
+    return {
+      valid: false,
+      error: "Поддерживаются буквы, цифры, Space, F-клавиши и стандартные модификаторы",
     };
   }
 
-  if (modifiers.length === 0) {
+  const normalizedParts = parts.filter((part): part is string => part !== null);
+  const modifiers = normalizedParts.filter(isModifier);
+  const mainKeys = normalizedParts.filter((part) => !isModifier(part));
+
+  if (normalizedParts.length === 0) {
     return {
       valid: false,
-      error: "Добавьте хотя бы один модификатор: Ctrl, Alt/Option, Shift или Cmd"
+      error: "Нажмите хотя бы одну клавишу",
     };
   }
-  
+
+  if (mainKeys.length === 0) {
+    return {
+      valid: false,
+      error: "Добавьте основную клавишу: Space, букву, цифру или F-клавишу",
+    };
+  }
+
+  if (mainKeys.length > 1) {
+    return {
+      valid: false,
+      error: "Только одна основная клавиша",
+    };
+  }
+
+  if (new Set(modifiers).size !== modifiers.length) {
+    return {
+      valid: false,
+      error: "Один и тот же модификатор нельзя использовать дважды",
+    };
+  }
+
+  if (isMacPlatform() && modifiers.includes("Control") && modifiers.includes("Alt")) {
+    return {
+      valid: false,
+      error: "На macOS сочетания Control + Option часто перехватываются VoiceOver. Выберите другое сочетание.",
+    };
+  }
+
+  if (modifiers.length === 0 && !isFunctionKey(mainKeys[0])) {
+    return {
+      valid: false,
+      error: "Без модификатора разрешены только F-клавиши",
+    };
+  }
+
   return { valid: true };
+}
+
+export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: string; error?: string } {
+  const validation = validateHotkey(hotkey);
+  if (!validation.valid) {
+    return validation;
+  }
+
+  const parts = hotkey
+    .split("+")
+    .map((part) => normalizeHotkeyPart(part))
+    .filter((part): part is string => part !== null);
+  const modifiers = MODIFIER_ORDER.filter((modifier) => parts.includes(modifier));
+  const mainKey = parts.find((part) => !isModifier(part));
+
+  if (!mainKey) {
+    return {
+      valid: false,
+      error: "Добавьте основную клавишу: Space, букву, цифру или F-клавишу",
+    };
+  }
+
+  return {
+    valid: true,
+    normalized: [...modifiers, mainKey].join("+"),
+  };
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
+  hotkey: DEFAULT_HOTKEY,
   language: "ru",
   doubleTapTimeout: 400,
   style: "classic",
@@ -129,6 +252,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
 
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
+    hotkey: typeof raw.hotkey === "string" ? normalizeHotkey(raw.hotkey).normalized : undefined,
     language: typeof raw.language === "string" ? raw.language : undefined,
     doubleTapTimeout: typeof raw.doubleTapTimeout === "number" ? raw.doubleTapTimeout : undefined,
     style: parseStyle(raw.style),
@@ -158,7 +282,18 @@ export async function getSettings(): Promise<AppSettings> {
 export async function saveSettings(settings: Partial<AppSettings>): Promise<void> {
   const store = await getStore();
   const current = await getSettings();
-  await store.set("settings", { ...current, ...settings });
+  const nextSettings = { ...current, ...settings };
+
+  if (typeof settings.hotkey === "string") {
+    const normalized = normalizeHotkey(settings.hotkey);
+    if (!normalized.valid || !normalized.normalized) {
+      throw new Error(normalized.error || "Неверный формат горячей клавиши");
+    }
+
+    nextSettings.hotkey = normalized.normalized;
+  }
+
+  await store.set("settings", nextSettings);
   await store.save();
 }
 

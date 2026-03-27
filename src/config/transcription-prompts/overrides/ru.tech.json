@@ -2,14 +2,44 @@
   "rules": [
     "Expect Russian developer speech with English technical terms embedded into Russian grammar, for example: 'сдеплоить', 'запушить', 'заасайнить'.",
     "In code, path, import, command, URL, package, or file-name context, convert spoken symbols into literal symbols when appropriate: 'слеш' -> '/', 'обратный слеш' -> '\\', 'точка' -> '.', 'двоеточие' -> ':', 'запятая' -> ',', 'дефис' or 'минус' -> '-', 'нижнее подчеркивание' -> '_', 'открывающая скобка' -> '(', 'закрывающая скобка' -> ')'.",
+    "In explicit code or command dictation, map spoken Russian names of developer constructs to their canonical English tokens when the intent is clear: 'консоль лог' -> 'console.log', 'импорт' -> 'import', 'экспорт' -> 'export', 'функция' -> 'function', 'конст' or 'константа' -> 'const', 'лет' -> 'let', 'ретерн' or 'верни' -> 'return'.",
+    "In JavaScript or TypeScript context, normalize common spoken API and platform names to their standard code spelling: 'джейсон парс' -> 'JSON.parse', 'документ квери селектор' -> 'document.querySelector', 'юз эффект' -> 'useEffect', 'юз стейт' -> 'useState'.",
+    "In terminal or git context, normalize common spoken commands to literal shell commands: 'гит пуш' -> 'git push', 'гит пул' -> 'git pull', 'гит статус' -> 'git status', 'эн пи эм инсталл' -> 'npm install', 'бан ран дев' -> 'bun run dev', 'карго чек' -> 'cargo check'.",
+    "In path, import, or file-name context, normalize common spoken developer aliases to their canonical token form: 'сурс' -> 'src', 'эй пи ай' -> 'api', 'джей эс' -> 'js', 'ти эс' -> 'ts', 'ти эс икс' -> 'tsx', 'джи эс икс' -> 'jsx', 'реакт' -> 'React', 'нода модьюлс' -> 'node_modules'.",
+    "If the user is clearly dictating code punctuation, also map spoken syntax phrases to literal tokens when appropriate: 'открывающая фигурная скобка' -> '{', 'закрывающая фигурная скобка' -> '}', 'стрелка' or 'равно больше' -> '=>', 'двойная кавычка' -> '\"', 'single quote' or 'одинарная кавычка' -> apostrophe ('), 'бэктик' -> '`'.",
     "Treat words such as 'src', 'api', 'tauri', 'import', 'const', 'function', 'cargo', 'bun', 'npm', 'git', package names, and file extensions as strong evidence of technical context.",
     "Never replace one spoken symbol with another in technical context. If the speaker said 'слеш', do not turn it into a dot.",
+    "When Russian prose explicitly introduces a code example, command, path, or identifier, it is allowed to switch that fragment into canonical English code even though the surrounding sentence stays Russian.",
     "In Russian tech mode, preserve expressive leading stutter forms unless smoothing them is necessary to correctly reconstruct a code token or file name."
   ],
   "examples": [
     {
       "raw": "сделал cleanup заметно бережнее в src slash tauri slash src slash ai dot rs",
       "cleaned": "Сделал cleanup заметно бережнее в src-tauri/src/ai.rs."
+    },
+    {
+      "raw": "добавь консоль лог для юзер айди",
+      "cleaned": "Добавь console.log(userId)."
+    },
+    {
+      "raw": "напиши импорт реакт фром реакт",
+      "cleaned": "Напиши import React from \"react\"."
+    },
+    {
+      "raw": "создай функцию fetch users",
+      "cleaned": "Создай function fetchUsers()."
+    },
+    {
+      "raw": "запусти гит статус потом гит пуш origin main",
+      "cleaned": "Запусти git status, потом git push origin main."
+    },
+    {
+      "raw": "открой src слеш components слеш app точка tsx",
+      "cleaned": "Открой src/components/App.tsx."
+    },
+    {
+      "raw": "напиши конст юзер айди равно джейсон точка парс открывающая скобка response точка data закрывающая скобка",
+      "cleaned": "Напиши const userId = JSON.parse(response.data)."
     }
   ]
 }

@@ -20,12 +20,18 @@ pub struct TranscribeResponse {
     pub cleaned: String,
 }
 
-fn build_whisper_prompt(language: &str) -> Option<&'static str> {
-    match language {
-        "ru" => Some(
+fn build_whisper_prompt(language: &str, style: &str) -> Option<&'static str> {
+    match (language, style) {
+        ("ru", "tech") => Some(
+            "Это русская developer dictation с английскими техническими терминами. Сохраняй и корректно распознавай code tokens и команды: console.log, function, const, import, export, git push, git status, npm install, bun run dev, cargo check, src, api, ts, tsx, jsx, JSON.parse, useEffect, useState. Если слышишь 'слеш', 'точка', 'дефис', 'нижнее подчеркивание', корректно восстанавливай технический фрагмент.",
+        ),
+        ("ru", _) => Some(
             "Это обычная русская речь. Корректно распознавай общеупотребительные слова: сегодня, сейчас, сегодняшний, также, тоже, ещё. Не дроби и не искажай слово 'сегодня'.",
         ),
-        "en" => Some(
+        ("en", "tech") => Some(
+            "This is developer dictation with code, commands, paths, and API names. Preserve technical tokens accurately: console.log, function, const, import, export, git push, npm install, bun run dev, cargo check, src, api, ts, tsx, jsx, JSON.parse, useEffect, useState.",
+        ),
+        ("en", _) => Some(
             "This is natural spoken English. Preserve common everyday words accurately and avoid splitting or distorting short common words.",
         ),
         _ => None,
@@ -48,6 +54,57 @@ fn is_known_whisper_hallucination(text: &str) -> bool {
 
     (has_subtitle_credit_pattern && has_proofreader_pattern)
         || (has_subtitle_credit_pattern && has_known_name)
+}
+
+#[derive(Deserialize, Debug)]
+struct WhisperSegment {
+    #[serde(default)]
+    avg_logprob: Option<f64>,
+    #[serde(default)]
+    no_speech_prob: Option<f64>,
+    #[serde(default)]
+    compression_ratio: Option<f64>,
+}
+
+#[derive(Deserialize, Debug)]
+struct WhisperResp {
+    text: String,
+    #[serde(default)]
+    duration: Option<f64>,
+    #[serde(default)]
+    segments: Vec<WhisperSegment>,
+}
+
+fn is_likely_short_uncertain_transcription(
+    text: &str,
+    duration_seconds: Option<f64>,
+    segments: &[WhisperSegment],
+) -> bool {
+    let normalized = text.trim();
+    if normalized.is_empty() {
+        return true;
+    }
+
+    let duration_seconds = duration_seconds.unwrap_or_default();
+    let short_audio = duration_seconds > 0.0 && duration_seconds <= 1.2;
+    let short_text = normalized.chars().count() <= 18;
+    let short_token_count = normalized.split_whitespace().count() <= 4;
+
+    if !short_audio || !short_text || !short_token_count || segments.is_empty() {
+        return false;
+    }
+
+    let all_high_no_speech = segments
+        .iter()
+        .all(|segment| segment.no_speech_prob.unwrap_or(0.0) >= 0.55);
+    let all_low_confidence = segments
+        .iter()
+        .all(|segment| segment.avg_logprob.unwrap_or(0.0) <= -0.9);
+    let any_high_compression = segments
+        .iter()
+        .any(|segment| segment.compression_ratio.unwrap_or(0.0) >= 2.2);
+
+    all_high_no_speech || all_low_confidence || any_high_compression
 }
 
 #[tauri::command]
@@ -102,9 +159,10 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 
     let mut form = multipart::Form::new()
         .part("file", file_part)
-        .text("model", "whisper-1");
+        .text("model", "whisper-1")
+        .text("response_format", "verbose_json");
 
-    if let Some(prompt) = build_whisper_prompt(&req.language) {
+    if let Some(prompt) = build_whisper_prompt(&req.language, &req.style) {
         form = form.text("prompt", prompt.to_string());
     }
 
@@ -134,10 +192,6 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         return Err(err);
     }
 
-    #[derive(Deserialize)]
-    struct WhisperResp {
-        text: String,
-    }
     let whisper_body: WhisperResp = whisper_res.json().await.map_err(|e| {
         let err = format!("Whisper response parse error: {}", e);
         logger::log_error("WHISPER", &err);
@@ -158,6 +212,21 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         logger::log_info(
             "WHISPER",
             &format!("Detected likely silence hallucination, dropping transcription: \"{}\"", raw),
+        );
+        return Ok(TranscribeResponse {
+            raw: String::new(),
+            cleaned: String::new(),
+        });
+    }
+
+    if is_likely_short_uncertain_transcription(&raw, whisper_body.duration, &whisper_body.segments)
+    {
+        logger::log_info(
+            "WHISPER",
+            &format!(
+                "Detected likely short uncertain transcription, dropping result: \"{}\" duration={:?} segments={:?}",
+                raw, whisper_body.duration, whisper_body.segments
+            ),
         );
         return Ok(TranscribeResponse {
             raw: String::new(),

@@ -1,15 +1,27 @@
 import { useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Home, Cpu, Sparkles, Sliders, LucideIcon } from "lucide-react";
 import { TitleBar } from "../../components/TitleBar";
 import { MainTab } from "./tabs/MainTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { SettingsTabs } from "./tabs/SettingsTabs";
 import { PermissionScreen } from "../../components/PermissionScreen";
+import { SETTINGS_NAVIGATE_EVENT, SettingsNavigatePayload } from "../../lib/hotkeyEvents";
 import { getPermissionsPassed, setPermissionsPassed, getHistory, HistoryEntry } from "../../lib/store";
 import { checkAllPermissions } from "../../lib/permissions";
 import { logError } from "../../lib/logger";
 
 type Tab = "main" | "settings" | "model" | "style";
+
+function resolveInitialTab(): Tab {
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+
+  if (requestedTab === "settings" || requestedTab === "model" || requestedTab === "style") {
+    return requestedTab;
+  }
+
+  return "main";
+}
 
 const TABS: { id: Tab; label: string; icon: LucideIcon; note: string }[] = [
   { id: "main", label: "Главное", icon: Home, note: "История записей" },
@@ -57,7 +69,8 @@ function SidebarLogo() {
 }
 
 export function SettingsApp() {
-  const [activeTab, setActiveTab] = useState<Tab>("main");
+  const [activeTab, setActiveTab] = useState<Tab>(resolveInitialTab);
+  const [navigationNonce, setNavigationNonce] = useState(0);
   const [showPermissions, setShowPermissions] = useState<boolean | null>(null);
   const [initialHistory, setInitialHistory] = useState<HistoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,6 +89,21 @@ export function SettingsApp() {
         setShowPermissions(false);
         setLoadError("Не удалось загрузить состояние приложения. Некоторые данные могут быть недоступны.");
       });
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<SettingsNavigatePayload>(SETTINGS_NAVIGATE_EVENT, ({ payload }) => {
+      setActiveTab(payload.tab);
+      setNavigationNonce((current) => current + 1);
+
+      requestAnimationFrame(() => {
+        document.querySelector("main")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      });
+    });
+
+    return () => {
+      unlisten.then((dispose) => dispose());
+    };
   }, []);
 
   const handlePermissionsComplete = async () => {
@@ -129,7 +157,7 @@ export function SettingsApp() {
                   {loadError}
                 </div>
               )}
-              <div key={activeTab} style={{ animation: "slide-down 0.18s ease" }}>
+              <div key={`${activeTab}:${navigationNonce}`} style={{ animation: "slide-down 0.18s ease" }}>
                 {activeTab === "main" && <MainTab initialHistory={initialHistory} />}
                 {activeTab === "settings" && <SettingsTab />}
                 {activeTab === "model" && <SettingsTabs type="model" />}

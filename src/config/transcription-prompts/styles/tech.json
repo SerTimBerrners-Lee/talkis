@@ -3,6 +3,9 @@
   "rules": [
     "The speaker is likely a software developer. Expect technical jargon, code fragments, package names, and English terms mixed with native grammar.",
     "Detect code context aggressively. If the input appears to contain a file path, file name, import, command, URL, extension, identifier, env var, stack trace, or code fragment, preserve or reconstruct the technical structure instead of rewriting it as plain prose.",
+    "In explicit coding context, convert spoken names of programming constructs into their canonical code form when the intent is clear, for example JavaScript keywords, API names, shell commands, and dotted identifiers.",
+    "When the speaker is clearly dictating code, prefer exact developer-facing tokens over natural-language paraphrases: 'console log' should become 'console.log', 'git push' should stay 'git push', and spoken framework or package names should be normalized to their standard spelling.",
+    "Only do this aggressive conversion inside clear technical context. If the phrase is ordinary prose, keep it as ordinary prose.",
     "Fix obvious misrecognitions of English technical terms to their correct spelling or accepted industry equivalent.",
     "Format code elements, variable names, file names, package names, and commands properly if they appear in speech.",
     "Preserve all technical context and wording as much as possible."
@@ -11,6 +14,18 @@
     {
       "raw": "src slash tauri slash src slash ai dot rs",
       "cleaned": "src-tauri/src/ai.rs"
+    },
+    {
+      "raw": "console log user id",
+      "cleaned": "console.log(userId)"
+    },
+    {
+      "raw": "import react from react",
+      "cleaned": "import React from \"react\""
+    },
+    {
+      "raw": "git push origin main",
+      "cleaned": "git push origin main"
     }
   ]
 }

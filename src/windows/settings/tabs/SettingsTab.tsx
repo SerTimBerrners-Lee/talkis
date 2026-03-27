@@ -1,8 +1,17 @@
 import { useState, useEffect, useRef } from "react";
-import { emit } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
+import {
+  HOTKEY_CAPTURE_STATE_EVENT,
+  HOTKEY_CHANGE_REQUEST_EVENT,
+  HOTKEY_REGISTRATION_RESULT_EVENT,
+  HotkeyRegistrationResultPayload,
+  NATIVE_HOTKEY_CAPTURE_EVENT,
+  NativeHotkeyCapturePayload,
+  SETTINGS_UPDATED_EVENT,
+} from "../../../lib/hotkeyEvents";
 import { logError, logInfo } from "../../../lib/logger";
 
 const LANGUAGES: { code: string; name: string; native: string }[] = [
@@ -89,6 +98,8 @@ const LANGUAGES: { code: string; name: string; native: string }[] = [
   { code: "zu",   name: "Зулу",            native: "isiZulu" },
 ];
 
+type HotkeyFeedbackTone = "idle" | "success" | "error";
+
 export function SettingsTab() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
@@ -104,14 +115,136 @@ export function SettingsTab() {
   const micRef = useRef<HTMLDivElement>(null);
 
   const settingsRef = useRef<AppSettings | null>(null);
+  const hotkeyButtonRef = useRef<HTMLDivElement>(null);
+  const pendingHotkeyRef = useRef<string | null>(null);
+  const hotkeyFeedbackResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [isHotkeyCaptureActive, setIsHotkeyCaptureActive] = useState(false);
+  const [isHotkeySubmitting, setIsHotkeySubmitting] = useState(false);
+  const [hotkeyDraft, setHotkeyDraft] = useState<string | null>(null);
+  const [hotkeyFeedback, setHotkeyFeedback] = useState("Нажмите на поле и введите новую комбинацию. Esc отменяет ввод.");
+  const [hotkeyFeedbackTone, setHotkeyFeedbackTone] = useState<HotkeyFeedbackTone>("idle");
 
   type MicAvailabilityState = "ready" | "missing-selected" | "permission-needed" | "empty";
+
+  const clearHotkeyFeedbackResetTimer = () => {
+    if (!hotkeyFeedbackResetTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(hotkeyFeedbackResetTimerRef.current);
+    hotkeyFeedbackResetTimerRef.current = null;
+  };
 
   useEffect(() => {
     getSettings().then(s => {
       setSettings(s);
       settingsRef.current = s;
     });
+  }, []);
+
+  useEffect(() => {
+    const unlistenHotkeyResult = listen<HotkeyRegistrationResultPayload>(
+      HOTKEY_REGISTRATION_RESULT_EVENT,
+      async ({ payload }) => {
+        if (!pendingHotkeyRef.current || payload.requestedHotkey !== pendingHotkeyRef.current) {
+          return;
+        }
+
+        pendingHotkeyRef.current = null;
+        setIsHotkeySubmitting(false);
+        setHotkeyDraft(null);
+
+        if (!payload.success) {
+          setHotkeyFeedbackTone("error");
+          setHotkeyFeedback(payload.message || "Не удалось применить новую комбинацию.");
+          return;
+        }
+
+        const latestSettings = await getSettings();
+        settingsRef.current = latestSettings;
+        setSettings(latestSettings);
+        setHotkeyFeedbackTone("success");
+        setHotkeyFeedback("Новая горячая клавиша сохранена и уже работает.");
+        clearHotkeyFeedbackResetTimer();
+        hotkeyFeedbackResetTimerRef.current = setTimeout(() => {
+          setHotkeyFeedbackTone("idle");
+          setHotkeyFeedback("Нажмите на поле, чтобы изменить комбинацию снова.");
+          hotkeyFeedbackResetTimerRef.current = null;
+        }, 2200);
+      },
+    );
+
+    const unlistenNativeHotkeyCapture = listen<NativeHotkeyCapturePayload>(
+      NATIVE_HOTKEY_CAPTURE_EVENT,
+      async ({ payload }) => {
+        if (payload.status === "listening") {
+          setIsHotkeyCaptureActive(true);
+          setIsHotkeySubmitting(false);
+          setHotkeyDraft(null);
+          setHotkeyFeedbackTone("idle");
+          setHotkeyFeedback(payload.message || "Нажмите новую комбинацию.");
+          return;
+        }
+
+        if (payload.status === "preview") {
+          setHotkeyDraft(payload.hotkey || null);
+          setHotkeyFeedbackTone("idle");
+          setHotkeyFeedback(payload.message || "Отпустите комбинацию, чтобы применить.");
+          return;
+        }
+
+        if (payload.status === "cancelled") {
+          await invoke("stop_native_hotkey_capture").catch(() => null);
+          await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
+          setIsHotkeyCaptureActive(false);
+          setHotkeyDraft(null);
+          setHotkeyFeedbackTone("idle");
+          setHotkeyFeedback(payload.message || "Ввод отменен.");
+          return;
+        }
+
+        if (payload.status !== "completed") {
+          return;
+        }
+
+        const candidate = payload.hotkey?.trim();
+        await invoke("stop_native_hotkey_capture").catch(() => null);
+        await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
+
+        if (!candidate) {
+          setIsHotkeyCaptureActive(false);
+          setHotkeyDraft(null);
+          setHotkeyFeedbackTone("error");
+          setHotkeyFeedback("Не удалось распознать комбинацию.");
+          return;
+        }
+
+        pendingHotkeyRef.current = candidate;
+        setIsHotkeyCaptureActive(false);
+        setIsHotkeySubmitting(true);
+        setHotkeyDraft(candidate);
+        setHotkeyFeedbackTone("idle");
+        setHotkeyFeedback("Проверяем, свободна ли эта комбинация...");
+
+        emit(HOTKEY_CHANGE_REQUEST_EVENT, { hotkey: candidate }).catch((error) => {
+          pendingHotkeyRef.current = null;
+          setIsHotkeySubmitting(false);
+          setHotkeyDraft(null);
+          setHotkeyFeedbackTone("error");
+          setHotkeyFeedback("Не удалось отправить новую комбинацию на проверку.");
+          void logError("SETTINGS", `Failed to emit hotkey change request: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      },
+    );
+
+    return () => {
+      unlistenHotkeyResult.then((unlisten) => unlisten());
+      unlistenNativeHotkeyCapture.then((unlisten) => unlisten());
+      void emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
+      void invoke("stop_native_hotkey_capture").catch(() => null);
+      clearHotkeyFeedbackResetTimer();
+    };
   }, []);
 
   useEffect(() => {
@@ -198,10 +331,13 @@ export function SettingsTab() {
     const handler = (e: MouseEvent) => {
       if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
       if (micRef.current && !micRef.current.contains(e.target as Node)) setMicOpen(false);
+      if (isHotkeyCaptureActive && hotkeyButtonRef.current && !hotkeyButtonRef.current.contains(e.target as Node)) {
+        void stopHotkeyCapture("Ввод отменен. Текущая комбинация сохранена.");
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [isHotkeyCaptureActive]);
 
   const update = async (patch: Partial<AppSettings>): Promise<AppSettings | null> => {
     if (!settingsRef.current) return null;
@@ -213,6 +349,73 @@ export function SettingsTab() {
       void logError("SETTINGS", `Failed to emit settings update event: ${e instanceof Error ? e.message : String(e)}`);
     });
     return s;
+  };
+
+  const startHotkeyCapture = async (): Promise<void> => {
+    if (isHotkeySubmitting || isHotkeyCaptureActive) {
+      return;
+    }
+
+    clearHotkeyFeedbackResetTimer();
+    pendingHotkeyRef.current = null;
+    setIsHotkeyCaptureActive(true);
+    setHotkeyDraft(null);
+    setHotkeyFeedbackTone("idle");
+    setHotkeyFeedback("Запускаем запись новой комбинации...");
+
+    try {
+      await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: true });
+      await invoke("start_native_hotkey_capture");
+    } catch (error) {
+      await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
+      setIsHotkeyCaptureActive(false);
+      setHotkeyDraft(null);
+      setHotkeyFeedbackTone("error");
+      setHotkeyFeedback("Не удалось запустить запись горячей клавиши.");
+      void logError("SETTINGS", `Failed to start native hotkey capture: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const stopHotkeyCapture = async (message?: string): Promise<void> => {
+    pendingHotkeyRef.current = null;
+    setIsHotkeyCaptureActive(false);
+    setHotkeyDraft(null);
+
+    try {
+      await invoke("stop_native_hotkey_capture");
+    } catch (error) {
+      void logError("SETTINGS", `Failed to stop native hotkey capture: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
+
+    if (message) {
+      setHotkeyFeedbackTone("idle");
+      setHotkeyFeedback(message);
+    }
+  };
+
+  const handleHotkeyCaptureSurfaceKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (isHotkeyCaptureActive || isHotkeySubmitting) {
+      return;
+    }
+
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    void startHotkeyCapture();
+  };
+
+  const handleHotkeyCaptureSurfaceMouseDown = (event: React.MouseEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+
+    if (isHotkeyCaptureActive || isHotkeySubmitting) {
+      return;
+    }
+
+    void startHotkeyCapture();
   };
 
   const getMicrophoneLabel = (mic: MediaDeviceInfo, index: number): string => {
@@ -234,6 +437,16 @@ export function SettingsTab() {
     : settings.micId
       ? "Системный микрофон по умолчанию"
       : "Системный микрофон по умолчанию";
+  const hotkeyDisplayValue = hotkeyDraft
+    ? formatHotkeyLabel(hotkeyDraft)
+    : isHotkeyCaptureActive
+      ? "Нажмите сочетание"
+      : formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY);
+  const hotkeyFeedbackColor = hotkeyFeedbackTone === "error"
+    ? "#b42318"
+    : hotkeyFeedbackTone === "success"
+      ? "#027a48"
+      : "var(--text-mid)";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -347,16 +560,44 @@ export function SettingsTab() {
       </div>
 
       <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", alignItems: "start", gap: 16 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Горячая клавиша</div>
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65, marginTop: 6 }}>
-              Комбинация фиксированная для всех пользователей и больше не меняется в настройках.
+              Нажмите на поле справа и введите новую комбинацию. Если сочетание занято, оставим предыдущую клавишу.
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-hi)", fontSize: 12, fontWeight: 700, letterSpacing: "0.02em", whiteSpace: "nowrap" }}>
-            <span style={{ color: "var(--text-low)", letterSpacing: "0.08em" }}>Комбинация</span>
-            <span>{formatHotkeyLabel(DEFAULT_HOTKEY)}</span>
+          <div
+            ref={hotkeyButtonRef}
+            role="button"
+            tabIndex={0}
+            aria-disabled={isHotkeySubmitting}
+            onMouseDown={handleHotkeyCaptureSurfaceMouseDown}
+            onKeyDown={handleHotkeyCaptureSurfaceKeyDown}
+            className="btn"
+            style={{
+              width: "100%",
+              minHeight: 46,
+              justifyContent: "space-between",
+              gap: 8,
+              border: isHotkeyCaptureActive ? "1px solid rgba(15,118,110,0.28)" : undefined,
+              boxShadow: isHotkeyCaptureActive ? "0 0 0 4px rgba(15,118,110,0.08)" : undefined,
+              opacity: isHotkeySubmitting ? 0.8 : 1,
+              cursor: isHotkeySubmitting ? "wait" : "pointer",
+            }}
+          >
+            <span style={{ color: "var(--text-hi)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {hotkeyDisplayValue}
+            </span>
+            <span style={{ color: "var(--text-low)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>
+              {isHotkeySubmitting ? "Проверка" : isHotkeyCaptureActive ? "Запись" : "Изменить"}
+            </span>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 13, color: hotkeyFeedbackColor, lineHeight: 1.6 }}>{hotkeyFeedback}</div>
+          <div style={{ fontSize: 12, color: "var(--text-low)", whiteSpace: "nowrap" }}>
+            Текущая: {formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY)}
           </div>
         </div>
       </div>

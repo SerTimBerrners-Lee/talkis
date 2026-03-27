@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { clearHistory, DEFAULT_HOTKEY, deleteHistoryEntry, formatHotkeyLabel, getHistory, getSettings, HistoryEntry } from "../../../lib/store";
 import { AlertCircle, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
-import { HISTORY_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
+import { HISTORY_UPDATED_EVENT, SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 import { retryHistoryEntry } from "../../widget/services/transcriptionPipeline";
 
 interface MainTabProps {
@@ -31,17 +31,21 @@ function formatDayLabel(timestamp: string): string {
     weekday: "long",
   });
 }
-
-const HOTKEY_LABEL = formatHotkeyLabel(DEFAULT_HOTKEY);
-
 export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [history, setHistory] = useState<HistoryEntry[]>(initialHistory);
   const [copied, setCopied] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [retrySucceededId, setRetrySucceededId] = useState<string | null>(null);
+  const [hotkeyLabel, setHotkeyLabel] = useState(formatHotkeyLabel(DEFAULT_HOTKEY));
 
   useEffect(() => {
+    const syncHotkeyLabel = async () => {
+      const settings = await getSettings();
+      setHotkeyLabel(formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY));
+    };
+
     getHistory().then(setHistory);
+    void syncHotkeyLabel();
 
     const unlistenHistory = listen<HistoryEntry>(HISTORY_UPDATED_EVENT, (event) => {
       setHistory((current) => {
@@ -55,8 +59,13 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
       });
     });
 
+    const unlistenSettings = listen(SETTINGS_UPDATED_EVENT, () => {
+      void syncHotkeyLabel();
+    });
+
     return () => {
       unlistenHistory.then((unlisten) => unlisten());
+      unlistenSettings.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -154,7 +163,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             }}
           >
             <span style={{ color: "var(--text-low)", letterSpacing: "0.08em" }}>Комбинация</span>
-            <span>{HOTKEY_LABEL}</span>
+            <span>{hotkeyLabel}</span>
           </div>
         </div>
       </section>
@@ -168,7 +177,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {history.length > 0
                 ? `Последние записи доступны для копирования и удаления.`
-                : `Записей пока нет. Удерживайте ${HOTKEY_LABEL} для записи.`}
+                : `Записей пока нет. Удерживайте ${hotkeyLabel} для записи.`}
             </div>
           </div>
 
@@ -201,7 +210,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
               </div>
               <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
               <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
-                Записей пока нет. Удерживайте <b>{HOTKEY_LABEL}</b> для записи.
+                Записей пока нет. Удерживайте <b>{hotkeyLabel}</b> для записи.
               </p>
             </div>
           ) : (

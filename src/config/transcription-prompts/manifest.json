@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "defaultLanguage": "default",
   "defaultStyle": "classic",
   "baseFile": "base/common.json",
@@ -23,7 +23,7 @@
     "tech": {
       "file": "styles/tech.json",
       "uiTitle": "Разработка",
-      "uiDescription": "Особый упор на терминологию, code-aware обработку и IT-контекст. Пути, команды и имена файлов сохраняются в техническом виде."
+      "uiDescription": "Особый упор на терминологию, code-aware обработку и developer dictation. Команды, пути, API и фразы вроде 'консоль лог' стараются превращаться в канонический код."
     }
   },
   "overrides": {

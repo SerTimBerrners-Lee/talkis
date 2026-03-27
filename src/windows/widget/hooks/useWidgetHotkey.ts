@@ -1,11 +1,19 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { register, unregister, ShortcutEvent } from "@tauri-apps/plugin-global-shortcut";
 
-import { AppSettings, DEFAULT_HOTKEY, getSettings, validateHotkey } from "../../../lib/store";
+import { AppSettings, DEFAULT_HOTKEY, getSettings, normalizeHotkey, saveSettings } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
-import { SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
+import {
+  HOTKEY_CAPTURE_STATE_EVENT,
+  HOTKEY_CHANGE_REQUEST_EVENT,
+  HotkeyCaptureStatePayload,
+  HOTKEY_REGISTRATION_RESULT_EVENT,
+  HotkeyChangeRequestPayload,
+  HotkeyRegistrationResultPayload,
+  SETTINGS_UPDATED_EVENT,
+} from "../../../lib/hotkeyEvents";
 import { WidgetState } from "../widgetConstants";
 import { evaluateHotkeyFsm, HotkeyShortcutState } from "../services/hotkeyFsm";
 
@@ -30,27 +38,6 @@ interface UseWidgetHotkeyParams {
   showError: (message: string) => void;
 }
 
-function normalizeHotkey(rawHotkey: string): { valid: boolean; normalized?: string; error?: string } {
-  const validation = validateHotkey(rawHotkey);
-  if (!validation.valid) {
-    return { valid: false, error: validation.error };
-  }
-
-  const normalized = rawHotkey
-    .split("+")
-    .map((part) => {
-      const p = part.trim().toLowerCase();
-      if (p === "ctrl") return "Control";
-      if (p === "alt" || p === "option") return "Alt";
-      if (p === "shift") return "Shift";
-      if (p === "cmd" || p === "command" || p === "meta") return "Command";
-      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
-    })
-    .join("+");
-
-  return { valid: true, normalized };
-}
-
 export function useWidgetHotkey({
   settingsLoaded,
   settings,
@@ -71,6 +58,11 @@ export function useWidgetHotkey({
   stopAndProcess,
   showError,
 }: UseWidgetHotkeyParams): void {
+  const attemptHotkeyRegistrationRef = useRef<(rawHotkey: string) => Promise<HotkeyRegistrationResultPayload>>(
+    attemptHotkeyRegistrationPlaceholder,
+  );
+  const isHotkeyCaptureActiveRef = useRef(false);
+
   const unregisterCurrentHotkey = useCallback(async () => {
     const currentHotkey = registeredHotkeyRef.current;
     if (!currentHotkey) {
@@ -84,6 +76,14 @@ export function useWidgetHotkey({
 
   const handleHotkeyPress = useCallback(
     (event: ShortcutEvent) => {
+      if (isHotkeyCaptureActiveRef.current) {
+        clearReleaseStopTimer();
+        hotkeyHeldRef.current = false;
+        pendingStopAfterStartRef.current = false;
+        suppressNextReleaseRef.current = false;
+        return;
+      }
+
       const currentState = stateRef.current;
       logInfo("HOTKEY", `Triggered! state=${currentState}, shortcutState=${event.state}`);
 
@@ -180,6 +180,58 @@ export function useWidgetHotkey({
     ],
   );
 
+  const attemptHotkeyRegistration = useCallback(async (rawHotkey: string): Promise<HotkeyRegistrationResultPayload> => {
+    const normalized = normalizeHotkey(rawHotkey);
+    if (!normalized.valid || !normalized.normalized) {
+      return {
+        success: false,
+        requestedHotkey: rawHotkey,
+        activeHotkey: registeredHotkeyRef.current ?? settingsRef.current?.hotkey ?? DEFAULT_HOTKEY,
+        message: normalized.error || "Неверный формат горячей клавиши",
+      };
+    }
+
+    const nextHotkey = normalized.normalized;
+    const currentHotkey = registeredHotkeyRef.current;
+    if (currentHotkey === nextHotkey) {
+      return {
+        success: true,
+        requestedHotkey: nextHotkey,
+        activeHotkey: nextHotkey,
+      };
+    }
+
+    logInfo("HOTKEY", `Attempting to register: ${nextHotkey}`);
+
+    try {
+      await register(nextHotkey, handleHotkeyPress);
+
+      if (currentHotkey && currentHotkey !== nextHotkey) {
+        logInfo("HOTKEY", `Unregistering previous hotkey: ${currentHotkey}`);
+        await unregister(currentHotkey).catch((error) => {
+          logError("HOTKEY", `Failed to unregister previous hotkey: ${error}`);
+        });
+      }
+
+      registeredHotkeyRef.current = nextHotkey;
+      logInfo("HOTKEY", `Registered successfully: ${nextHotkey}`);
+
+      return {
+        success: true,
+        requestedHotkey: nextHotkey,
+        activeHotkey: nextHotkey,
+      };
+    } catch (error) {
+      logError("HOTKEY", `Failed to register ${nextHotkey}: ${error}`);
+      return {
+        success: false,
+        requestedHotkey: nextHotkey,
+        activeHotkey: currentHotkey ?? settingsRef.current?.hotkey ?? DEFAULT_HOTKEY,
+        message: `Не удалось зарегистрировать горячую клавишу "${nextHotkey}". Возможно, сочетание занято другим приложением.`,
+      };
+    }
+  }, [handleHotkeyPress, registeredHotkeyRef, settingsRef]);
+
   const registerCurrentHotkey = useCallback(async () => {
     const activeSettings = settingsRef.current;
     if (!settingsLoaded || !activeSettings) {
@@ -187,48 +239,77 @@ export function useWidgetHotkey({
       return;
     }
 
-    const rawHotkey = DEFAULT_HOTKEY;
-    const normalized = normalizeHotkey(rawHotkey);
-    if (!normalized.valid || !normalized.normalized) {
-      logError("HOTKEY", `Invalid hotkey format: ${rawHotkey} - ${normalized.error}`);
-      showError(`Неверный формат горячей клавиши: ${normalized.error}. Откройте настройки и задайте корректную комбинацию.`);
-      return;
-    }
-
-    await unregisterCurrentHotkey();
-
-    logInfo("HOTKEY", `Attempting to register: ${normalized.normalized}`);
-    try {
-      await register(normalized.normalized, handleHotkeyPress);
-      registeredHotkeyRef.current = normalized.normalized;
-      logInfo("HOTKEY", `Registered successfully: ${normalized.normalized}`);
-    } catch (error) {
-      logError("HOTKEY", `Failed to register: ${error}`);
-      showError(`Не удалось зарегистрировать горячую клавишу "${normalized.normalized}". Возможно, сочетание занято другим приложением.`);
+    const result = await attemptHotkeyRegistration(activeSettings.hotkey || DEFAULT_HOTKEY);
+    if (!result.success) {
+      showError(result.message || "Не удалось зарегистрировать горячую клавишу.");
     }
   }, [
-    handleHotkeyPress,
-    registeredHotkeyRef,
+    attemptHotkeyRegistration,
     settingsLoaded,
     settingsRef,
     showError,
-    unregisterCurrentHotkey,
   ]);
 
   useEffect(() => {
     void registerCurrentHotkey();
-  }, [registerCurrentHotkey, settings]);
+  }, [registerCurrentHotkey, settings?.hotkey]);
+
+  useEffect(() => {
+    attemptHotkeyRegistrationRef.current = attemptHotkeyRegistration;
+  }, [attemptHotkeyRegistration]);
 
   useEffect(() => {
     const unlistenSettings = listen(SETTINGS_UPDATED_EVENT, async () => {
       const latestSettings = await getSettings();
       setSettings(latestSettings);
-      await registerCurrentHotkey();
+      settingsRef.current = latestSettings;
+    });
+
+    const unlistenCaptureState = listen<HotkeyCaptureStatePayload>(HOTKEY_CAPTURE_STATE_EVENT, ({ payload }) => {
+      isHotkeyCaptureActiveRef.current = payload.active;
+
+      if (!payload.active) {
+        return;
+      }
+
+      clearReleaseStopTimer();
+      hotkeyHeldRef.current = false;
+      pendingStopAfterStartRef.current = false;
+      suppressNextReleaseRef.current = false;
+    });
+
+    const unlistenHotkeyRequests = listen<HotkeyChangeRequestPayload>(HOTKEY_CHANGE_REQUEST_EVENT, async ({ payload }) => {
+      const result = await attemptHotkeyRegistrationRef.current(payload.hotkey);
+
+      if (result.success) {
+        const updatedSettings = {
+          ...(settingsRef.current ?? (await getSettings())),
+          hotkey: result.activeHotkey,
+        };
+
+        await saveSettings({ hotkey: result.activeHotkey });
+        settingsRef.current = updatedSettings;
+        setSettings(updatedSettings);
+
+        emit(SETTINGS_UPDATED_EVENT).catch((error) => {
+          logError("HOTKEY", `Failed to emit settings update event: ${error}`);
+        });
+      }
+
+      emit(HOTKEY_REGISTRATION_RESULT_EVENT, result).catch((error) => {
+        logError("HOTKEY", `Failed to emit hotkey registration result: ${error}`);
+      });
     });
 
     return () => {
       unlistenSettings.then((unlisten) => unlisten());
+      unlistenCaptureState.then((unlisten) => unlisten());
+      unlistenHotkeyRequests.then((unlisten) => unlisten());
       void unregisterCurrentHotkey();
     };
-  }, [registerCurrentHotkey, setSettings, unregisterCurrentHotkey]);
+  }, [clearReleaseStopTimer, hotkeyHeldRef, pendingStopAfterStartRef, setSettings, settingsRef, suppressNextReleaseRef, unregisterCurrentHotkey]);
+}
+
+async function attemptHotkeyRegistrationPlaceholder(): Promise<HotkeyRegistrationResultPayload> {
+  throw new Error("attemptHotkeyRegistration called before initialization");
 }

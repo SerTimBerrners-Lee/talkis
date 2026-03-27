@@ -3,7 +3,6 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { saveWidgetPosition } from "../../lib/store";
 import { Waveform } from "../../components/Waveform";
 import { useWidgetController } from "./hooks/useWidgetController";
 import { WIDGET_SHELL_HEIGHT, WIDGET_SHELL_WIDTH } from "./widgetConstants";
@@ -39,8 +38,6 @@ export function Widget() {
 
     try {
       await widgetWindow.startDragging();
-      const position = await widgetWindow.outerPosition();
-      await saveWidgetPosition({ x: position.x, y: position.y });
     } catch {
       dragTriggeredRef.current = false;
     }
@@ -133,12 +130,11 @@ function WidgetCoreShell({ children }: { children?: ReactNode }) {
   return (
     <div
       style={{
-        width: 50,
-        height: 18,
+        width: "100%",
+        height: "100%",
         borderRadius: 999,
         background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(245,241,234,0.98) 100%)",
         border: "1px solid rgba(0,0,0,0.1)",
-        boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
         backdropFilter: "blur(18px)",
         WebkitBackdropFilter: "blur(18px)",
         display: "flex",

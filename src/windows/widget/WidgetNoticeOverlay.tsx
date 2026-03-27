@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Bell } from "lucide-react";
 
-import { WIDGET_NOTICE_EVENT, type WidgetNoticeState } from "./widgetConstants";
+import { NOTICE_AREA_HEIGHT, NOTICE_WIDGET_WIDTH, WIDGET_NOTICE_EVENT, type WidgetNoticeState } from "./widgetConstants";
 
 export function WidgetNoticeOverlay(): ReactElement | null {
   const [notice, setNotice] = useState<WidgetNoticeState | null>(null);
@@ -31,6 +32,11 @@ export function WidgetNoticeOverlay(): ReactElement | null {
 
   const Icon = notice.tone === "error" ? AlertCircle : Bell;
 
+  const handleNoticeClick = async () => {
+    await invoke("open_settings_tab", { tab: "main" });
+    await invoke("hide_widget_notice");
+  };
+
   return (
     <div
       style={{
@@ -45,10 +51,23 @@ export function WidgetNoticeOverlay(): ReactElement | null {
       }}
     >
       <div
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          void handleNoticeClick();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          void handleNoticeClick();
+        }}
         style={{
           position: "relative",
-          width: 212,
-          minHeight: 52,
+          width: NOTICE_WIDGET_WIDTH,
+          minHeight: NOTICE_AREA_HEIGHT,
           padding: "10px 34px 10px 14px",
           borderRadius: 16,
           fontSize: 11,
@@ -57,11 +76,12 @@ export function WidgetNoticeOverlay(): ReactElement | null {
           color: "rgba(0,0,0,0.82)",
           background: "linear-gradient(180deg, rgba(252,251,248,0.98) 0%, rgba(244,239,231,0.96) 100%)",
           border: "1px solid rgba(0,0,0,0.08)",
-          boxShadow: "0 14px 28px rgba(0,0,0,0.12)",
           backdropFilter: "blur(18px)",
           WebkitBackdropFilter: "blur(18px)",
           animation: "widget-notice-in 0.22s cubic-bezier(0.22, 1, 0.36, 1)",
           overflow: "hidden",
+          pointerEvents: "auto",
+          cursor: "pointer",
         }}
       >
         <div
