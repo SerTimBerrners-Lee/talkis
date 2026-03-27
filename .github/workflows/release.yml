@@ -41,7 +41,7 @@ jobs:
         run: bun run tauri build
 
       - name: Post-process macOS release artifacts
-        run: bash scripts/postprocess-macos-release.sh "${{ env.RELEASE_TAG#v }}"
+        run: bash scripts/postprocess-macos-release.sh "${RELEASE_TAG#v}"
 
       - name: Archive macOS app bundle
         run: ditto -c -k --sequesterRsrc --keepParent "/tmp/talk-flow-target/release/bundle/macos/Talk Flow.app" "Talk Flow-${{ env.RELEASE_TAG }}-macos.zip"
