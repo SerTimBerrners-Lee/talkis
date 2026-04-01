@@ -1,5 +1,6 @@
 {
   "displayName": "English",
+  "whisperHint": "This is natural spoken English. Preserve common everyday words accurately and avoid splitting or distorting short common words.",
   "fillerExamples": ["um", "uh", "like", "you know"],
   "rules": [
     "Preserve short trailing qualifiers and colloquial speech if they may carry meaning in context."

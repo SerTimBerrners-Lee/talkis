@@ -12,7 +12,7 @@ export async function checkMicrophonePermission(): Promise<PermissionStatus> {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(t => t.stop());
     return 'granted';
-  } catch (e) {
+  } catch {
     return 'denied';
   }
 }

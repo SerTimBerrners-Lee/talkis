@@ -1,5 +1,6 @@
 {
   "promptTitle": "TECH & DEV STYLE",
+  "whisperHintSuffix": "Сохраняй и корректно распознавай code tokens и команды: console.log, function, const, import, export, git push, git status, npm install, bun run dev, cargo check, src, api, ts, tsx, jsx, JSON.parse, useEffect, useState. Если слышишь 'слеш', 'точка', 'дефис', 'нижнее подчеркивание', корректно восстанавливай технический фрагмент.",
   "rules": [
     "The speaker is likely a software developer. Expect technical jargon, code fragments, package names, and English terms mixed with native grammar.",
     "Detect code context aggressively. If the input appears to contain a file path, file name, import, command, URL, extension, identifier, env var, stack trace, or code fragment, preserve or reconstruct the technical structure instead of rewriting it as plain prose.",
@@ -10,6 +11,7 @@
     "Format code elements, variable names, file names, package names, and commands properly if they appear in speech.",
     "Preserve all technical context and wording as much as possible."
   ],
+  "temperature": 0.15,
   "examples": [
     {
       "raw": "src slash tauri slash src slash ai dot rs",

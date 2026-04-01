@@ -26,6 +26,8 @@ export interface AppSettings {
   llmEndpoint: string;
   /** If true, user provides their own API key. If false, uses subscription */
   useOwnKey: boolean;
+  /** Device auth token for TalkFlow Cloud */
+  deviceToken: string;
 }
 
 export interface WidgetPosition {
@@ -233,6 +235,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   whisperEndpoint: "",
   llmEndpoint: "",
   useOwnKey: true,
+  deviceToken: "",
 };
 
 function parseStyle(value: unknown): AppSettings["style"] | undefined {

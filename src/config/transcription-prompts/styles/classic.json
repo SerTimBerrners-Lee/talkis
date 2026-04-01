@@ -5,5 +5,6 @@
     "Do not rewrite for style, do not shorten fragments, and do not remove content words unless they are unmistakable filler.",
     "Prefer preserving expressive disfluencies over smoothing them away when they may be part of the speaker's manner of speaking."
   ],
+  "temperature": 0.0,
   "examples": []
 }

@@ -1,5 +1,6 @@
 {
   "displayName": "Russian",
+  "whisperHint": "Это обычная русская речь. Корректно распознавай общеупотребительные слова: сегодня, сейчас, сегодняшний, также, тоже, ещё. Не дроби и не искажай слово 'сегодня'.",
   "fillerExamples": ["um", "uh", "like", "ну", "э", "короче", "вот", "типа"],
   "rules": [
     "Preserve meaningful Russian particles, discourse markers, and short service words unless they are unmistakably filler.",

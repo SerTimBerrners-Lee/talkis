@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import { AppSettings } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
+import { formatErrorMessage } from "../../../lib/utils";
 import {
   IDLE_WIDGET_HEIGHT,
   IDLE_WIDGET_WIDTH,
@@ -11,22 +12,16 @@ import {
   RECORDING_WIDGET_HEIGHT,
   RECORDING_WIDGET_WIDTH,
   WidgetNoticeTone,
-  WidgetState,
 } from "../widgetConstants";
 import { createRecordingRuntimeController } from "../services/recordingRuntime";
 import { processRecordingBlob } from "../services/transcriptionPipeline";
+import type { WidgetAction, WidgetMachineState } from "../services/widgetMachine";
 
 interface UseWidgetRecordingParams {
   settings: AppSettings | null;
-  setState: Dispatch<SetStateAction<WidgetState>>;
+  machineRef: MutableRefObject<WidgetMachineState>;
+  dispatch: (action: WidgetAction) => void;
   setStream: Dispatch<SetStateAction<MediaStream | null>>;
-  setLockedRecordingMode: (value: boolean) => void;
-  lockedRecordingRef: MutableRefObject<boolean>;
-  hotkeyHeldRef: MutableRefObject<boolean>;
-  recordingActiveRef: MutableRefObject<boolean>;
-  pendingStopAfterStartRef: MutableRefObject<boolean>;
-  recordingStartRef: MutableRefObject<number>;
-  clearReleaseStopTimer: () => void;
   resizeWidget: (width: number, height: number) => Promise<void>;
   showError: (message: string) => void;
   showNotice: (message: string, tone?: WidgetNoticeTone) => void;
@@ -36,22 +31,6 @@ interface UseWidgetRecordingParams {
 interface UseWidgetRecordingResult {
   startRecording: () => Promise<void>;
   stopAndProcess: () => Promise<void>;
-}
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === "string") {
-    return error;
-  }
-
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
 }
 
 function getAudioConstraints(micId: string): MediaTrackConstraints | true {
@@ -69,10 +48,6 @@ function getAudioConstraints(micId: string): MediaTrackConstraints | true {
   return constraints;
 }
 
-function stopStreamTracks(stream: MediaStream): void {
-  stream.getTracks().forEach((track) => track.stop());
-}
-
 async function waitForTrackReady(stream: MediaStream, timeoutMs: number): Promise<void> {
   const [track] = stream.getAudioTracks();
   if (!track || (!track.muted && track.readyState === "live")) {
@@ -83,10 +58,7 @@ async function waitForTrackReady(stream: MediaStream, timeoutMs: number): Promis
     let settled = false;
 
     const finish = () => {
-      if (settled) {
-        return;
-      }
-
+      if (settled) return;
       settled = true;
       track.removeEventListener("unmute", finish);
       clearTimeout(timer);
@@ -100,15 +72,9 @@ async function waitForTrackReady(stream: MediaStream, timeoutMs: number): Promis
 
 export function useWidgetRecording({
   settings,
-  setState,
+  machineRef,
+  dispatch,
   setStream,
-  setLockedRecordingMode,
-  lockedRecordingRef,
-  hotkeyHeldRef,
-  recordingActiveRef,
-  pendingStopAfterStartRef,
-  recordingStartRef,
-  clearReleaseStopTimer,
   resizeWidget,
   showError,
   showNotice,
@@ -116,43 +82,13 @@ export function useWidgetRecording({
 }: UseWidgetRecordingParams): UseWidgetRecordingResult {
   const runtimeRef = useRef(createRecordingRuntimeController());
 
-  useEffect(() => {
-    const micId = settings?.micId;
-    if (micId === undefined) {
-      return;
-    }
+  // NOTE: Microphone pre-warm was removed because on macOS, calling
+  // getUserMedia activates an audio session that ducks other app volumes.
+  // The mic is now acquired only when recording actually starts.
 
-    let disposed = false;
-
-    const prewarmMicrophone = async () => {
-      try {
-        const warmupStream = await navigator.mediaDevices.getUserMedia({
-          audio: getAudioConstraints(micId),
-        });
-
-        stopStreamTracks(warmupStream);
-
-        if (!disposed) {
-          logInfo("RECORDING", "Microphone pre-initialized");
-        }
-      } catch (error) {
-        if (!disposed) {
-          logInfo("RECORDING", `Microphone pre-initialization skipped: ${formatErrorMessage(error)}`);
-        }
-      }
-    };
-
-    void prewarmMicrophone();
-
-    return () => {
-      disposed = true;
-    };
-  }, [settings?.micId]);
-
+  // ── Start recording ─────────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     logInfo("RECORDING", "startRecording called");
-    recordingActiveRef.current = false;
-    pendingStopAfterStartRef.current = false;
 
     if (!settings) {
       logError("RECORDING", "Settings not loaded");
@@ -168,7 +104,8 @@ export function useWidgetRecording({
     }
 
     try {
-      setState("recording");
+      // Update widget state to recording (via dispatch)
+      machineRef.current = { ...machineRef.current, widgetState: "recording" };
       void resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
 
       const audioConstraints = getAudioConstraints(settings.micId);
@@ -183,9 +120,7 @@ export function useWidgetRecording({
       } catch (micError) {
         logInfo(
           "RECORDING",
-          `Requested mic failed, trying default: ${
-            micError instanceof Error ? micError.message : String(micError)
-          }`,
+          `Requested mic failed, trying default: ${micError instanceof Error ? micError.message : String(micError)}`,
         );
 
         try {
@@ -193,9 +128,7 @@ export function useWidgetRecording({
         } catch (fallbackError) {
           logError(
             "RECORDING",
-            `Mic access denied: ${
-              fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
-            }`,
+            `Mic access denied: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
           );
           showError("Нет доступа к микрофону. Разрешите доступ в настройках macOS.");
           return;
@@ -211,15 +144,8 @@ export function useWidgetRecording({
         logInfo("RECORDING", "Webm not supported, using default codec");
       }
 
-      recordingActiveRef.current = true;
-      recordingStartRef.current = Date.now();
       logInfo("RECORDING", "Recording started successfully");
-
-      if ((!hotkeyHeldRef.current || pendingStopAfterStartRef.current) && !lockedRecordingRef.current) {
-        pendingStopAfterStartRef.current = false;
-        logInfo("HOTKEY", "Shortcut released during startup, stopping recording immediately");
-        void stopAndProcessRef.current();
-      }
+      dispatch({ type: "RECORDING_STARTED", timestamp: Date.now() });
     } catch (error) {
       runtimeRef.current.dispose();
       setStream(null);
@@ -228,37 +154,32 @@ export function useWidgetRecording({
         `Ошибка запуска записи: ${error instanceof Error ? error.message : "Неизвестная ошибка"}`,
       );
     }
-  }, [
-    hotkeyHeldRef,
-    lockedRecordingRef,
-    pendingStopAfterStartRef,
-    recordingActiveRef,
-    recordingStartRef,
-    resizeWidget,
-    setState,
-    setStream,
-    settings,
-    showError,
-    stopAndProcessRef,
-  ]);
+  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError]);
 
+  // ── Stop and process ────────────────────────────────────────────────────
   const stopAndProcess = useCallback(async () => {
     logInfo("RECORDING", "stopAndProcess called");
 
-    if (!runtimeRef.current.hasRecorder() || !settings || !recordingActiveRef.current) {
+    const machine = machineRef.current;
+    if (!runtimeRef.current.hasRecorder() || !settings || !machine.recordingActive) {
       logError("RECORDING", "No active recording");
       return;
     }
 
-    recordingActiveRef.current = false;
-    pendingStopAfterStartRef.current = false;
-    clearReleaseStopTimer();
-    setLockedRecordingMode(false);
+    // Update machine state
+    machineRef.current = {
+      ...machineRef.current,
+      recordingActive: false,
+      pendingStopAfterStart: false,
+      lockedRecording: false,
+      releaseStopTimerActive: false,
+    };
+
     await runtimeRef.current.stop();
     setStream(null);
 
     await resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
-    setState("processing");
+    dispatch({ type: "SET_PROCESSING" });
 
     try {
       if (!runtimeRef.current.hasAudioChunks()) {
@@ -267,7 +188,7 @@ export function useWidgetRecording({
       }
 
       const blob = runtimeRef.current.getAudioBlob();
-      const durationMs = Date.now() - recordingStartRef.current;
+      const durationMs = Date.now() - machine.recordingStartTimestamp;
 
       if (durationMs < MIN_RECORDING_DURATION_MS || blob.size < MIN_AUDIO_BLOB_BYTES) {
         logInfo(
@@ -275,7 +196,7 @@ export function useWidgetRecording({
           `Recording too short, skipping API request. duration_ms=${durationMs}, blob_size=${blob.size}`,
         );
         runtimeRef.current.reset();
-        setState("idle");
+        dispatch({ type: "PROCESSING_COMPLETE" });
         await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
         return;
       }
@@ -283,25 +204,23 @@ export function useWidgetRecording({
       const pipelineResult = await processRecordingBlob({
         blob,
         settings,
-        recordingStartTimestamp: recordingStartRef.current,
+        recordingStartTimestamp: machine.recordingStartTimestamp,
       });
 
       if (!pipelineResult.hasTranscription) {
         runtimeRef.current.reset();
-        setState("idle");
+        dispatch({ type: "PROCESSING_COMPLETE" });
         await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
         return;
       }
 
       runtimeRef.current.reset();
-      setState("idle");
+      dispatch({ type: "PROCESSING_COMPLETE" });
       await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
 
       if (pipelineResult.pasteErrorMessage) {
         showNotice(pipelineResult.pasteErrorMessage, "info");
       }
-
-      return;
     } catch (error) {
       const errorMessage = formatErrorMessage(error);
       logError("API", `Processing error: ${errorMessage}`);
@@ -310,34 +229,20 @@ export function useWidgetRecording({
 
       runtimeRef.current.reset();
       showError(message);
-      return;
     }
-  }, [
-    clearReleaseStopTimer,
-    pendingStopAfterStartRef,
-    recordingActiveRef,
-    recordingStartRef,
-    resizeWidget,
-    setLockedRecordingMode,
-    setState,
-    setStream,
-    settings,
-    showError,
-    showNotice,
-  ]);
+  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError, showNotice]);
 
+  // ── Keep stopAndProcessRef current ──────────────────────────────────────
   useEffect(() => {
     stopAndProcessRef.current = stopAndProcess;
   }, [stopAndProcess, stopAndProcessRef]);
 
+  // ── Cleanup ─────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       runtimeRef.current.dispose();
     };
   }, []);
 
-  return {
-    startRecording,
-    stopAndProcess,
-  };
+  return { startRecording, stopAndProcess };
 }

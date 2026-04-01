@@ -5,11 +5,19 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AppSettings, getSettings, getWidgetPosition, saveWidgetPosition } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
+import { formatErrorMessage } from "../../../lib/utils";
 import { WidgetNoticeState, WidgetState } from "../widgetConstants";
 import { resolveInitialWidgetPosition } from "../widgetPositioning";
 import { useWidgetHotkey } from "./useWidgetHotkey";
 import { useWidgetNotice } from "./useWidgetNotice";
 import { useWidgetRecording } from "./useWidgetRecording";
+import {
+  initialWidgetMachineState,
+  widgetReducer,
+  WidgetAction,
+  WidgetEffect,
+  WidgetMachineState,
+} from "../services/widgetMachine";
 
 interface WidgetControllerState {
   state: WidgetState;
@@ -18,67 +26,99 @@ interface WidgetControllerState {
   lockedRecording: boolean;
 }
 
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === "string") {
-    return error;
-  }
-
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
 export function useWidgetController(): WidgetControllerState {
   const widgetWindow = getCurrentWindow();
-  const [state, setState] = useState<WidgetState>("idle");
+
+  // ── Centralized machine state ───────────────────────────────────────────
+  const machineRef = useRef<WidgetMachineState>(initialWidgetMachineState);
+
+  // React render state (derived from machine)
+  const [widgetState, setWidgetState] = useState<WidgetState>("idle");
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [lockedRecording, setLockedRecording] = useState(false);
 
-  const recordingStartRef = useRef<number>(0);
-  const stateRef = useRef<WidgetState>("idle");
+  // Settings
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const settingsRef = useRef<AppSettings | null>(null);
+
+  // Imperative refs (truly need ref semantics)
   const registeredHotkeyRef = useRef<string | null>(null);
-  const hotkeyHeldRef = useRef(false);
-  const recordingActiveRef = useRef(false);
-  const pendingStopAfterStartRef = useRef(false);
-  const lockedRecordingRef = useRef(false);
-  const suppressNextReleaseRef = useRef(false);
   const releaseStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const positionReadyRef = useRef(false);
   const stopAndProcessRef = useRef<() => Promise<void>>(async () => {});
 
-  const clearReleaseStopTimer = useCallback(() => {
-    if (!releaseStopTimerRef.current) {
-      return;
-    }
+  // ── Dispatch: apply action → update machine state → execute effects ─────
+  const dispatch = useCallback((action: WidgetAction) => {
+    const { state: nextState, effects } = widgetReducer(machineRef.current, action);
+    machineRef.current = nextState;
 
+    // Sync React render state
+    setWidgetState(nextState.widgetState);
+    setLockedRecording(nextState.lockedRecording);
+
+    // Execute effects (processed in executeEffect below)
+    for (const effect of effects) {
+      executeEffect(effect);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Effect executor ─────────────────────────────────────────────────────
+  const executeEffect = useCallback((effect: WidgetEffect) => {
+    switch (effect.type) {
+      case "start_recording":
+        void startRecordingRef.current();
+        break;
+      case "stop_and_process":
+        void stopAndProcessRef.current();
+        break;
+      case "schedule_release_stop_timer":
+        scheduleReleaseStopTimer();
+        break;
+      case "clear_release_stop_timer":
+        clearReleaseStopTimer();
+        break;
+      case "resize_widget":
+        void resizeWidget(effect.width, effect.height);
+        break;
+      case "set_stream":
+        setStream(effect.stream);
+        break;
+      case "show_notice":
+        showNotice(effect.message, effect.tone);
+        break;
+      case "set_locked_recording_ui":
+        setLockedRecording(effect.value);
+        break;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Timer helpers ───────────────────────────────────────────────────────
+  const clearReleaseStopTimer = useCallback(() => {
+    if (!releaseStopTimerRef.current) return;
     clearTimeout(releaseStopTimerRef.current);
     releaseStopTimerRef.current = null;
   }, []);
 
-  const clearMoveSaveTimer = useCallback(() => {
-    if (!moveSaveTimerRef.current) {
-      return;
-    }
+  const scheduleReleaseStopTimer = useCallback(() => {
+    clearReleaseStopTimer();
+    const doubleTapTimeout = settingsRef.current?.doubleTapTimeout ?? 400;
+    releaseStopTimerRef.current = setTimeout(() => {
+      releaseStopTimerRef.current = null;
+      dispatch({ type: "RELEASE_STOP_TIMER_FIRED" });
+    }, doubleTapTimeout);
+  }, [clearReleaseStopTimer, dispatch]);
 
+  const clearMoveSaveTimer = useCallback(() => {
+    if (!moveSaveTimerRef.current) return;
     clearTimeout(moveSaveTimerRef.current);
     moveSaveTimerRef.current = null;
   }, []);
 
-  const setLockedRecordingMode = useCallback((value: boolean) => {
-    lockedRecordingRef.current = value;
-    setLockedRecording(value);
-  }, []);
-
+  // ── Settings loading ────────────────────────────────────────────────────
   useEffect(() => {
     logInfo("SETTINGS", "Loading settings...");
     getSettings()
@@ -88,6 +128,7 @@ export function useWidgetController(): WidgetControllerState {
           `Loaded: apiKey=${loadedSettings.apiKey ? "[set]" : "[empty]"}, hotkey=${loadedSettings.hotkey}`,
         );
         setSettings(loadedSettings);
+        settingsRef.current = loadedSettings;
         setSettingsLoaded(true);
       })
       .catch((error) => {
@@ -96,24 +137,14 @@ export function useWidgetController(): WidgetControllerState {
       });
   }, []);
 
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
+  // ── Position tracking ───────────────────────────────────────────────────
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
 
     widgetWindow
       .onMoved(({ payload }) => {
-        if (!positionReadyRef.current) {
-          return;
-        }
-
+        if (!positionReadyRef.current) return;
         clearMoveSaveTimer();
         moveSaveTimerRef.current = setTimeout(() => {
           moveSaveTimerRef.current = null;
@@ -129,7 +160,6 @@ export function useWidgetController(): WidgetControllerState {
           removeListener();
           return;
         }
-
         unlisten = removeListener;
       })
       .catch((error) => {
@@ -152,9 +182,7 @@ export function useWidgetController(): WidgetControllerState {
       try {
         const savedPosition = await getWidgetPosition();
         const targetPosition = await resolveInitialWidgetPosition(widgetWindow, savedPosition);
-        if (!targetPosition || cancelled) {
-          return;
-        }
+        if (!targetPosition || cancelled) return;
 
         await widgetWindow.setPosition(new PhysicalPosition(targetPosition.x, targetPosition.y));
 
@@ -173,12 +201,10 @@ export function useWidgetController(): WidgetControllerState {
     };
 
     void restoreWidgetPosition();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [widgetWindow]);
 
+  // ── Widget resize ───────────────────────────────────────────────────────
   const resizeWidget = useCallback(async (width: number, height: number) => {
     try {
       await invoke("widget_resize", { width, height });
@@ -187,62 +213,58 @@ export function useWidgetController(): WidgetControllerState {
     }
   }, []);
 
-  const { showNotice } = useWidgetNotice({ stateRef });
+  // ── Notice ──────────────────────────────────────────────────────────────
+  const machineStateRefForNotice = useRef(machineRef);
+  machineStateRefForNotice.current = machineRef;
 
+  const stateRefForNotice = useRef<WidgetState>("idle");
+  useEffect(() => {
+    stateRefForNotice.current = widgetState;
+  }, [widgetState]);
+
+  const { showNotice } = useWidgetNotice({ stateRef: stateRefForNotice });
+
+  // ── Error handler ───────────────────────────────────────────────────────
   const showError = useCallback(
     (message: string) => {
       logError("WIDGET", message);
-      hotkeyHeldRef.current = false;
-      recordingActiveRef.current = false;
-      pendingStopAfterStartRef.current = false;
-      suppressNextReleaseRef.current = false;
-      clearReleaseStopTimer();
-      setLockedRecordingMode(false);
-      setState("idle");
-      setStream(null);
-      showNotice(message, "error");
+      dispatch({ type: "ERROR", message });
     },
-    [clearReleaseStopTimer, resizeWidget, setLockedRecordingMode, showNotice],
+    [dispatch],
   );
 
-  const { startRecording, stopAndProcess } = useWidgetRecording({
+  // ── Recording ───────────────────────────────────────────────────────────
+  const startRecordingRef = useRef<() => Promise<void>>(async () => {});
+
+  const { startRecording } = useWidgetRecording({
     settings,
-    setState,
+    machineRef,
+    dispatch,
     setStream,
-    setLockedRecordingMode,
-    lockedRecordingRef,
-    hotkeyHeldRef,
-    recordingActiveRef,
-    pendingStopAfterStartRef,
-    recordingStartRef,
-    clearReleaseStopTimer,
     resizeWidget,
     showError,
     showNotice,
     stopAndProcessRef,
   });
 
+  useEffect(() => {
+    startRecordingRef.current = startRecording;
+  }, [startRecording]);
+
+  // ── Hotkey ──────────────────────────────────────────────────────────────
   useWidgetHotkey({
     settingsLoaded,
     settings,
     setSettings,
     settingsRef,
-    stateRef,
+    machineRef,
+    dispatch,
     registeredHotkeyRef,
-    hotkeyHeldRef,
-    recordingActiveRef,
-    pendingStopAfterStartRef,
-    lockedRecordingRef,
-    suppressNextReleaseRef,
-    releaseStopTimerRef,
-    stopAndProcessRef,
     clearReleaseStopTimer,
-    setLockedRecordingMode,
-    startRecording,
-    stopAndProcess,
     showError,
   });
 
+  // ── Cleanup ─────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       clearReleaseStopTimer();
@@ -251,7 +273,7 @@ export function useWidgetController(): WidgetControllerState {
   }, [clearMoveSaveTimer, clearReleaseStopTimer]);
 
   return {
-    state,
+    state: widgetState,
     stream,
     notice: null,
     lockedRecording,

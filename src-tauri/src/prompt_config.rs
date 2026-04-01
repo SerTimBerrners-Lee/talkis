@@ -15,6 +15,7 @@ pub struct PromptPreview {
     pub layers: Vec<String>,
     pub profile_key: String,
     pub version: u32,
+    pub temperature: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -55,6 +56,7 @@ struct BasePromptConfig {
 #[serde(rename_all = "camelCase")]
 struct LanguagePromptConfig {
     display_name: String,
+    whisper_hint: Option<String>,
     filler_examples: Vec<String>,
     rules: Vec<String>,
     examples: Vec<PromptExample>,
@@ -64,8 +66,10 @@ struct LanguagePromptConfig {
 #[serde(rename_all = "camelCase")]
 struct StylePromptConfig {
     prompt_title: String,
+    whisper_hint_suffix: Option<String>,
     rules: Vec<String>,
     examples: Vec<PromptExample>,
+    temperature: Option<f64>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -105,16 +109,7 @@ struct OverrideProfile {
 
 pub fn build_cleanup_prompt_preview(language: &str, style: &str) -> Result<PromptPreview, String> {
     let registry = get_prompt_registry()?;
-    let resolved_language = resolve_key(
-        language,
-        registry.manifest.languages.contains_key(language),
-        &registry.manifest.default_language,
-    );
-    let resolved_style = resolve_key(
-        style,
-        registry.manifest.styles.contains_key(style),
-        &registry.manifest.default_style,
-    );
+    let (resolved_language, resolved_style) = resolve_language_and_style(registry, language, style);
 
     let language_profile = registry
         .language_profiles
@@ -207,6 +202,7 @@ pub fn build_cleanup_prompt_preview(language: &str, style: &str) -> Result<Promp
         layers,
         profile_key,
         version: registry.manifest.version,
+        temperature: style_profile.config.temperature,
     })
 }
 
@@ -284,11 +280,50 @@ fn render_rule(rule: &str, filler_examples: &str) -> String {
     rule.replace("{filler_examples}", filler_examples)
 }
 
+fn resolve_language_and_style<'a>(
+    registry: &'a PromptRegistry,
+    language: &str,
+    style: &str,
+) -> (String, String) {
+    let resolved_language = resolve_key(
+        language,
+        registry.manifest.languages.contains_key(language),
+        &registry.manifest.default_language,
+    );
+    let resolved_style = resolve_key(
+        style,
+        registry.manifest.styles.contains_key(style),
+        &registry.manifest.default_style,
+    );
+    (resolved_language, resolved_style)
+}
+
 fn resolve_key(requested: &str, exists: bool, fallback: &str) -> String {
     if exists {
         requested.to_string()
     } else {
         fallback.to_string()
+    }
+}
+
+/// Build a Whisper transcription hint from JSON config (language.whisperHint + style.whisperHintSuffix).
+pub fn build_whisper_hint(language: &str, style: &str) -> Result<Option<String>, String> {
+    let registry = get_prompt_registry()?;
+    let (resolved_language, resolved_style) = resolve_language_and_style(registry, language, style);
+
+    let language_profile = registry.language_profiles.get(&resolved_language);
+    let style_profile = registry.style_profiles.get(&resolved_style);
+
+    let base_hint = language_profile
+        .and_then(|p| p.config.whisper_hint.as_deref());
+    let style_suffix = style_profile
+        .and_then(|p| p.config.whisper_hint_suffix.as_deref());
+
+    match (base_hint, style_suffix) {
+        (Some(base), Some(suffix)) => Ok(Some(format!("{} {}", base, suffix))),
+        (Some(base), None) => Ok(Some(base.to_string())),
+        (None, Some(suffix)) => Ok(Some(suffix.to_string())),
+        (None, None) => Ok(None),
     }
 }
 
@@ -302,4 +337,103 @@ fn read_json_file<T: for<'de> Deserialize<'de>>(path: &str) -> Result<T, String>
 
     serde_json::from_str(content)
         .map_err(|error| format!("Failed to parse prompt config {}: {}", path, error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_cleanup_prompt_for_ru_classic() {
+        let result = build_cleanup_prompt_preview("ru", "classic");
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+        let preview = result.unwrap();
+        assert!(!preview.prompt.is_empty());
+        assert!(preview.prompt.contains("Russian"));
+        assert!(preview.layers.len() >= 2);
+        assert!(preview.version > 0);
+    }
+
+    #[test]
+    fn build_cleanup_prompt_for_en_tech() {
+        let result = build_cleanup_prompt_preview("en", "tech");
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+        let preview = result.unwrap();
+        assert!(preview.prompt.contains("TECH"));
+        assert!(preview.prompt.contains("English"));
+    }
+
+    #[test]
+    fn build_cleanup_prompt_for_ru_tech_has_override() {
+        let result = build_cleanup_prompt_preview("ru", "tech");
+        assert!(result.is_ok());
+        let preview = result.unwrap();
+        // ru:tech override should add an extra layer
+        assert!(preview.layers.len() >= 3);
+        assert!(preview.profile_key.contains("ru"));
+    }
+
+    #[test]
+    fn build_cleanup_prompt_falls_back_for_unknown_language() {
+        let result = build_cleanup_prompt_preview("xx_unknown", "classic");
+        assert!(result.is_ok(), "Should fall back to default language");
+    }
+
+    #[test]
+    fn build_cleanup_prompt_falls_back_for_unknown_style() {
+        let result = build_cleanup_prompt_preview("ru", "xx_unknown_style");
+        assert!(result.is_ok(), "Should fall back to default style");
+    }
+
+    #[test]
+    fn temperature_is_set_per_style() {
+        let classic = build_cleanup_prompt_preview("ru", "classic").unwrap();
+        let tech = build_cleanup_prompt_preview("ru", "tech").unwrap();
+        let business = build_cleanup_prompt_preview("ru", "business").unwrap();
+
+        assert_eq!(classic.temperature, Some(0.0));
+        assert_eq!(tech.temperature, Some(0.15));
+        assert_eq!(business.temperature, Some(0.1));
+    }
+
+    #[test]
+    fn whisper_hint_for_ru_classic() {
+        let result = build_whisper_hint("ru", "classic");
+        assert!(result.is_ok());
+        let hint = result.unwrap();
+        assert!(hint.is_some(), "ru should have a whisper hint");
+        let text = hint.unwrap();
+        assert!(text.contains("русская"), "Should contain Russian hint");
+        // classic has no suffix, so it should NOT contain tech tokens
+        assert!(!text.contains("console.log"));
+    }
+
+    #[test]
+    fn whisper_hint_for_ru_tech_includes_suffix() {
+        let result = build_whisper_hint("ru", "tech");
+        assert!(result.is_ok());
+        let hint = result.unwrap();
+        assert!(hint.is_some());
+        let text = hint.unwrap();
+        // Should contain base Russian hint + tech suffix
+        assert!(text.contains("русская") || text.contains("Корректно"));
+        assert!(text.contains("console.log") || text.contains("code tokens"));
+    }
+
+    #[test]
+    fn whisper_hint_for_en_classic() {
+        let result = build_whisper_hint("en", "classic");
+        assert!(result.is_ok());
+        let hint = result.unwrap();
+        assert!(hint.is_some());
+        assert!(hint.unwrap().contains("English"));
+    }
+
+    #[test]
+    fn whisper_hint_for_unknown_language_uses_fallback() {
+        let result = build_whisper_hint("xx_unknown", "classic");
+        assert!(result.is_ok(), "Should not error for unknown language");
+        // Falls back to default language — result depends on whether
+        // the default language config has a whisperHint set.
+    }
 }

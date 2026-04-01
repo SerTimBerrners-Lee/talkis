@@ -41,7 +41,7 @@ pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), Strin
                 .key(Key::Meta, enigo::Direction::Press)
                 .map_err(|e| format!("Meta press failed: {}", e))?;
             enigo
-                .raw(0x09, enigo::Direction::Click)
+                .raw(0x09, enigo::Direction::Click) // 0x09 = macOS virtual keycode for 'V'
                 .map_err(|e| format!("V click failed: {}", e))?;
             enigo
                 .key(Key::Meta, enigo::Direction::Release)

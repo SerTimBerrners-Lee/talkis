@@ -24,51 +24,75 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
   const isGranted = status === "granted";
   const isDenied = status === "denied";
   const isPrompting = status === "prompting";
-  const statusLabel = isGranted ? "Готово" : isPrompting ? "Проверьте" : isDenied ? "Нужно действие" : "Не выдано";
 
   return (
     <div
-      className="card"
       style={{
-        padding: 20,
+        padding: "16px 18px",
         display: "flex",
         alignItems: "flex-start",
-        gap: 16,
-        background: isGranted ? "rgba(255,255,255,0.88)" : "var(--surface)",
+        gap: 14,
+        borderRadius: 10,
+        background: isGranted ? "rgba(0,0,0,0.02)" : "rgba(0,0,0,0.02)",
+        border: `1px solid ${isGranted ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.06)"}`,
       }}
     >
       <div
         style={{
-          width: 42,
-          height: 42,
-          borderRadius: 999,
+          width: 36,
+          height: 36,
+          borderRadius: 10,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: isGranted ? "#000" : "rgba(255,255,255,0.7)",
+          background: isGranted ? "#000" : "rgba(0,0,0,0.04)",
           color: isGranted ? "#fff" : "var(--text-mid)",
           flexShrink: 0,
         }}
       >
-        {isGranted ? <Check size={18} strokeWidth={2.5} /> : icon}
+        {isGranted ? <Check size={16} strokeWidth={2.5} /> : icon}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 2 }}>{title}</div>
-            <div className="label">{statusLabel}</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-hi)" }}>{title}</div>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: isGranted ? "var(--success)" : "var(--text-low)",
+            }}>
+              {isGranted ? "Готово" : isPrompting ? "Проверьте" : isDenied ? "Нужно действие" : "Не выдано"}
+            </span>
           </div>
 
           {!isGranted && (
-            <button onClick={onAction} className={isPrompting ? "btn" : "btn btn-primary"} style={{ minWidth: 124 }}>
+            <button
+              onClick={onAction}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                cursor: "pointer",
+                border: "none",
+                background: isPrompting ? "rgba(0,0,0,0.04)" : "#000",
+                color: isPrompting ? "var(--text-hi)" : "#fff",
+                fontFamily: "var(--font)",
+                transition: "opacity 0.15s",
+              }}
+            >
               {isPrompting ? "Проверить" : isDenied ? "Повторить" : "Разрешить"}
             </button>
           )}
         </div>
 
         <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>{description}</div>
-        {helpText && <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-low)", lineHeight: 1.55 }}>{helpText}</div>}
+        {helpText && <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-low)", lineHeight: 1.55 }}>{helpText}</div>}
       </div>
     </div>
   );
@@ -223,53 +247,75 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
         }}
       >
         <div
-          className="card"
           style={{
-            width: "min(100%, 760px)",
-            padding: 28,
+            width: "min(100%, 680px)",
+            padding: "28px 28px 24px",
             display: "flex",
             flexDirection: "column",
-            gap: 22,
-            boxShadow: "var(--shadow-panel)",
+            gap: 20,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.82)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
+            boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
           }}
         >
-          <div style={{ display: "grid", gap: 10 }}>
-            <div className="label kicker">System Access</div>
-            <h1 className="headline-accent" style={{ fontSize: 40, lineHeight: 0.96, margin: 0, fontWeight: 700 }}>
-              Доступы для Talk Flow
+          {/* Header */}
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "var(--text-low)",
+            }}>
+              Настройка доступов
+            </div>
+            <h1 style={{
+              fontSize: 28,
+              lineHeight: 1,
+              margin: 0,
+              fontWeight: 800,
+              fontFamily: "var(--font-brand)",
+              letterSpacing: "-0.04em",
+              color: "var(--text-hi)",
+            }}>
+              Доступы для TalkFlow
             </h1>
-            <p style={{ margin: 0, maxWidth: 560, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
-              Интерфейс уже готов. Осталось выдать системные разрешения для записи с микрофона и работы глобальной горячей клавиши.
+            <p style={{ margin: 0, maxWidth: 520, fontSize: 13, color: "var(--text-mid)", lineHeight: 1.7 }}>
+              Осталось выдать системные разрешения для записи с микрофона и работы глобальной горячей клавиши.
             </p>
           </div>
 
-          <div style={{ display: "grid", gap: 14 }}>
+          {/* Permission rows */}
+          <div style={{ display: "grid", gap: 10 }}>
             {shouldShowInstallWarning && (
               <div
-                className="card"
                 style={{
-                  padding: 18,
+                  padding: "14px 16px",
                   display: "flex",
                   alignItems: "flex-start",
                   gap: 12,
-                  background: "rgba(143,45,32,0.08)",
-                  border: "1px solid rgba(143,45,32,0.18)",
+                  borderRadius: 10,
+                  background: "rgba(143,45,32,0.06)",
+                  border: "1px solid rgba(143,45,32,0.14)",
                 }}
               >
                 <AlertCircle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }} />
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>
-                    Сначала переместите приложение в Applications
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>
+                    Переместите приложение в Applications
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                    Текущая сборка запущена из временного или смонтированного места (`/Volumes` или App Translocation). Для релизной версии macOS может не применять универсальный доступ корректно в таком режиме. Переместите `Talk Flow.app` в `Applications`, откройте его оттуда и только потом выдавайте доступ.
+                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
+                    Текущая сборка запущена из временного места. Переместите TalkFlow в Applications и откройте оттуда.
                   </div>
                 </div>
               </div>
             )}
 
             <PermissionRow
-              icon={<Mic size={18} strokeWidth={1.75} />}
+              icon={<Mic size={16} strokeWidth={1.8} />}
               title="Микрофон"
               description="Нужен для записи голоса перед отправкой на распознавание."
               status={micStatus}
@@ -277,9 +323,9 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
             />
 
             <PermissionRow
-              icon={<Keyboard size={18} strokeWidth={1.75} />}
+              icon={<Keyboard size={16} strokeWidth={1.8} />}
               title="Универсальный доступ"
-              description="Нужен для глобальной горячей клавиши и вставки текста в активное приложение."
+              description="Нужен для глобальной горячей клавиши и вставки текста."
               status={shouldShowInstallWarning ? "denied" : accStatus}
               onAction={() => {
                 if (shouldShowInstallWarning) {
@@ -290,48 +336,63 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                 void handleAccessibilityRequest();
               }}
               helpText={shouldShowInstallWarning
-                ? `Сейчас приложение запущено не из Applications: ${runtimeInfo?.bundlePath ?? "неизвестный путь"}`
-                : "Откроются системные настройки macOS. Перед этим приложение сбросит старую запись Accessibility для `com.trixter.talkflow`, чтобы новая версия могла запросить доступ заново."}
+                ? `Приложение запущено не из Applications: ${runtimeInfo?.bundlePath ?? "—"}`
+                : undefined}
             />
           </div>
 
+          {/* Hint */}
           {(accStatus === "prompting" || micStatus === "denied") && (
             <div
               style={{
                 display: "flex",
                 alignItems: "flex-start",
                 gap: 10,
-                padding: "14px 16px",
-                borderRadius: 18,
-                border: "1px solid rgba(0,0,0,0.08)",
-                background: "rgba(255,255,255,0.56)",
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: "rgba(0,0,0,0.02)",
+                border: "1px solid rgba(0,0,0,0.06)",
               }}
             >
-              <AlertCircle size={15} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
+              <AlertCircle size={14} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {micStatus === "denied"
-                  ? "Если микрофон был отклонен ранее, откройте Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включите Talk Flow вручную."
+                  ? "Если микрофон был отклонен, откройте Системные настройки → Конфиденциальность → Микрофон и включите TalkFlow."
                   : shouldShowInstallWarning
-                    ? "После перемещения приложения в Applications откройте его заново и повторите выдачу доступа."
-                    : "macOS применяет доступ к универсальному доступу не мгновенно. После изменения системной настройки просто вернитесь в приложение и продолжите."}
+                    ? "После перемещения приложения в Applications откройте его заново."
+                    : "macOS применяет доступ не мгновенно. После изменения настройки вернитесь в приложение."}
               </div>
             </div>
           )}
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 18, paddingTop: 6 }}>
+          {/* Footer */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
             <div style={{ fontSize: 12, color: canContinue ? "var(--success)" : "var(--text-low)", lineHeight: 1.55 }}>
               {shouldShowInstallWarning
-                ? "Сначала запустите Talk Flow из Applications, затем повторите выдачу доступов."
+                ? "Сначала запустите из Applications."
                 : canContinue
                   ? "Все доступы выданы."
-                  : "Продолжение станет доступно после проверки обоих разрешений."}
+                  : "Выдайте оба разрешения для продолжения."}
             </div>
             <button
               onClick={handleContinue}
-              className={canCompleteOnboarding ? "btn btn-primary" : "btn"}
-              style={{ minWidth: 160 }}
+              style={{
+                padding: "10px 20px",
+                borderRadius: 10,
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                cursor: "pointer",
+                border: "none",
+                background: canCompleteOnboarding ? "#000" : "rgba(0,0,0,0.04)",
+                color: canCompleteOnboarding ? "#fff" : "var(--text-hi)",
+                fontFamily: "var(--font)",
+                transition: "opacity 0.15s",
+                minWidth: 140,
+              }}
             >
-              {canCompleteOnboarding ? "Продолжить" : shouldShowInstallWarning ? "Запустить из Applications" : "Проверить доступы"}
+              {canCompleteOnboarding ? "Продолжить" : shouldShowInstallWarning ? "Applications" : "Проверить"}
             </button>
           </div>
         </div>

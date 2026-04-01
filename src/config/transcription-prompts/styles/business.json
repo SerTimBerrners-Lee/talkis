@@ -5,5 +5,6 @@
     "You may apply small readability-focused smoothing when the speaker's wording contains obvious hesitation artifacts that would look awkward in a business message.",
     "Do not remove substantive words or complete unfinished thoughts on the speaker's behalf."
   ],
+  "temperature": 0.1,
   "examples": []
 }

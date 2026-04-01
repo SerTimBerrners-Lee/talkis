@@ -10,6 +10,7 @@ import { SETTINGS_NAVIGATE_EVENT, SettingsNavigatePayload } from "../../lib/hotk
 import { getPermissionsPassed, setPermissionsPassed, getHistory, HistoryEntry } from "../../lib/store";
 import { checkAllPermissions } from "../../lib/permissions";
 import { logError } from "../../lib/logger";
+import { UserPanel } from "../../components/UserPanel";
 
 type Tab = "main" | "settings" | "model" | "style";
 
@@ -35,7 +36,7 @@ function TabButton({ tab, isActive, onClick }: { tab: typeof TABS[0]; isActive: 
 
   return (
     <button onClick={onClick} className={`nav-item ${isActive ? "active" : ""}`} style={{ width: "100%", textAlign: "left", font: "inherit" }}>
-      <Icon size={15} strokeWidth={isActive ? 2.3 : 1.8} />
+      <Icon size={18} strokeWidth={isActive ? 2.2 : 1.6} />
       <span>{tab.label}</span>
     </button>
   );
@@ -148,6 +149,7 @@ export function SettingsApp() {
               ))}
             </nav>
 
+            <UserPanel />
           </aside>
 
           <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "rgba(250,249,246,0.72)" }}>

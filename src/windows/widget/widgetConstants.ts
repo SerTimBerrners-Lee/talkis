@@ -17,5 +17,6 @@ export const RECORDING_WIDGET_WIDTH = WIDGET_SHELL_WIDTH;
 export const RECORDING_WIDGET_HEIGHT = WIDGET_SHELL_HEIGHT;
 export const NOTICE_WIDGET_WIDTH = 212;
 export const NOTICE_AREA_HEIGHT = 52;
-export const NOTICE_WIDGET_GAP = 8;
+/** Must match NOTICE_GAP in src-tauri/src/lib.rs (logical pixels). */
+export const NOTICE_WIDGET_GAP = 2;
 export const WIDGET_NOTICE_EVENT = "widget-notice:update";

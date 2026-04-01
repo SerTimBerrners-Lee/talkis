@@ -3,6 +3,13 @@ use crate::prompt_config;
 use base64::Engine;
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
+
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(reqwest::Client::new)
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TranscribeRequest {
@@ -20,21 +27,13 @@ pub struct TranscribeResponse {
     pub cleaned: String,
 }
 
-fn build_whisper_prompt(language: &str, style: &str) -> Option<&'static str> {
-    match (language, style) {
-        ("ru", "tech") => Some(
-            "Это русская developer dictation с английскими техническими терминами. Сохраняй и корректно распознавай code tokens и команды: console.log, function, const, import, export, git push, git status, npm install, bun run dev, cargo check, src, api, ts, tsx, jsx, JSON.parse, useEffect, useState. Если слышишь 'слеш', 'точка', 'дефис', 'нижнее подчеркивание', корректно восстанавливай технический фрагмент.",
-        ),
-        ("ru", _) => Some(
-            "Это обычная русская речь. Корректно распознавай общеупотребительные слова: сегодня, сейчас, сегодняшний, также, тоже, ещё. Не дроби и не искажай слово 'сегодня'.",
-        ),
-        ("en", "tech") => Some(
-            "This is developer dictation with code, commands, paths, and API names. Preserve technical tokens accurately: console.log, function, const, import, export, git push, npm install, bun run dev, cargo check, src, api, ts, tsx, jsx, JSON.parse, useEffect, useState.",
-        ),
-        ("en", _) => Some(
-            "This is natural spoken English. Preserve common everyday words accurately and avoid splitting or distorting short common words.",
-        ),
-        _ => None,
+fn build_whisper_prompt(language: &str, style: &str) -> Option<String> {
+    match prompt_config::build_whisper_hint(language, style) {
+        Ok(hint) => hint,
+        Err(err) => {
+            logger::log_error("WHISPER", &format!("Failed to build whisper hint: {}", err));
+            None
+        }
     }
 }
 
@@ -111,7 +110,7 @@ fn is_likely_short_uncertain_transcription(
 pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeResponse, String> {
     logger::log_info("API", "Starting transcription...");
 
-    let client = reqwest::Client::new();
+    let client = http_client();
     let audio_bytes = base64::engine::general_purpose::STANDARD
         .decode(&req.audio_base64)
         .map_err(|e| {
@@ -275,7 +274,7 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": raw}
         ],
-        "temperature": 0.15,
+        "temperature": prompt_preview.temperature.unwrap_or(0.15),
         "max_tokens": 4096
     });
 

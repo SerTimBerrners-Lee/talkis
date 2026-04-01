@@ -3,6 +3,7 @@ import { emit } from "@tauri-apps/api/event";
 
 import { addHistoryEntry, AppSettings, HistoryEntry, updateHistoryEntry } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
+import { formatErrorMessage } from "../../../lib/utils";
 import { HISTORY_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 
 export interface ProcessRecordingBlobParams {
@@ -33,22 +34,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   }
 
   return btoa(binary);
-}
-
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === "string") {
-    return error;
-  }
-
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
 }
 
 function toUserFacingErrorMessage(error: unknown): string {

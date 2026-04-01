@@ -16,7 +16,7 @@ pub fn get_log_path() -> PathBuf {
 }
 
 pub fn log(level: &str, tag: &str, message: &str) {
-    let _guard = LOG_MUTEX.lock().unwrap();
+    let _guard = LOG_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     let line = format!("[{}] [{}] [{}] {}\n", timestamp, level, tag, message);

@@ -1,40 +1,31 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import type { ShortcutEvent } from "@tauri-apps/plugin-global-shortcut";
 import { emit, listen } from "@tauri-apps/api/event";
-import { register, unregister, ShortcutEvent } from "@tauri-apps/plugin-global-shortcut";
 
 import { AppSettings, DEFAULT_HOTKEY, getSettings, normalizeHotkey, saveSettings } from "../../../lib/store";
-import { logError, logInfo } from "../../../lib/logger";
 import {
   HOTKEY_CAPTURE_STATE_EVENT,
   HOTKEY_CHANGE_REQUEST_EVENT,
-  HotkeyCaptureStatePayload,
   HOTKEY_REGISTRATION_RESULT_EVENT,
+  HotkeyCaptureStatePayload,
   HotkeyChangeRequestPayload,
   HotkeyRegistrationResultPayload,
   SETTINGS_UPDATED_EVENT,
 } from "../../../lib/hotkeyEvents";
-import { WidgetState } from "../widgetConstants";
-import { evaluateHotkeyFsm, HotkeyShortcutState } from "../services/hotkeyFsm";
+import { logError, logInfo } from "../../../lib/logger";
+import type { WidgetAction, WidgetMachineState } from "../services/widgetMachine";
 
 interface UseWidgetHotkeyParams {
   settingsLoaded: boolean;
   settings: AppSettings | null;
   setSettings: Dispatch<SetStateAction<AppSettings | null>>;
   settingsRef: MutableRefObject<AppSettings | null>;
-  stateRef: MutableRefObject<WidgetState>;
+  machineRef: MutableRefObject<WidgetMachineState>;
+  dispatch: (action: WidgetAction) => void;
   registeredHotkeyRef: MutableRefObject<string | null>;
-  hotkeyHeldRef: MutableRefObject<boolean>;
-  recordingActiveRef: MutableRefObject<boolean>;
-  pendingStopAfterStartRef: MutableRefObject<boolean>;
-  lockedRecordingRef: MutableRefObject<boolean>;
-  suppressNextReleaseRef: MutableRefObject<boolean>;
-  releaseStopTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  stopAndProcessRef: MutableRefObject<() => Promise<void>>;
   clearReleaseStopTimer: () => void;
-  setLockedRecordingMode: (value: boolean) => void;
-  startRecording: () => Promise<void>;
-  stopAndProcess: () => Promise<void>;
   showError: (message: string) => void;
 }
 
@@ -43,19 +34,10 @@ export function useWidgetHotkey({
   settings,
   setSettings,
   settingsRef,
-  stateRef,
+  machineRef,
+  dispatch,
   registeredHotkeyRef,
-  hotkeyHeldRef,
-  recordingActiveRef,
-  pendingStopAfterStartRef,
-  lockedRecordingRef,
-  suppressNextReleaseRef,
-  releaseStopTimerRef,
-  stopAndProcessRef,
   clearReleaseStopTimer,
-  setLockedRecordingMode,
-  startRecording,
-  stopAndProcess,
   showError,
 }: UseWidgetHotkeyParams): void {
   const attemptHotkeyRegistrationRef = useRef<(rawHotkey: string) => Promise<HotkeyRegistrationResultPayload>>(
@@ -65,9 +47,7 @@ export function useWidgetHotkey({
 
   const unregisterCurrentHotkey = useCallback(async () => {
     const currentHotkey = registeredHotkeyRef.current;
-    if (!currentHotkey) {
-      return;
-    }
+    if (!currentHotkey) return;
 
     logInfo("HOTKEY", `Unregistering: ${currentHotkey}`);
     await unregister(currentHotkey).catch(() => {});
@@ -77,107 +57,24 @@ export function useWidgetHotkey({
   const handleHotkeyPress = useCallback(
     (event: ShortcutEvent) => {
       if (isHotkeyCaptureActiveRef.current) {
-        clearReleaseStopTimer();
-        hotkeyHeldRef.current = false;
-        pendingStopAfterStartRef.current = false;
-        suppressNextReleaseRef.current = false;
+        dispatch({ type: "RESET_HOTKEY_STATE" });
         return;
       }
 
-      const currentState = stateRef.current;
-      logInfo("HOTKEY", `Triggered! state=${currentState}, shortcutState=${event.state}`);
+      const machine = machineRef.current;
+      logInfo("HOTKEY", `Triggered! state=${machine.widgetState}, shortcutState=${event.state}`);
 
       if (event.state !== "Pressed" && event.state !== "Released") {
         return;
       }
 
-      const shortcutState: HotkeyShortcutState = event.state;
-
-      const doubleTapTimeout = settingsRef.current?.doubleTapTimeout ?? 400;
-
-      const scheduleStopAfterRelease = () => {
-        clearReleaseStopTimer();
-        releaseStopTimerRef.current = setTimeout(() => {
-          releaseStopTimerRef.current = null;
-          if (stateRef.current !== "recording" || lockedRecordingRef.current) {
-            return;
-          }
-
-          if (recordingActiveRef.current) {
-            logInfo("HOTKEY", "Release grace window ended, stopping recording");
-            void stopAndProcessRef.current();
-          } else {
-            logInfo("HOTKEY", "Release grace window ended before recorder startup completed");
-            pendingStopAfterStartRef.current = true;
-          }
-        }, doubleTapTimeout);
-      };
-
-      const decision = evaluateHotkeyFsm(
-        {
-          widgetState: currentState,
-          hotkeyHeld: hotkeyHeldRef.current,
-          lockedRecording: lockedRecordingRef.current,
-          suppressNextRelease: suppressNextReleaseRef.current,
-          pendingStopAfterStart: pendingStopAfterStartRef.current,
-          releaseStopTimerActive: releaseStopTimerRef.current !== null,
-        },
-        shortcutState,
-      );
-
-      hotkeyHeldRef.current = decision.nextState.hotkeyHeld;
-      suppressNextReleaseRef.current = decision.nextState.suppressNextRelease;
-      pendingStopAfterStartRef.current = decision.nextState.pendingStopAfterStart;
-
-      if (decision.nextState.lockedRecording !== lockedRecordingRef.current) {
-        setLockedRecordingMode(decision.nextState.lockedRecording);
-      }
-
-      for (const command of decision.commands) {
-        if (command === "clear_release_stop_timer") {
-          clearReleaseStopTimer();
-          continue;
-        }
-
-        if (command === "schedule_stop_after_release") {
-          if (recordingActiveRef.current) {
-            logInfo("HOTKEY", "Shortcut released, waiting for possible lock gesture");
-          } else {
-            logInfo(
-              "HOTKEY",
-              "Shortcut released before startup completed, waiting for possible lock gesture",
-            );
-          }
-          scheduleStopAfterRelease();
-          continue;
-        }
-
-        if (command === "start_recording") {
-          void startRecording();
-          continue;
-        }
-
-        if (command === "stop_recording") {
-          logInfo("HOTKEY", "Locked recording pressed again, stopping recording");
-          void stopAndProcess();
-        }
+      if (event.state === "Pressed") {
+        dispatch({ type: "HOTKEY_PRESSED" });
+      } else {
+        dispatch({ type: "HOTKEY_RELEASED" });
       }
     },
-    [
-      clearReleaseStopTimer,
-      hotkeyHeldRef,
-      lockedRecordingRef,
-      pendingStopAfterStartRef,
-      recordingActiveRef,
-      releaseStopTimerRef,
-      setLockedRecordingMode,
-      settingsRef,
-      startRecording,
-      stateRef,
-      stopAndProcess,
-      stopAndProcessRef,
-      suppressNextReleaseRef,
-    ],
+    [dispatch, machineRef],
   );
 
   const attemptHotkeyRegistration = useCallback(async (rawHotkey: string): Promise<HotkeyRegistrationResultPayload> => {
@@ -243,12 +140,7 @@ export function useWidgetHotkey({
     if (!result.success) {
       showError(result.message || "Не удалось зарегистрировать горячую клавишу.");
     }
-  }, [
-    attemptHotkeyRegistration,
-    settingsLoaded,
-    settingsRef,
-    showError,
-  ]);
+  }, [attemptHotkeyRegistration, settingsLoaded, settingsRef, showError]);
 
   useEffect(() => {
     void registerCurrentHotkey();
@@ -268,14 +160,9 @@ export function useWidgetHotkey({
     const unlistenCaptureState = listen<HotkeyCaptureStatePayload>(HOTKEY_CAPTURE_STATE_EVENT, ({ payload }) => {
       isHotkeyCaptureActiveRef.current = payload.active;
 
-      if (!payload.active) {
-        return;
-      }
+      if (!payload.active) return;
 
-      clearReleaseStopTimer();
-      hotkeyHeldRef.current = false;
-      pendingStopAfterStartRef.current = false;
-      suppressNextReleaseRef.current = false;
+      dispatch({ type: "RESET_HOTKEY_STATE" });
     });
 
     const unlistenHotkeyRequests = listen<HotkeyChangeRequestPayload>(HOTKEY_CHANGE_REQUEST_EVENT, async ({ payload }) => {
@@ -307,7 +194,7 @@ export function useWidgetHotkey({
       unlistenHotkeyRequests.then((unlisten) => unlisten());
       void unregisterCurrentHotkey();
     };
-  }, [clearReleaseStopTimer, hotkeyHeldRef, pendingStopAfterStartRef, setSettings, settingsRef, suppressNextReleaseRef, unregisterCurrentHotkey]);
+  }, [clearReleaseStopTimer, dispatch, setSettings, settingsRef, unregisterCurrentHotkey]);
 }
 
 async function attemptHotkeyRegistrationPlaceholder(): Promise<HotkeyRegistrationResultPayload> {
