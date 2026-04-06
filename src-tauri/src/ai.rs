@@ -121,7 +121,13 @@ fn is_likely_short_uncertain_transcription(
 
 #[tauri::command]
 pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeResponse, String> {
-    logger::log_info("API", "Starting transcription...");
+    logger::log_info(
+        "API",
+        &format!(
+            "Starting transcription... style={}, language={}, whisper_model={:?}, llm_model={:?}",
+            req.style, req.language, req.whisper_model, req.llm_model
+        ),
+    );
 
     let client = http_client();
     let audio_bytes = base64::engine::general_purpose::STANDARD
