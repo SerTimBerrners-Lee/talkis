@@ -29,6 +29,8 @@ pub struct TranscribeRequest {
     pub style: String,
     pub whisper_endpoint: Option<String>,
     pub llm_endpoint: Option<String>,
+    pub whisper_model: Option<String>,
+    pub llm_model: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -166,9 +168,11 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         req.language.clone()
     };
 
+    let whisper_model = req.whisper_model.as_deref().unwrap_or("whisper-1");
+
     let mut form = multipart::Form::new()
         .part("file", file_part)
-        .text("model", "whisper-1")
+        .text("model", whisper_model.to_string())
         .text("response_format", "verbose_json");
 
     if let Some(prompt) = build_whisper_prompt(&req.language, &req.style) {
@@ -261,7 +265,7 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     let system_prompt = prompt_preview.prompt;
 
     // Always use gpt-4o-mini — fast, cheap, excellent for cleanup tasks
-    let llm_model = "gpt-4o-mini";
+    let llm_model = req.llm_model.as_deref().unwrap_or("gpt-4o-mini");
     let llm_url = req
         .llm_endpoint
         .as_ref()

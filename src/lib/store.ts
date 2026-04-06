@@ -13,8 +13,16 @@ export interface HistoryEntry {
   style?: AppSettings["style"];
 }
 
+export type ApiProvider = "openai" | "custom";
+
 export interface AppSettings {
   apiKey: string;
+  /** API provider preset: 'openai' uses default endpoints, 'custom' lets user configure everything */
+  provider: ApiProvider;
+  /** Model name for STT (e.g. "whisper-1", "whisper-large-v3-turbo") */
+  whisperModel: string;
+  /** Model name for LLM cleanup (e.g. "gpt-4o-mini", "deepseek-chat") */
+  llmModel: string;
   hotkey: string;
   language: string;
   doubleTapTimeout: number;
@@ -227,6 +235,9 @@ export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: 
 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
+  provider: "openai",
+  whisperModel: "whisper-1",
+  llmModel: "gpt-4o-mini",
   hotkey: DEFAULT_HOTKEY,
   language: "ru",
   doubleTapTimeout: 400,
@@ -246,6 +257,13 @@ function parseStyle(value: unknown): AppSettings["style"] | undefined {
   return undefined;
 }
 
+function parseProvider(value: unknown): ApiProvider | undefined {
+  if (value === "openai" || value === "custom") {
+    return value;
+  }
+  return undefined;
+}
+
 function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
   if (!saved || typeof saved !== "object") {
     return {};
@@ -255,6 +273,9 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
 
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
+    provider: parseProvider(raw.provider),
+    whisperModel: typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
+    llmModel: typeof raw.llmModel === "string" ? raw.llmModel : undefined,
     hotkey: typeof raw.hotkey === "string" ? normalizeHotkey(raw.hotkey).normalized : undefined,
     language: typeof raw.language === "string" ? raw.language : undefined,
     doubleTapTimeout: typeof raw.doubleTapTimeout === "number" ? raw.doubleTapTimeout : undefined,

@@ -3,8 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { AppSettings, getSettings, saveSettings } from "../../../lib/store";
-import { Check, Briefcase, Code, MessageSquare, Key, Crown, LucideIcon } from "lucide-react";
+import { AppSettings, ApiProvider, getSettings, saveSettings } from "../../../lib/store";
+import { Check, Briefcase, Code, MessageSquare, Key, Crown, Server, LucideIcon } from "lucide-react";
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl } from "../../../lib/cloudAuth";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
@@ -138,6 +138,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
   if (type === "model") {
     const hasActiveSubscription = cloudProfile?.subscription.active === true;
+    const isCustom = settings.provider === "custom";
 
     const handleActivateSubscription = async () => {
       try {
@@ -146,6 +147,25 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         // Error handled silently
       }
     };
+
+    const handleProviderChange = (provider: ApiProvider) => {
+      if (provider === "openai") {
+        update({
+          provider: "openai",
+          whisperEndpoint: "",
+          llmEndpoint: "",
+          whisperModel: "whisper-1",
+          llmModel: "gpt-4o-mini",
+        });
+      } else {
+        update({ provider: "custom" });
+      }
+    };
+
+    const keyPlaceholder = isCustom ? "API ключ или токен..." : "sk-...";
+    const keyHint = isCustom
+      ? "Укажите endpoint'ы, модели и ключ доступа вашего API-провайдера."
+      : "Ключ можно получить на platform.openai.com в разделе API Keys.";
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -217,21 +237,40 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           </div>
         )}
 
-        {/* ── Own API key option ── */}
+        {/* ── Provider selection ── */}
         {!hasActiveSubscription && (
           <>
             <OptionCard
-              active={settings.useOwnKey}
-              icon={<Key size={20} strokeWidth={settings.useOwnKey ? 2.4 : 1.8} />}
-              title="Свои API ключи"
-              description="Подключите свой OpenAI API ключ для распознавания и обработки текста."
-              onClick={() => !settings.useOwnKey && update({ useOwnKey: true })}
+              active={settings.useOwnKey && !isCustom}
+              icon={<Key size={20} strokeWidth={settings.useOwnKey && !isCustom ? 2.4 : 1.8} />}
+              title="OpenAI"
+              description="Whisper + GPT-4o mini. Один ключ для транскрипции и обработки текста."
+              onClick={() => {
+                if (!settings.useOwnKey || isCustom) {
+                  update({ useOwnKey: true });
+                  handleProviderChange("openai");
+                }
+              }}
             />
 
+            <OptionCard
+              active={settings.useOwnKey && isCustom}
+              icon={<Server size={20} strokeWidth={settings.useOwnKey && isCustom ? 2.4 : 1.8} />}
+              title="Свой сервер"
+              description="Groq, DeepSeek, Ollama или любой OpenAI-совместимый API. Полная настройка."
+              onClick={() => {
+                if (!settings.useOwnKey || !isCustom) {
+                  update({ useOwnKey: true });
+                  handleProviderChange("custom");
+                }
+              }}
+            />
+
+            {/* ── API Key input ── */}
             {settings.useOwnKey && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)" }}>OpenAI API ключ</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)" }}>API ключ</div>
                 </div>
                 <div style={{ position: "relative" }}>
                   <input
@@ -239,12 +278,75 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     value={settings.apiKey}
                     onChange={(e) => update({ apiKey: e.target.value })}
                     className="input"
-                    placeholder="sk-..."
+                    placeholder={keyPlaceholder}
                     style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
                   />
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Ключ используется для Whisper (распознавание) и GPT-4o mini (обработка) и не отправляется на сервер Talkis.
+                  {keyHint}
+                </div>
+              </div>
+            )}
+
+            {/* ── Custom provider: endpoints & models ── */}
+            {settings.useOwnKey && isCustom && (
+              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Настройка провайдера</div>
+
+                {/* Whisper endpoint */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div className="label">Whisper endpoint</div>
+                  <input
+                    type="text"
+                    value={settings.whisperEndpoint}
+                    onChange={(e) => update({ whisperEndpoint: e.target.value })}
+                    className="input"
+                    placeholder="https://api.groq.com/openai"
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                  />
+                </div>
+
+                {/* Whisper model */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div className="label">Модель транскрипции</div>
+                  <input
+                    type="text"
+                    value={settings.whisperModel}
+                    onChange={(e) => update({ whisperModel: e.target.value })}
+                    className="input"
+                    placeholder="whisper-large-v3-turbo"
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                  />
+                </div>
+
+                {/* LLM endpoint */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div className="label">LLM endpoint</div>
+                  <input
+                    type="text"
+                    value={settings.llmEndpoint}
+                    onChange={(e) => update({ llmEndpoint: e.target.value })}
+                    className="input"
+                    placeholder="https://api.deepseek.com"
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                  />
+                </div>
+
+                {/* LLM model */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div className="label">Модель обработки текста</div>
+                  <input
+                    type="text"
+                    value={settings.llmModel}
+                    onChange={(e) => update({ llmModel: e.target.value })}
+                    className="input"
+                    placeholder="deepseek-chat"
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                  />
+                </div>
+
+                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
+                  Оба endpoint'а должны быть совместимы с форматом OpenAI API. Если endpoint пустой — используется OpenAI по умолчанию.
                 </div>
               </div>
             )}
@@ -256,12 +358,14 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>
             {hasActiveSubscription ? (
               <>Все запросы обрабатываются через серверы Talkis без ограничений.</>
+            ) : settings.useOwnKey && isCustom ? (
+              <>Укажите OpenAI-совместимые endpoint'ы. Подходит для Groq, DeepSeek, Ollama, LM Studio и других.</>
             ) : settings.useOwnKey ? (
               <>
                 Ключ можно получить на <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span> в разделе API Keys.
               </>
             ) : (
-              <>Активируйте подписку или подключите свой OpenAI API-ключ для работы приложения.</>
+              <>Активируйте подписку или подключите свой API-ключ для работы приложения.</>
             )}
           </div>
         </div>

@@ -88,6 +88,8 @@ async function transcribeAudio({
       style: settings.style || "classic",
       whisper_endpoint: settings.whisperEndpoint || null,
       llm_endpoint: settings.llmEndpoint || null,
+      whisper_model: settings.whisperModel || null,
+      llm_model: settings.llmModel || null,
     },
   });
 
