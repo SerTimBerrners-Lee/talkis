@@ -277,12 +277,10 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               </div>
             </div>
 
-            {/* ── API Key input (OpenAI mode: one key, Custom mode: LLM key) ── */}
-            {settings.useOwnKey && (
+            {/* ── API Key input (OpenAI mode only) ── */}
+            {settings.useOwnKey && !isCustom && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>
-                  {isCustom ? "API ключ" : "OpenAI API ключ"}
-                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>OpenAI API ключ</div>
                 <input
                   type="password"
                   value={settings.apiKey}
@@ -291,17 +289,10 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                   placeholder={keyPlaceholder}
                   style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
                 />
-                {!isCustom && (
-                  <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                    Получить ключ на{" "}
-                    <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span>
-                  </div>
-                )}
-                {isCustom && (
-                  <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                    Основной ключ — используется для всех запросов.
-                  </div>
-                )}
+                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
+                  Получить ключ на{" "}
+                  <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span>
+                </div>
               </div>
             )}
 
@@ -412,8 +403,17 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
                 {/* ── STT section ── */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Транскрипция (STT)</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Транскрипция (STT)</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div className="label">API ключ</div>
+                    <input
+                      type="password"
+                      value={settings.whisperApiKey}
+                      onChange={(e) => { update({ whisperApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
+                      className="input"
+                      placeholder="sk-..."
+                      style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                    />
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -430,9 +430,20 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
                 {/* ── LLM section ── */}
-                {settings.llmModel !== "none" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Обработка текста (LLM)</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Обработка текста (LLM)</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div className="label">API ключ</div>
+                    <input
+                      type="password"
+                      value={settings.apiKey}
+                      onChange={(e) => { update({ apiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
+                      className="input"
+                      placeholder="Оставьте пустым, чтобы отключить обработку"
+                      style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                    />
+                  </div>
+                  {settings.apiKey.trim() && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                         <div className="label">Endpoint</div>
@@ -443,20 +454,20 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                         <input type="text" value={settings.llmModel} onChange={(e) => update({ llmModel: e.target.value })} className="input" placeholder="gpt-4o-mini" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {settings.llmModel === "none"
-                    ? "LLM-обработка отключена. Текст вставляется сразу после транскрипции."
-                    : "Оба endpoint'а должны быть совместимы с форматом OpenAI API. Пустое поле — OpenAI по умолчанию."
+                  {settings.apiKey.trim()
+                    ? "Endpoint'ы должны быть совместимы с форматом OpenAI API. Пустое поле — OpenAI по умолчанию."
+                    : "Обработка текста отключена. Текст вставляется сразу после транскрипции."
                   }
                 </div>
               </div>
             )}
 
             {/* ── Test connection ── */}
-            {settings.useOwnKey && settings.apiKey && (
+            {settings.useOwnKey && (settings.apiKey || settings.whisperApiKey) && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <button
