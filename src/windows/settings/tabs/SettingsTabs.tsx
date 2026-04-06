@@ -312,7 +312,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             {settings.useOwnKey && !isCustom && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: (sttDropdownOpen || llmDropdownOpen) ? 20 : 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Модели</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: (settings.whisperModel || "").includes("transcribe") ? "1fr" : "1fr 1fr", gap: 12 }}>
                   {/* STT model dropdown */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Транскрипция</div>
@@ -356,7 +356,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       )}
                     </div>
                   </div>
-                  {/* LLM model dropdown */}
+                  {/* LLM model dropdown — hidden when transcribe model selected */}
+                  {!(settings.whisperModel || "").includes("transcribe") && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Обработка текста</div>
                     <div ref={llmDropdownRef} style={{ position: "relative" }}>
@@ -401,9 +402,13 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       )}
                     </div>
                   </div>
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Транскрипция — преобразование голоса в текст. Обработка — очистка и форматирование по стилю.
+                  {(settings.whisperModel || "").includes("transcribe")
+                    ? "Transcribe-модель обеспечивает высокое качество текста без дополнительной обработки."
+                    : "Транскрипция — преобразование голоса в текст. Обработка — очистка и форматирование по стилю."
+                  }
                 </div>
               </div>
             )}
