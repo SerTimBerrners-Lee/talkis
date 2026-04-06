@@ -263,11 +263,11 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               </div>
             </div>
 
-            {/* ── API Key input ── */}
+            {/* ── API Key input (OpenAI mode: one key, Custom mode: LLM key) ── */}
             {settings.useOwnKey && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>
-                  {isCustom ? "API ключ" : "OpenAI API ключ"}
+                  {isCustom ? "LLM API ключ" : "OpenAI API ключ"}
                 </div>
                 <input
                   type="password"
@@ -283,13 +283,37 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span>
                   </div>
                 )}
+                {isCustom && (
+                  <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
+                    Ключ для LLM-провайдера (обработка текста).
+                  </div>
+                )}
               </div>
             )}
 
-            {/* ── Custom provider: endpoints & models ── */}
+            {/* ── Custom provider: whisper key + endpoints & models ── */}
             {settings.useOwnKey && isCustom && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Настройка провайдера</div>
+
+                {/* Whisper API key */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div className="label">Whisper API ключ</div>
+                  <input
+                    type="password"
+                    value={settings.whisperApiKey}
+                    onChange={(e) => { update({ whisperApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
+                    className="input"
+                    placeholder="Ключ для Whisper (если отличается от LLM)"
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                  />
+                  <div style={{ fontSize: 11, color: "var(--text-low)", lineHeight: 1.5 }}>
+                    Если пусто — используется LLM ключ выше.
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Whisper endpoint</div>

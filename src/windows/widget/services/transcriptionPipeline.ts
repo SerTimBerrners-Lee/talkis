@@ -85,6 +85,7 @@ async function transcribeAudio({
       audio_base64: audioBase64,
       language: settings.language,
       api_key: settings.apiKey,
+      whisper_api_key: settings.whisperApiKey || null,
       style: settings.style || "classic",
       whisper_endpoint: settings.whisperEndpoint || null,
       llm_endpoint: settings.llmEndpoint || null,

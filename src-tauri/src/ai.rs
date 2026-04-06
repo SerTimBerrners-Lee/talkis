@@ -26,6 +26,7 @@ pub struct TranscribeRequest {
     pub audio_base64: String,
     pub language: String,
     pub api_key: String,
+    pub whisper_api_key: Option<String>,
     pub style: String,
     pub whisper_endpoint: Option<String>,
     pub llm_endpoint: Option<String>,
@@ -183,9 +184,13 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         form = form.text("language", lang_param);
     }
 
+    let whisper_key = req.whisper_api_key.as_ref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&req.api_key);
+
     let whisper_res = client
         .post(&whisper_url)
-        .bearer_auth(&req.api_key)
+        .bearer_auth(whisper_key)
         .multipart(form)
         .send()
         .await
