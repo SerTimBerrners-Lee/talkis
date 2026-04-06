@@ -177,18 +177,33 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     };
 
     let whisper_model = req.whisper_model.as_deref().unwrap_or("whisper-1");
+    let is_transcribe_model = whisper_model.contains("transcribe");
 
     let mut form = multipart::Form::new()
         .part("file", file_part)
-        .text("model", whisper_model.to_string())
-        .text("response_format", "verbose_json");
+        .text("model", whisper_model.to_string());
 
-    if let Some(prompt) = build_whisper_prompt(&req.language, &req.style) {
-        form = form.text("prompt", prompt.to_string());
-    }
+    if is_transcribe_model {
+        // gpt-4o-transcribe / gpt-4o-mini-transcribe:
+        // - Only support "json" or "text" response_format (not verbose_json)
+        // - Don't support "language" or "prompt" params
+        // - Use "instructions" instead of "prompt" for hints
+        form = form.text("response_format", "json");
 
-    if !lang_param.is_empty() {
-        form = form.text("language", lang_param);
+        if let Some(hint) = build_whisper_prompt(&req.language, &req.style) {
+            form = form.text("instructions", hint);
+        }
+    } else {
+        // Classic Whisper models: support verbose_json, language, prompt
+        form = form.text("response_format", "verbose_json");
+
+        if let Some(prompt) = build_whisper_prompt(&req.language, &req.style) {
+            form = form.text("prompt", prompt.to_string());
+        }
+
+        if !lang_param.is_empty() {
+            form = form.text("language", lang_param);
+        }
     }
 
     let whisper_key = req.whisper_api_key.as_ref()
@@ -244,7 +259,9 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         });
     }
 
-    if is_likely_short_uncertain_transcription(&raw, whisper_body.duration, &whisper_body.segments)
+    // Transcribe models don't return segments/duration, skip uncertainty check
+    if !is_transcribe_model
+        && is_likely_short_uncertain_transcription(&raw, whisper_body.duration, &whisper_body.segments)
     {
         logger::log_info(
             "WHISPER",
