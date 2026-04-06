@@ -279,7 +279,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 />
                 {!isCustom && (
                   <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                    Ключ используется для Whisper (транскрипция) и GPT-4o&nbsp;mini (обработка). Получить на{" "}
+                    Получить ключ на{" "}
                     <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span>
                   </div>
                 )}
@@ -288,6 +288,45 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     Ключ для LLM-провайдера (обработка текста).
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── OpenAI mode: model selectors ── */}
+            {settings.useOwnKey && !isCustom && (
+              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Модели</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="label">Транскрипция</div>
+                    <select
+                      value={settings.whisperModel || "whisper-1"}
+                      onChange={(e) => update({ whisperModel: e.target.value })}
+                      className="input"
+                      style={{ fontSize: 12, cursor: "pointer" }}
+                    >
+                      <option value="whisper-1">whisper-1</option>
+                      <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+                      <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="label">Обработка текста</div>
+                    <select
+                      value={settings.llmModel || "gpt-4o-mini"}
+                      onChange={(e) => update({ llmModel: e.target.value })}
+                      className="input"
+                      style={{ fontSize: 12, cursor: "pointer" }}
+                    >
+                      <option value="gpt-4o-mini">gpt-4o-mini</option>
+                      <option value="gpt-4o">gpt-4o</option>
+                      <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                      <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
+                  Транскрипция — преобразование голоса в текст. Обработка — очистка и форматирование по стилю.
+                </div>
               </div>
             )}
 
