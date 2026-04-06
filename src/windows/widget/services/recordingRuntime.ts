@@ -60,7 +60,10 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       let codec: RecorderCodec = "webm";
 
       try {
-        recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        recorder = new MediaRecorder(stream, {
+          mimeType: "audio/webm",
+          audioBitsPerSecond: 24_000,
+        });
       } catch {
         recorder = new MediaRecorder(stream);
         codec = "default";
