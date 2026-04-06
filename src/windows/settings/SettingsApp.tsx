@@ -62,7 +62,7 @@ function SidebarLogo() {
           ))}
         </div>
         <div style={{ fontSize: 30, lineHeight: 0.95, fontWeight: 800, letterSpacing: "-0.06em", fontFamily: "var(--font-brand)", color: "var(--text-hi)" }}>
-          Talk Flow
+          Talkis
         </div>
       </div>
     </div>

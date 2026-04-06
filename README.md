@@ -1,6 +1,6 @@
-# Talk Flow
+# Talkis
 
-Talk Flow is a lightweight macOS voice-to-text app built with Tauri.
+Talkis is a lightweight macOS voice-to-text app built with Tauri.
 
 It sits in a small floating widget, listens while you hold a hotkey, sends audio to Whisper for transcription, cleans up the text with GPT-4o mini, and pastes the result into the active app.
 
@@ -15,7 +15,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 
 ## macOS only
 
-Talk Flow is currently designed for macOS.
+Talkis is currently designed for macOS.
 
 The app relies on:
 
@@ -30,7 +30,7 @@ Before first use, make sure you have:
 1. macOS
 2. an OpenAI API key
 3. microphone access enabled
-4. accessibility access enabled for Talk Flow
+4. accessibility access enabled for Talkis
 
 ### 1. Open the settings window
 
@@ -40,7 +40,7 @@ If it is hidden, click the floating widget to open it again.
 
 ### 2. Grant permissions
 
-On first launch, Talk Flow asks for:
+On first launch, Talkis asks for:
 
 - Microphone access - required for recording
 - Accessibility access - required to paste the final text into other apps
@@ -51,7 +51,7 @@ Without accessibility permission, speech can still be processed, but automatic p
 
 Open the `Subscription` tab and paste your OpenAI API key.
 
-Right now Talk Flow works with your own API key only.
+Right now Talkis works with your own API key only.
 
 The key is used for:
 
@@ -66,7 +66,7 @@ The key is used for:
 2. Hold `Command + Space`
 3. Start speaking
 4. Release the hotkey when finished
-5. Wait a moment while Talk Flow processes the audio
+5. Wait a moment while Talkis processes the audio
 6. The cleaned text is pasted automatically
 
 ### Locked recording mode
@@ -87,7 +87,7 @@ If you want to speak longer without holding the keys:
 
 ## Text styles
 
-Talk Flow supports several cleanup styles for the final text. The exact labels may evolve, but the idea is simple:
+Talkis supports several cleanup styles for the final text. The exact labels may evolve, but the idea is simple:
 
 - `Classic` - neutral cleanup for everyday dictation
 - `Business` - cleaner and more formal phrasing
@@ -107,13 +107,13 @@ History is stored locally on your machine.
 ## Privacy
 
 - Audio is sent to the API endpoints you configure for transcription and cleanup
-- By default, Talk Flow uses OpenAI endpoints
+- By default, Talkis uses OpenAI endpoints
 - Your API key is stored locally in the app settings
-- Talk Flow does not require a Talk Flow account
+- Talkis does not require a Talkis account
 
 ## Advanced configuration
 
-Talk Flow supports custom compatible endpoints for:
+Talkis supports custom compatible endpoints for:
 
 - Whisper transcription
 - chat completion / cleanup
@@ -124,7 +124,7 @@ If these fields are left empty, the app uses the standard OpenAI API.
 
 ### Nothing gets pasted
 
-- Check that Talk Flow has Accessibility permission in macOS System Settings
+- Check that Talkis has Accessibility permission in macOS System Settings
 - Make sure the target app allows normal paste input
 - Try again in a standard text field like Notes
 
@@ -137,7 +137,7 @@ If these fields are left empty, the app uses the standard OpenAI API.
 ### The hotkey does not trigger
 
 - Make sure another app is not using the same shortcut
-- Restart Talk Flow after changing macOS permissions
+- Restart Talkis after changing macOS permissions
 
 ### Build fails on external drives with `._*` files
 
@@ -173,11 +173,11 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.7` to build and publish a GitHub Release
-- Or run the workflow manually and provide a tag like `v0.1.7`
+- Push a tag like `v0.1.8` to build and publish a GitHub Release
+- Or run the workflow manually and provide a tag like `v0.1.8`
 - The current workflow publishes all currently supported release artifacts, which is macOS only right now
 - Windows and Linux are listed in the matrix but intentionally disabled until platform-specific support is added
-- For macOS release builds, move `Talk Flow.app` to `Applications` before granting Accessibility access
+- For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
 
 Optional macOS signing/notarization secrets:
 
@@ -201,4 +201,4 @@ Without these secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talk Flow is an active work in progress. Expect rough edges while the interaction model and onboarding continue to improve.
+Talkis is an active work in progress. Expect rough edges while the interaction model and onboarding continue to improve.

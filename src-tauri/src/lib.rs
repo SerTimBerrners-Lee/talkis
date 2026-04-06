@@ -85,7 +85,7 @@ pub fn run() {
             stop_native_hotkey_capture,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Talk Flow");
+        .expect("error while running Talkis");
 }
 
 #[tauri::command]

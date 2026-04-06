@@ -1,5 +1,5 @@
 /**
- * TalkFlow Cloud authentication client.
+ * Talkis Cloud authentication client.
  *
  * Handles communication with talkis.ru API for:
  * - Fetching user profile and subscription status

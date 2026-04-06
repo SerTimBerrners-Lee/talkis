@@ -25,7 +25,7 @@
 - `bun run build:release:macos` - passed
 - Additional manual checks:
   - confirmed the invalid expression in `.github/workflows/release.yml` was replaced with shell expansion
-  - verified the local post-processed app still builds and signs with `Identifier=com.trixter.talkflow`
+  - verified the local post-processed app still builds and signs with `Identifier=com.trixter.talkis`
 
 ## Manual review
 

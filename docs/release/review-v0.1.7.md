@@ -24,7 +24,7 @@
 - `bun run check:release` - passed
 - `bun run build:release:macos` - passed
 - Additional manual checks:
-  - confirmed the app now calls `tccutil reset Accessibility com.trixter.talkflow` before opening Accessibility settings
+  - confirmed the app now calls `tccutil reset Accessibility com.trixter.talkis` before opening Accessibility settings
 
 ## Manual review
 

@@ -115,7 +115,7 @@ function SubscriptionCTA({ onActivate }: { onActivate: () => void }) {
       <div style={styles.ctaHeader}>
         <Crown size={14} strokeWidth={2} color="var(--text-hi)" />
         <span style={{ fontWeight: 700, fontSize: 12, letterSpacing: "-0.02em", color: "var(--text-hi)" }}>
-          Активируйте TalkFlow
+          Активируйте Talkis
         </span>
       </div>
 

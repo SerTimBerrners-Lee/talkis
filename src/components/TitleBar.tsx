@@ -61,7 +61,7 @@ export function TitleBar() {
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(0,0,0,0.72)", letterSpacing: "-0.02em" }}>
-          Talk Flow
+          Talkis
         </div>
 
         <div style={{ width: 56 }} />

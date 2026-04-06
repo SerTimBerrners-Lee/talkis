@@ -4281,8 +4281,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "talk-flow"
-version = "0.1.7"
+name = "talkis"
+version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",

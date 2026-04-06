@@ -1,4 +1,4 @@
-const APP_BUNDLE_ID: &str = "com.trixter.talkflow";
+const APP_BUNDLE_ID: &str = "com.trixter.talkis";
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]

@@ -1,12 +1,12 @@
 [package]
-name = "talk-flow"
-version = "0.1.7"
-description = "Talk Flow - Voice to Text macOS Widget"
+name = "talkis"
+version = "0.1.8"
+description = "Talkis - Voice to Text macOS Widget"
 authors = ["trixter"]
 edition = "2021"
 
 [lib]
-name = "talk_flow_lib"
+name = "talkis_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

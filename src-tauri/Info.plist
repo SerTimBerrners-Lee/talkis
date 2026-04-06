@@ -3,19 +3,19 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>Talk Flow</string>
+  <string>Talkis</string>
   <key>CFBundleDisplayName</key>
-  <string>Talk Flow</string>
+  <string>Talkis</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Предоставьте доступ к микрофону, чтобы Talk Flow мог записывать ваш голос для перевода в текст.</string>
+  <string>Предоставьте доступ к микрофону, чтобы Talkis мог записывать ваш голос для перевода в текст.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>com.trixter.talkflow</string>
+      <string>com.trixter.talkis</string>
       <key>CFBundleURLSchemes</key>
       <array>
-        <string>talkflow</string>
+        <string>talkis</string>
       </array>
     </dict>
   </array>

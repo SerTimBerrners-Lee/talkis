@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { AppSettings, getSettings, saveSettings } from "../../../lib/store";
@@ -7,6 +8,7 @@ import { Check, Briefcase, Code, MessageSquare, Key, Crown, LucideIcon } from "l
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl } from "../../../lib/cloudAuth";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
+import { SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -129,7 +131,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const update = (patch: Partial<AppSettings>) => {
     const s = { ...settings, ...patch };
     setSettings(s);
-    saveSettings(s);
+    saveSettings(s).then(() => {
+      emit(SETTINGS_UPDATED_EVENT).catch(() => {});
+    });
   };
 
   if (type === "model") {
@@ -166,7 +170,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           <div style={{ padding: "22px 20px", borderRadius: 14, background: "#000", color: "#fff" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
               <Crown size={16} strokeWidth={2.2} />
-              <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>Подписка TalkFlow</span>
+              <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>Подписка Talkis</span>
             </div>
 
             <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px", fontSize: 12, lineHeight: 2, opacity: 0.85 }}>
@@ -240,7 +244,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                   />
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Ключ используется для Whisper (распознавание) и GPT-4o mini (обработка) и не отправляется на сервер Talk Flow.
+                  Ключ используется для Whisper (распознавание) и GPT-4o mini (обработка) и не отправляется на сервер Talkis.
                 </div>
               </div>
             )}
@@ -251,7 +255,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         <div className="card" style={{ padding: 18, background: "rgba(255,255,255,0.58)" }}>
           <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>
             {hasActiveSubscription ? (
-              <>Все запросы обрабатываются через серверы TalkFlow без ограничений.</>
+              <>Все запросы обрабатываются через серверы Talkis без ограничений.</>
             ) : settings.useOwnKey ? (
               <>
                 Ключ можно получить на <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span> в разделе API Keys.
