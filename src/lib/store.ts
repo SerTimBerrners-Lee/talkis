@@ -11,6 +11,8 @@ export interface HistoryEntry {
   audioBase64?: string;
   language?: string;
   style?: AppSettings["style"];
+  /** Total processing time in milliseconds (STT + LLM) */
+  processingTime?: number;
 }
 
 export type ApiProvider = "openai" | "custom";
@@ -292,6 +294,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
     whisperEndpoint: typeof raw.whisperEndpoint === "string" ? raw.whisperEndpoint : undefined,
     llmEndpoint: typeof raw.llmEndpoint === "string" ? raw.llmEndpoint : undefined,
     useOwnKey: typeof raw.useOwnKey === "boolean" ? raw.useOwnKey : undefined,
+    deviceToken: typeof raw.deviceToken === "string" ? raw.deviceToken : undefined,
   };
 }
 

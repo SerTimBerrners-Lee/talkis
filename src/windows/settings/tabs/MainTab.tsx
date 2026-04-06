@@ -242,10 +242,21 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                       {group.items.map((item, index) => (
                         <tr key={item.id} onDoubleClick={() => navigator.clipboard.writeText(item.cleaned)} style={{ borderBottom: index < group.items.length - 1 ? "1px solid rgba(0,0,0,0.04)" : "none", cursor: "default" }}>
                           <td style={{ whiteSpace: "nowrap", verticalAlign: "top", color: "var(--text-low)" }}>
-                            {new Date(item.timestamp).toLocaleTimeString("ru-RU", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                              <span>
+                              {new Date(item.timestamp).toLocaleTimeString("ru-RU", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                              </span>
+                              {item.processingTime != null && (
+                                <span style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.02em" }}>
+                                  {item.processingTime < 1000
+                                    ? `${item.processingTime}мс`
+                                    : `${(item.processingTime / 1000).toFixed(1)}с`}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ verticalAlign: "top" }}>
                             <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>

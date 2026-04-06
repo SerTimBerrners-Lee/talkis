@@ -129,17 +129,19 @@ export async function processRecordingBlob({
   const durationSeconds = Math.floor((Date.now() - recordingStartTimestamp) / 1000);
 
   try {
+    const apiStart = Date.now();
     const result = await transcribeAudio({
       audioBase64: base64Audio,
       settings,
     });
+    const processingTime = Date.now() - apiStart;
 
     if (!result.raw.trim() && !result.cleaned.trim()) {
       logInfo("API", "Nothing recognized, skipping history save and paste");
       return { durationSeconds, hasTranscription: false };
     }
 
-    logInfo("API", `Transcription complete: "${result.cleaned}"`);
+    logInfo("API", `Transcription complete in ${processingTime}ms: "${result.cleaned}"`);
     const historyEntry: HistoryEntry = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -147,6 +149,7 @@ export async function processRecordingBlob({
       raw: result.raw,
       cleaned: result.cleaned,
       status: "completed",
+      processingTime,
     };
 
     await saveAndEmitHistoryEntry(historyEntry, "add");
