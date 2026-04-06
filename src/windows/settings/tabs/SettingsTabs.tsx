@@ -307,7 +307,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
             {/* ── OpenAI mode: model selectors ── */}
             {settings.useOwnKey && !isCustom && (
-              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: (sttDropdownOpen || llmDropdownOpen) ? 20 : 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Модели</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {/* STT model dropdown */}
