@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { AppSettings, ApiProvider, getSettings, saveSettings } from "../../../lib/store";
-import { Check, Briefcase, Code, MessageSquare, Crown, Zap, LucideIcon } from "lucide-react";
+import { Check, Briefcase, Code, MessageSquare, Crown, Zap, ChevronDown, LucideIcon } from "lucide-react";
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl } from "../../../lib/cloudAuth";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
@@ -95,6 +95,20 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const [cloudProfile, setCloudProfile] = useState<CloudProfile | null>(null);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState<string | null>(null);
+  const [sttDropdownOpen, setSttDropdownOpen] = useState(false);
+  const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
+  const sttDropdownRef = useRef<HTMLDivElement>(null);
+  const llmDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close model dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (sttDropdownRef.current && !sttDropdownRef.current.contains(e.target as Node)) setSttDropdownOpen(false);
+      if (llmDropdownRef.current && !llmDropdownRef.current.contains(e.target as Node)) setLlmDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   useEffect(() => { getSettings().then(setSettings); }, []);
 
@@ -296,32 +310,92 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Модели</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  {/* STT model dropdown */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Транскрипция</div>
-                    <select
-                      value={settings.whisperModel || "whisper-1"}
-                      onChange={(e) => update({ whisperModel: e.target.value })}
-                      className="input"
-                      style={{ fontSize: 12, cursor: "pointer" }}
-                    >
-                      <option value="whisper-1">whisper-1</option>
-                      <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
-                      <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
-                    </select>
+                    <div ref={sttDropdownRef} style={{ position: "relative" }}>
+                      <button
+                        onClick={() => { setSttDropdownOpen(o => !o); setLlmDropdownOpen(false); }}
+                        className="btn"
+                        style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 40 }}
+                      >
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+                          {settings.whisperModel || "whisper-1"}
+                        </span>
+                        <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, transform: sttDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                      </button>
+                      {sttDropdownOpen && (
+                        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 16, boxShadow: "var(--shadow-panel)", zIndex: 100, overflow: "hidden" }}>
+                          {[
+                            { value: "whisper-1", label: "whisper-1", desc: "Классическая" },
+                            { value: "gpt-4o-mini-transcribe", label: "gpt-4o-mini-transcribe", desc: "Быстрая, дешевле" },
+                            { value: "gpt-4o-transcribe", label: "gpt-4o-transcribe", desc: "Лучшее качество" },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => { update({ whisperModel: opt.value }); setSttDropdownOpen(false); }}
+                              style={{
+                                width: "100%", textAlign: "left", border: "none", cursor: "pointer",
+                                padding: "10px 14px", display: "flex", alignItems: "center", gap: 8,
+                                background: (settings.whisperModel || "whisper-1") === opt.value ? "rgba(0,0,0,0.04)" : "transparent",
+                                color: (settings.whisperModel || "whisper-1") === opt.value ? "var(--text-hi)" : "var(--text-mid)",
+                                fontSize: 12, transition: "background 0.1s",
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
+                              onMouseLeave={e => e.currentTarget.style.background = (settings.whisperModel || "whisper-1") === opt.value ? "rgba(0,0,0,0.04)" : "transparent"}
+                            >
+                              <span style={{ flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{opt.label}</span>
+                              <span style={{ fontSize: 10, color: "var(--text-low)" }}>{opt.desc}</span>
+                              {(settings.whisperModel || "whisper-1") === opt.value && <Check size={12} strokeWidth={2.5} style={{ color: "var(--text-hi)", flexShrink: 0 }} />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {/* LLM model dropdown */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Обработка текста</div>
-                    <select
-                      value={settings.llmModel || "gpt-4o-mini"}
-                      onChange={(e) => update({ llmModel: e.target.value })}
-                      className="input"
-                      style={{ fontSize: 12, cursor: "pointer" }}
-                    >
-                      <option value="gpt-4o-mini">gpt-4o-mini</option>
-                      <option value="gpt-4o">gpt-4o</option>
-                      <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-                      <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-                    </select>
+                    <div ref={llmDropdownRef} style={{ position: "relative" }}>
+                      <button
+                        onClick={() => { setLlmDropdownOpen(o => !o); setSttDropdownOpen(false); }}
+                        className="btn"
+                        style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 40 }}
+                      >
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+                          {settings.llmModel || "gpt-4o-mini"}
+                        </span>
+                        <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, transform: llmDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                      </button>
+                      {llmDropdownOpen && (
+                        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 16, boxShadow: "var(--shadow-panel)", zIndex: 100, overflow: "hidden" }}>
+                          {[
+                            { value: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Баланс цена/качество" },
+                            { value: "gpt-4o", label: "gpt-4o", desc: "Лучшее качество" },
+                            { value: "gpt-4.1-mini", label: "gpt-4.1-mini", desc: "Новая, быстрая" },
+                            { value: "gpt-4.1-nano", label: "gpt-4.1-nano", desc: "Самая дешёвая" },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => { update({ llmModel: opt.value }); setLlmDropdownOpen(false); }}
+                              style={{
+                                width: "100%", textAlign: "left", border: "none", cursor: "pointer",
+                                padding: "10px 14px", display: "flex", alignItems: "center", gap: 8,
+                                background: (settings.llmModel || "gpt-4o-mini") === opt.value ? "rgba(0,0,0,0.04)" : "transparent",
+                                color: (settings.llmModel || "gpt-4o-mini") === opt.value ? "var(--text-hi)" : "var(--text-mid)",
+                                fontSize: 12, transition: "background 0.1s",
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
+                              onMouseLeave={e => e.currentTarget.style.background = (settings.llmModel || "gpt-4o-mini") === opt.value ? "rgba(0,0,0,0.04)" : "transparent"}
+                            >
+                              <span style={{ flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{opt.label}</span>
+                              <span style={{ fontSize: 10, color: "var(--text-low)" }}>{opt.desc}</span>
+                              {(settings.llmModel || "gpt-4o-mini") === opt.value && <Check size={12} strokeWidth={2.5} style={{ color: "var(--text-hi)", flexShrink: 0 }} />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
