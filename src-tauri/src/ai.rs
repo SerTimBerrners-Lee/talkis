@@ -259,6 +259,16 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     }
 
     // ── Step 2: LLM Text Cleanup ────────────────────────────────────────
+
+    // Skip LLM processing when style is "none" — return raw transcription as-is
+    if req.style == "none" {
+        logger::log_info("LLM", "Style is 'none', skipping LLM cleanup");
+        return Ok(TranscribeResponse {
+            raw: raw.clone(),
+            cleaned: raw,
+        });
+    }
+
     let prompt_preview = prompt_config::build_cleanup_prompt_preview(&req.language, &req.style)
         .map_err(|err| {
             logger::log_error("PROMPT", &err);
