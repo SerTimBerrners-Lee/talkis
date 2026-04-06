@@ -307,7 +307,12 @@ async function getStore() {
 export async function getSettings(): Promise<AppSettings> {
   const store = await getStore();
   const saved = await store.get<unknown>("settings");
-  const result = { ...DEFAULT_SETTINGS, ...normalizeSavedSettings(saved) };
+  const normalized = normalizeSavedSettings(saved);
+  // Remove undefined keys so they don't overwrite defaults
+  const defined = Object.fromEntries(
+    Object.entries(normalized).filter(([, v]) => v !== undefined),
+  );
+  const result = { ...DEFAULT_SETTINGS, ...defined } as AppSettings;
   return result;
 }
 

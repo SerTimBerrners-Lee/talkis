@@ -436,14 +436,14 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     <div className="label">API ключ</div>
                     <input
                       type="password"
-                      value={settings.llmApiKey}
+                      value={settings.llmApiKey || ""}
                       onChange={(e) => { update({ llmApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
                       className="input"
                       placeholder="Оставьте пустым, чтобы отключить обработку"
                       style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
                     />
                   </div>
-                  {settings.llmApiKey.trim() && (
+                  {(settings.llmApiKey || "").trim() && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                         <div className="label">Endpoint</div>
@@ -458,7 +458,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 </div>
 
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {settings.llmApiKey.trim()
+                  {(settings.llmApiKey || "").trim()
                     ? "Endpoint'ы должны быть совместимы с форматом OpenAI API. Пустое поле — OpenAI по умолчанию."
                     : "Обработка текста отключена. Текст вставляется сразу после транскрипции."
                   }
