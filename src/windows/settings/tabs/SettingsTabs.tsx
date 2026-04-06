@@ -184,9 +184,21 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       setTestStatus("testing");
       setTestMessage(null);
       try {
+        // In custom mode, use whisperApiKey for STT and llmApiKey for LLM
+        // In OpenAI mode, use apiKey for everything
+        const testKey = isCustom
+          ? ((settings.llmApiKey || "").trim() || (settings.whisperApiKey || "").trim())
+          : settings.apiKey;
+
+        if (!testKey) {
+          setTestStatus("error");
+          setTestMessage("Укажите хотя бы один API ключ для тестирования.");
+          return;
+        }
+
         const result = await invoke<{ success: boolean; message: string; latency_ms: number }>("test_api_connection", {
           req: {
-            api_key: settings.apiKey,
+            api_key: testKey,
             llm_endpoint: isCustom ? (settings.llmEndpoint || null) : null,
             llm_model: isCustom ? (settings.llmModel || null) : null,
           },
