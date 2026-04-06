@@ -317,8 +317,14 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     );
     let system_prompt = prompt_preview.prompt;
 
-    // Always use gpt-4o-mini — fast, cheap, excellent for cleanup tasks
-    let llm_model = req.llm_model.as_deref().unwrap_or("gpt-4o-mini");
+    // Map transcribe model names to their chat equivalents
+    // (e.g. "gpt-4o-mini-transcribe" → "gpt-4o-mini")
+    let llm_model_raw = req.llm_model.as_deref().unwrap_or("gpt-4o-mini");
+    let llm_model = if llm_model_raw.contains("transcribe") {
+        llm_model_raw.replace("-transcribe", "")
+    } else {
+        llm_model_raw.to_string()
+    };
     let llm_url = req
         .llm_endpoint
         .as_ref()

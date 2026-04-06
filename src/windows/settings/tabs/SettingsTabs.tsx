@@ -338,9 +338,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                               key={opt.value}
                               onClick={() => {
                                 const patch: Partial<AppSettings> = { whisperModel: opt.value };
-                                // Auto-set LLM to 'none' when selecting a transcribe model
-                                if (opt.value.includes("transcribe") && !(settings.llmModel === "none")) {
-                                  patch.llmModel = "none";
+                                // Auto-set LLM to the same transcribe model for style processing
+                                if (opt.value.includes("transcribe")) {
+                                  patch.llmModel = opt.value;
                                 }
                                 update(patch);
                                 setSttDropdownOpen(false);
@@ -381,6 +381,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       {llmDropdownOpen && (
                         <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 16, boxShadow: "var(--shadow-panel)", zIndex: 100, overflow: "hidden" }}>
                           {[
+                            ...((settings.whisperModel || "").includes("transcribe") ? [
+                              { value: settings.whisperModel!, label: settings.whisperModel!, desc: "Та же модель" },
+                            ] : []),
                             { value: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Баланс цена/качество" },
                             { value: "gpt-4o", label: "gpt-4o", desc: "Лучшее качество" },
                             { value: "gpt-4.1-mini", label: "gpt-4.1-mini", desc: "Новая, быстрая" },
