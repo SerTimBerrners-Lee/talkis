@@ -260,9 +260,15 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 
     // ── Step 2: LLM Text Cleanup ────────────────────────────────────────
 
-    // Skip LLM processing when style is "none" — return raw transcription as-is
-    if req.style == "none" {
-        logger::log_info("LLM", "Style is 'none', skipping LLM cleanup");
+    // Skip LLM processing when llm_model is "none" — return raw transcription as-is
+    let skip_llm = req
+        .llm_model
+        .as_deref()
+        .map(|m| m == "none")
+        .unwrap_or(false);
+
+    if skip_llm {
+        logger::log_info("LLM", "LLM model is 'none', skipping cleanup");
         return Ok(TranscribeResponse {
             raw: raw.clone(),
             cleaned: raw,

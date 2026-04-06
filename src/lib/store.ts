@@ -28,7 +28,7 @@ export interface AppSettings {
   hotkey: string;
   language: string;
   doubleTapTimeout: number;
-  style: "classic" | "business" | "tech" | "none";
+  style: "classic" | "business" | "tech";
   micId: string;
   /** Custom Whisper-compatible endpoint URL (leave empty for OpenAI) */
   whisperEndpoint: string;
@@ -253,7 +253,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 function parseStyle(value: unknown): AppSettings["style"] | undefined {
-  if (value === "classic" || value === "business" || value === "tech" || value === "none") {
+  if (value === "classic" || value === "business" || value === "tech") {
     return value;
   }
 

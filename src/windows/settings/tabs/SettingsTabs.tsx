@@ -4,7 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { AppSettings, ApiProvider, getSettings, saveSettings } from "../../../lib/store";
-import { Check, Briefcase, Code, MessageSquare, Crown, Zap, ChevronDown, FileText, LucideIcon } from "lucide-react";
+import { Check, Briefcase, Code, MessageSquare, Crown, Zap, ChevronDown, LucideIcon } from "lucide-react";
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl } from "../../../lib/cloudAuth";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
@@ -363,7 +363,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                         style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 40 }}
                       >
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                          {settings.llmModel || "gpt-4o-mini"}
+                          {(settings.llmModel || "gpt-4o-mini") === "none" ? "Без обработки" : (settings.llmModel || "gpt-4o-mini")}
                         </span>
                         <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, transform: llmDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
                       </button>
@@ -374,6 +374,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                             { value: "gpt-4o", label: "gpt-4o", desc: "Лучшее качество" },
                             { value: "gpt-4.1-mini", label: "gpt-4.1-mini", desc: "Новая, быстрая" },
                             { value: "gpt-4.1-nano", label: "gpt-4.1-nano", desc: "Самая дешёвая" },
+                            { value: "none", label: "Без обработки", desc: "Сырой текст" },
                           ].map(opt => (
                             <button
                               key={opt.value}
@@ -429,7 +430,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
                 {/* ── LLM section ── */}
-                {settings.style !== "none" && (
+                {settings.llmModel !== "none" && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Обработка текста (LLM)</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -446,7 +447,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 )}
 
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {settings.style === "none"
+                  {settings.llmModel === "none"
                     ? "LLM-обработка отключена. Текст вставляется сразу после транскрипции."
                     : "Оба endpoint'а должны быть совместимы с форматом OpenAI API. Пустое поле — OpenAI по умолчанию."
                   }
@@ -504,7 +505,6 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     classic: MessageSquare,
     business: Briefcase,
     tech: Code,
-    none: FileText,
   };
 
   return (
