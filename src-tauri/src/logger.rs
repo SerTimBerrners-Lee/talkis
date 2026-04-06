@@ -8,11 +8,11 @@ static LOG_MUTEX: Mutex<()> = Mutex::new(());
 pub fn get_log_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".talkflow")
+        .join(".talkis")
 }
 
 pub fn get_log_path() -> PathBuf {
-    get_log_dir().join("talkflow.log")
+    get_log_dir().join("talkis.log")
 }
 
 pub fn log(level: &str, tag: &str, message: &str) {

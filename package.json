@@ -1,7 +1,7 @@
 {
-  "name": "talk-flow",
+  "name": "talkis",
   "private": true,
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "packageManager": "bun@1.2.13",
   "scripts": {
@@ -16,8 +16,8 @@
     "build:release:macos": "bun run tauri build && bun run postprocess:macos-release",
     "preview": "vite preview",
     "tauri": "tauri",
-    "logs": "tail -f ~/.talkflow/talkflow.log",
-    "logs:clear": "rm -f ~/.talkflow/talkflow.log"
+    "logs": "tail -f ~/.talkis/talkis.log",
+    "logs:clear": "rm -f ~/.talkis/talkis.log"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

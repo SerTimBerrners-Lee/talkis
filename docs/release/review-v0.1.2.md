@@ -27,7 +27,7 @@
 - `bun run tauri build` - passed
 - Additional manual checks:
   - verified the release branch is based on current `main`
-  - verified the final DMG path exists at `/tmp/talk-flow-target/release/bundle/dmg/Talk Flow_0.1.2_aarch64.dmg`
+  - verified the final DMG path exists at `/tmp/talkis-target/release/bundle/dmg/Talkis_0.1.2_aarch64.dmg`
 
 ## Manual review
 

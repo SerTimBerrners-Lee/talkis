@@ -27,7 +27,7 @@ pub fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWind
         NOTICE_WINDOW_LABEL,
         WebviewUrl::App("index.html?window=widget-notice".into()),
     )
-    .title("Talk Flow Notice")
+    .title("Talkis Notice")
     .inner_size(NOTICE_WIDTH, NOTICE_HEIGHT)
     .resizable(false)
     .decorations(false)

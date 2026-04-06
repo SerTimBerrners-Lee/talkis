@@ -1,6 +1,6 @@
 # Release Rule
 
-This file defines the mandatory release workflow for Talk Flow. Follow it for every release without skipping steps.
+This file defines the mandatory release workflow for Talkis. Follow it for every release without skipping steps.
 
 ## Naming
 

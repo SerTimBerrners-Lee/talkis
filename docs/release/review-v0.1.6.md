@@ -26,7 +26,7 @@
 - `bun run check:release` - passed
 - `bun run build:release:macos` - passed
 - Additional manual checks:
-  - verified the local macOS DMG exists at `/tmp/talk-flow-target/release/bundle/dmg/Talk Flow_0.1.6_aarch64.dmg`
+  - verified the local macOS DMG exists at `/tmp/talkis-target/release/bundle/dmg/Talkis_0.1.6_aarch64.dmg`
   - verified the widget window config now targets `index.html?window=widget`
 
 ## Manual review

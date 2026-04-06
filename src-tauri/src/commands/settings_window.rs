@@ -20,7 +20,7 @@ fn create_settings_window(app: &AppHandle, url: &str) -> Result<tauri::WebviewWi
         "settings",
         WebviewUrl::App(url.into()),
     )
-    .title("Talk Flow — Settings")
+    .title("Talkis — Settings")
     .inner_size(920.0, 680.0)
     .min_inner_size(820.0, 560.0)
     .decorations(false)

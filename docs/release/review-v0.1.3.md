@@ -17,7 +17,7 @@
   - refreshed release docs and README for the new release version
 - User-facing changes:
   - first-launch permissions screen now explains when the release build must be moved to `Applications`
-  - release artifacts now use a stable ad-hoc signing identifier (`com.trixter.talkflow`) instead of a hash-based identifier
+  - release artifacts now use a stable ad-hoc signing identifier (`com.trixter.talkis`) instead of a hash-based identifier
 - Risky areas:
   - macOS packaging and accessibility behavior for unsigned/ad-hoc-signed bundles
   - DMG post-processing step in local and GitHub release flow
@@ -27,8 +27,8 @@
 - `bun run check:release` - passed
 - `bun run build:release:macos` - passed
 - Additional manual checks:
-  - verified the post-processed app signature reports `Identifier=com.trixter.talkflow`
-  - verified the final DMG exists at `/tmp/talk-flow-target/release/bundle/dmg/Talk Flow_0.1.3_aarch64.dmg`
+  - verified the post-processed app signature reports `Identifier=com.trixter.talkis`
+  - verified the final DMG exists at `/tmp/talkis-target/release/bundle/dmg/Talkis_0.1.3_aarch64.dmg`
 
 ## Manual review
 

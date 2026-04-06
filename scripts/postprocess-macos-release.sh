@@ -3,9 +3,9 @@
 set -euo pipefail
 
 VERSION="${1:?usage: postprocess-macos-release.sh <version>}"
-APP_NAME="Talk Flow"
-APP_IDENTIFIER="com.trixter.talkflow"
-BUILD_ROOT="${BUILD_ROOT:-/tmp/talk-flow-target/release/bundle}"
+APP_NAME="Talkis"
+APP_IDENTIFIER="com.trixter.talkis"
+BUILD_ROOT="${BUILD_ROOT:-/tmp/talkis-target/release/bundle}"
 APP_PATH="${BUILD_ROOT}/macos/${APP_NAME}.app"
 DMG_PATH="${BUILD_ROOT}/dmg/${APP_NAME}_${VERSION}_aarch64.dmg"
 STAGING_DIR="${BUILD_ROOT}/macos/dmg-staging"

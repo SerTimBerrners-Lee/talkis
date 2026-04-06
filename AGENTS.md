@@ -1,11 +1,11 @@
-# TalkFlow - AGENTS.md
+# Talkis - AGENTS.md
 
-TalkFlow is a macOS voice-to-text application built with Tauri v2 (Rust backend) and React (TypeScript frontend), with a companion cloud platform (Next.js).
+Talkis is a macOS voice-to-text application built with Tauri v2 (Rust backend) and React (TypeScript frontend), with a companion cloud platform (Next.js).
 
 ## Project Structure
 
 ```
-talk-flow/
+talkis/
 ├── src/                      # Frontend (React/TypeScript)
 │   ├── windows/
 │   │   ├── widget/           # Small floating widget window
@@ -25,7 +25,7 @@ talk-flow/
 │   │   ├── paste.rs          # Clipboard paste simulation
 │   │   └── logger.rs         # File logging
 │   └── Cargo.toml
-├── talkflow-web/             # Cloud platform (Next.js 15)
+├── talkis-web/             # Cloud platform (Next.js 15)
 │   ├── src/app/              # Pages: landing, auth, dashboard
 │   ├── src/components/       # Landing, dashboard, shared components
 │   ├── src/lib/              # Auth, Prisma, email
@@ -56,13 +56,13 @@ cd src-tauri && cargo check
 bun run check:release
 
 # View logs
-bun run logs          # tail -f ~/.talkflow/talkflow.log
-bun run logs:clear    # rm ~/.talkflow/talkflow.log
+bun run logs          # tail -f ~/.talkis/talkis.log
+bun run logs:clear    # rm ~/.talkis/talkis.log
 
-# ── talkflow-web ──
-cd talkflow-web && bun run dev       # Next.js dev server
-cd talkflow-web && bunx tsc --noEmit # TS check
-cd talkflow-web && bunx prisma migrate dev --name <name>  # DB migration
+# ── talkis-web ──
+cd talkis-web && bun run dev       # Next.js dev server
+cd talkis-web && bunx tsc --noEmit # TS check
+cd talkis-web && bunx prisma migrate dev --name <name>  # DB migration
 ```
 
 ## Design System
@@ -215,8 +215,8 @@ logger::log_error("TAG", &format!("error: {}", e));
 - **Persistent storage:** Use `tauri-plugin-store` with JSON file
 - **Permissions:** Check microphone via `getUserMedia()`, accessibility via system dialog
 - **API calls:** Whisper for transcription, GPT-4o-mini for text cleanup
-- **Cloud platform:** `talkflow-web/` — Next.js 15, Auth.js v5, Prisma, PostgreSQL
-- **Auth flow:** Email OTP + Yandex OAuth → deep link `talkflow://auth?token=xxx`
+- **Cloud platform:** `talkis-web/` — Next.js 15, Auth.js v5, Prisma, PostgreSQL
+- **Auth flow:** Email OTP + Yandex OAuth → deep link `talkis://auth?token=xxx`
 - **Subscription:** Free (own API key) or paid (cloud, 390₽/mo)
 
 ## Release Workflow
@@ -233,6 +233,6 @@ logger::log_error("TAG", &format!("error: {}", e));
 2. **Hotkeys:** Format is `Modifier+Key` (e.g., `Ctrl+Alt+Space`), always validate with `validateHotkey()`
 3. **Settings:** Load once at startup via `getSettings()`, save immediately on change
 4. **Window sizes:** Widget is 50x18 in its compact state; keep window sizing in sync with `src/windows/widget/widgetConstants.ts`
-5. **Logs location:** `~/.talkflow/talkflow.log`
+5. **Logs location:** `~/.talkis/talkis.log`
 6. **Package manager:** Use `bun` everywhere (not npm/yarn)
 7. **Dev-only features:** Gate behind `import.meta.env.DEV` (e.g., Prompt Preview)

@@ -281,7 +281,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
               letterSpacing: "-0.04em",
               color: "var(--text-hi)",
             }}>
-              Доступы для TalkFlow
+              Доступы для Talkis
             </h1>
             <p style={{ margin: 0, maxWidth: 520, fontSize: 13, color: "var(--text-mid)", lineHeight: 1.7 }}>
               Осталось выдать системные разрешения для записи с микрофона и работы глобальной горячей клавиши.
@@ -308,7 +308,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                     Переместите приложение в Applications
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                    Текущая сборка запущена из временного места. Переместите TalkFlow в Applications и откройте оттуда.
+                    Текущая сборка запущена из временного места. Переместите Talkis в Applications и откройте оттуда.
                   </div>
                 </div>
               </div>
@@ -357,7 +357,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
               <AlertCircle size={14} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {micStatus === "denied"
-                  ? "Если микрофон был отклонен, откройте Системные настройки → Конфиденциальность → Микрофон и включите TalkFlow."
+                  ? "Если микрофон был отклонен, откройте Системные настройки → Конфиденциальность → Микрофон и включите Talkis."
                   : shouldShowInstallWarning
                     ? "После перемещения приложения в Applications откройте его заново."
                     : "macOS применяет доступ не мгновенно. После изменения настройки вернитесь в приложение."}

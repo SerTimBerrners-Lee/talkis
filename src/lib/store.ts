@@ -26,7 +26,7 @@ export interface AppSettings {
   llmEndpoint: string;
   /** If true, user provides their own API key. If false, uses subscription */
   useOwnKey: boolean;
-  /** Device auth token for TalkFlow Cloud */
+  /** Device auth token for Talkis Cloud */
   deviceToken: string;
 }
 
@@ -270,7 +270,7 @@ let _store: Awaited<ReturnType<typeof load>> | null = null;
 
 async function getStore() {
   if (!_store) {
-    _store = await load("talkflow.json");
+    _store = await load("talkis.json");
   }
   return _store;
 }

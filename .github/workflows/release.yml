@@ -44,13 +44,13 @@ jobs:
         run: bash scripts/postprocess-macos-release.sh "${RELEASE_TAG#v}"
 
       - name: Archive macOS app bundle
-        run: ditto -c -k --sequesterRsrc --keepParent "/tmp/talk-flow-target/release/bundle/macos/Talk Flow.app" "Talk Flow-${{ env.RELEASE_TAG }}-macos.zip"
+        run: ditto -c -k --sequesterRsrc --keepParent "/tmp/talkis-target/release/bundle/macos/Talkis.app" "Talkis-${{ env.RELEASE_TAG }}-macos.zip"
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: Talk Flow ${{ env.RELEASE_TAG }}
+          name: Talkis ${{ env.RELEASE_TAG }}
           body: |
             Automated release for ${{ env.RELEASE_TAG }}.
 
@@ -59,8 +59,8 @@ jobs:
           draft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           files: |
-            /tmp/talk-flow-target/release/bundle/dmg/*.dmg
-            Talk Flow-${{ env.RELEASE_TAG }}-macos.zip
+            /tmp/talkis-target/release/bundle/dmg/*.dmg
+            Talkis-${{ env.RELEASE_TAG }}-macos.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

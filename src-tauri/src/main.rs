@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    talk_flow_lib::run()
+    talkis_lib::run()
 }

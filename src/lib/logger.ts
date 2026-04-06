@@ -31,7 +31,7 @@ export async function getLogPath(): Promise<string> {
   try {
     return await invoke("get_log_path_cmd");
   } catch {
-    return "~/.talkflow/talkflow.log";
+    return "~/.talkis/talkis.log";
   }
 }
 
