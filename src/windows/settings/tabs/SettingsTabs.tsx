@@ -4,7 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { AppSettings, ApiProvider, getSettings, saveSettings } from "../../../lib/store";
-import { Check, Briefcase, Code, MessageSquare, Key, Crown, Server, LucideIcon } from "lucide-react";
+import { Check, Briefcase, Code, MessageSquare, Crown, Zap, LucideIcon } from "lucide-react";
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl } from "../../../lib/cloudAuth";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
@@ -93,6 +93,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
   const [promptPreviewError, setPromptPreviewError] = useState<string | null>(null);
   const [cloudProfile, setCloudProfile] = useState<CloudProfile | null>(null);
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testMessage, setTestMessage] = useState<string | null>(null);
 
   useEffect(() => { getSettings().then(setSettings); }, []);
 
@@ -149,6 +151,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     };
 
     const handleProviderChange = (provider: ApiProvider) => {
+      setTestStatus("idle");
+      setTestMessage(null);
       if (provider === "openai") {
         update({
           provider: "openai",
@@ -162,10 +166,26 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       }
     };
 
+    const handleTestConnection = async () => {
+      setTestStatus("testing");
+      setTestMessage(null);
+      try {
+        const result = await invoke<{ success: boolean; message: string; latency_ms: number }>("test_api_connection", {
+          req: {
+            api_key: settings.apiKey,
+            llm_endpoint: isCustom ? (settings.llmEndpoint || null) : null,
+            llm_model: isCustom ? (settings.llmModel || null) : null,
+          },
+        });
+        setTestStatus(result.success ? "success" : "error");
+        setTestMessage(result.message);
+      } catch (err) {
+        setTestStatus("error");
+        setTestMessage(err instanceof Error ? err.message : String(err));
+      }
+    };
+
     const keyPlaceholder = isCustom ? "API ключ или токен..." : "sk-...";
-    const keyHint = isCustom
-      ? "Укажите endpoint'ы, модели и ключ доступа вашего API-провайдера."
-      : "Ключ можно получить на platform.openai.com в разделе API Keys.";
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -192,37 +212,17 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               <Crown size={16} strokeWidth={2.2} />
               <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>Подписка Talkis</span>
             </div>
-
             <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px", fontSize: 12, lineHeight: 2, opacity: 0.85 }}>
               <li>• Безлимитное использование без ограничений</li>
               <li>• Без VPN и Прокси</li>
               <li>• Синхронизация со всеми устройствами</li>
             </ul>
-
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
               <span style={{ textDecoration: "line-through", opacity: 0.45, fontSize: 12 }}>1 500 ₽</span>
               <span style={{ fontWeight: 800, fontSize: 22 }}>390 ₽</span>
               <span style={{ opacity: 0.5, fontSize: 11 }}>/ мес</span>
             </div>
-
-            <button
-              onClick={handleActivateSubscription}
-              style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: 10,
-                background: "#fff",
-                color: "#000",
-                border: "none",
-                fontSize: 11,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                cursor: "pointer",
-                transition: "opacity 0.15s",
-                fontFamily: "var(--font-main)",
-              }}
-            >
+            <button onClick={handleActivateSubscription} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#fff", color: "#000", border: "none", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s", fontFamily: "var(--font-main)" }}>
               Активировать
             </button>
           </div>
@@ -237,54 +237,52 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           </div>
         )}
 
-        {/* ── Provider selection ── */}
+        {/* ── Provider toggle ── */}
         {!hasActiveSubscription && (
           <>
-            <OptionCard
-              active={settings.useOwnKey && !isCustom}
-              icon={<Key size={20} strokeWidth={settings.useOwnKey && !isCustom ? 2.4 : 1.8} />}
-              title="OpenAI"
-              description="Whisper + GPT-4o mini. Один ключ для транскрипции и обработки текста."
-              onClick={() => {
-                if (!settings.useOwnKey || isCustom) {
-                  update({ useOwnKey: true });
-                  handleProviderChange("openai");
-                }
-              }}
-            />
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>Свой API ключ</div>
+              <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6, marginBottom: 14 }}>
+                Используйте OpenAI напрямую или подключите любой совместимый сервер.
+              </div>
 
-            <OptionCard
-              active={settings.useOwnKey && isCustom}
-              icon={<Server size={20} strokeWidth={settings.useOwnKey && isCustom ? 2.4 : 1.8} />}
-              title="Свой сервер"
-              description="Groq, DeepSeek, Ollama или любой OpenAI-совместимый API. Полная настройка."
-              onClick={() => {
-                if (!settings.useOwnKey || !isCustom) {
-                  update({ useOwnKey: true });
-                  handleProviderChange("custom");
-                }
-              }}
-            />
+              {/* segmented control */}
+              <div style={{ display: "flex", background: "rgba(0,0,0,0.05)", borderRadius: 10, padding: 3, gap: 2 }}>
+                {(["openai", "custom"] as const).map((p) => {
+                  const active = settings.useOwnKey && settings.provider === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => { update({ useOwnKey: true }); handleProviderChange(p); }}
+                      style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", fontSize: 13, fontWeight: active ? 700 : 500, fontFamily: "var(--font-main)", background: active ? "#000" : "transparent", color: active ? "#fff" : "var(--text-mid)", cursor: "pointer", transition: "all 0.18s ease" }}
+                    >
+                      {p === "openai" ? "OpenAI ключ" : "Своя конфигурация"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* ── API Key input ── */}
             {settings.useOwnKey && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)" }}>API ключ</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>
+                  {isCustom ? "API ключ" : "OpenAI API ключ"}
                 </div>
-                <div style={{ position: "relative" }}>
-                  <input
-                    type="password"
-                    value={settings.apiKey}
-                    onChange={(e) => update({ apiKey: e.target.value })}
-                    className="input"
-                    placeholder={keyPlaceholder}
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                  />
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {keyHint}
-                </div>
+                <input
+                  type="password"
+                  value={settings.apiKey}
+                  onChange={(e) => { update({ apiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
+                  className="input"
+                  placeholder={keyPlaceholder}
+                  style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                />
+                {!isCustom && (
+                  <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
+                    Ключ используется для Whisper (транскрипция) и GPT-4o&nbsp;mini (обработка). Получить на{" "}
+                    <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -292,83 +290,72 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             {settings.useOwnKey && isCustom && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Настройка провайдера</div>
-
-                {/* Whisper endpoint */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div className="label">Whisper endpoint</div>
-                  <input
-                    type="text"
-                    value={settings.whisperEndpoint}
-                    onChange={(e) => update({ whisperEndpoint: e.target.value })}
-                    className="input"
-                    placeholder="https://api.groq.com/openai"
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                  />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="label">Whisper endpoint</div>
+                    <input type="text" value={settings.whisperEndpoint} onChange={(e) => update({ whisperEndpoint: e.target.value })} className="input" placeholder="https://api.groq.com/openai" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="label">Модель транскрипции</div>
+                    <input type="text" value={settings.whisperModel} onChange={(e) => update({ whisperModel: e.target.value })} className="input" placeholder="whisper-large-v3-turbo" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="label">LLM endpoint</div>
+                    <input type="text" value={settings.llmEndpoint} onChange={(e) => update({ llmEndpoint: e.target.value })} className="input" placeholder="https://api.deepseek.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div className="label">Модель обработки</div>
+                    <input type="text" value={settings.llmModel} onChange={(e) => update({ llmModel: e.target.value })} className="input" placeholder="deepseek-chat" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                  </div>
                 </div>
-
-                {/* Whisper model */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div className="label">Модель транскрипции</div>
-                  <input
-                    type="text"
-                    value={settings.whisperModel}
-                    onChange={(e) => update({ whisperModel: e.target.value })}
-                    className="input"
-                    placeholder="whisper-large-v3-turbo"
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                  />
-                </div>
-
-                {/* LLM endpoint */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div className="label">LLM endpoint</div>
-                  <input
-                    type="text"
-                    value={settings.llmEndpoint}
-                    onChange={(e) => update({ llmEndpoint: e.target.value })}
-                    className="input"
-                    placeholder="https://api.deepseek.com"
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                  />
-                </div>
-
-                {/* LLM model */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div className="label">Модель обработки текста</div>
-                  <input
-                    type="text"
-                    value={settings.llmModel}
-                    onChange={(e) => update({ llmModel: e.target.value })}
-                    className="input"
-                    placeholder="deepseek-chat"
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                  />
-                </div>
-
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Оба endpoint'а должны быть совместимы с форматом OpenAI API. Если endpoint пустой — используется OpenAI по умолчанию.
+                  Оба endpoint'а должны быть совместимы с форматом OpenAI API. Пустое поле = OpenAI по умолчанию.
                 </div>
+              </div>
+            )}
+
+            {/* ── Test connection ── */}
+            {settings.useOwnKey && settings.apiKey && (
+              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button
+                    onClick={handleTestConnection}
+                    disabled={testStatus === "testing"}
+                    style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(0,0,0,0.12)", background: testStatus === "testing" ? "rgba(0,0,0,0.04)" : "rgba(0,0,0,0.02)", color: "var(--text-hi)", fontSize: 13, fontWeight: 600, fontFamily: "var(--font-main)", cursor: testStatus === "testing" ? "wait" : "pointer", transition: "all 0.15s ease", display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    {testStatus === "testing" ? (
+                      <>
+                        <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "var(--text-hi)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                        Проверяем...
+                      </>
+                    ) : (
+                      <>
+                        <Zap size={14} strokeWidth={2.2} />
+                        Тестировать соединение
+                      </>
+                    )}
+                  </button>
+                  {testStatus === "success" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#16a34a", fontSize: 13, fontWeight: 600 }}>
+                      <Check size={16} strokeWidth={2.5} />
+                      Работает
+                    </div>
+                  )}
+                </div>
+                {testMessage && (
+                  <div style={{
+                    fontSize: 12, lineHeight: 1.6, padding: "10px 14px", borderRadius: 8,
+                    background: testStatus === "success" ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
+                    color: testStatus === "success" ? "#16a34a" : "#dc2626",
+                    border: `1px solid ${testStatus === "success" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"}`,
+                  }}>
+                    {testMessage}
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
-
-        {/* ── Footer hint ── */}
-        <div className="card" style={{ padding: 18, background: "rgba(255,255,255,0.58)" }}>
-          <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>
-            {hasActiveSubscription ? (
-              <>Все запросы обрабатываются через серверы Talkis без ограничений.</>
-            ) : settings.useOwnKey && isCustom ? (
-              <>Укажите OpenAI-совместимые endpoint'ы. Подходит для Groq, DeepSeek, Ollama, LM Studio и других.</>
-            ) : settings.useOwnKey ? (
-              <>
-                Ключ можно получить на <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span> в разделе API Keys.
-              </>
-            ) : (
-              <>Активируйте подписку или подключите свой API-ключ для работы приложения.</>
-            )}
-          </div>
-        </div>
       </div>
     );
   }

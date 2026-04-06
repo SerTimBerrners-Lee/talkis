@@ -349,3 +349,104 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 
     Ok(TranscribeResponse { raw, cleaned })
 }
+
+// ── Connection test ──────────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+pub struct TestConnectionRequest {
+    pub api_key: String,
+    pub llm_endpoint: Option<String>,
+    pub llm_model: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TestConnectionResult {
+    pub success: bool,
+    pub message: String,
+    pub latency_ms: u64,
+}
+
+#[tauri::command]
+pub async fn test_api_connection(req: TestConnectionRequest) -> Result<TestConnectionResult, String> {
+    logger::log_info("TEST", "Testing API connection...");
+
+    let client = http_client();
+    let llm_model = req.llm_model.as_deref().unwrap_or("gpt-4o-mini");
+    let llm_url = req
+        .llm_endpoint
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let base = s.trim_end_matches('/');
+            if base.ends_with("/chat/completions") {
+                base.to_string()
+            } else if base.ends_with("/v1") {
+                format!("{}/chat/completions", base)
+            } else {
+                format!("{}/v1/chat/completions", base)
+            }
+        })
+        .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
+
+    let body = serde_json::json!({
+        "model": llm_model,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 1
+    });
+
+    let start = std::time::Instant::now();
+
+    let response = client
+        .post(&llm_url)
+        .bearer_auth(&req.api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await;
+
+    let latency_ms = start.elapsed().as_millis() as u64;
+
+    match response {
+        Ok(res) => {
+            let status = res.status();
+            if status.is_success() {
+                logger::log_info("TEST", &format!("Connection OK, {}ms", latency_ms));
+                Ok(TestConnectionResult {
+                    success: true,
+                    message: format!("Соединение установлено ({}ms)", latency_ms),
+                    latency_ms,
+                })
+            } else {
+                let error_text = res.text().await.unwrap_or_default();
+                let msg = match status.as_u16() {
+                    401 => "Неверный API ключ".to_string(),
+                    403 => "Доступ запрещён (проверьте ключ и endpoint)".to_string(),
+                    404 => format!("Модель «{}» не найдена на этом endpoint", llm_model),
+                    429 => "Превышен лимит запросов".to_string(),
+                    _ => format!("Ошибка {}: {}", status.as_u16(), error_text.chars().take(200).collect::<String>()),
+                };
+                logger::log_error("TEST", &format!("Connection failed: {}", msg));
+                Ok(TestConnectionResult {
+                    success: false,
+                    message: msg,
+                    latency_ms,
+                })
+            }
+        }
+        Err(err) => {
+            let msg = if err.is_connect() {
+                "Не удалось подключиться. Проверьте endpoint и интернет-соединение.".to_string()
+            } else if err.is_timeout() {
+                "Таймаут соединения. Сервер не отвечает.".to_string()
+            } else {
+                format!("Ошибка сети: {}", err)
+            };
+            logger::log_error("TEST", &format!("Connection error: {}", msg));
+            Ok(TestConnectionResult {
+                success: false,
+                message: msg,
+                latency_ms,
+            })
+        }
+    }
+}

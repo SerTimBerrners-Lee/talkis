@@ -73,6 +73,7 @@ pub fn run() {
             widget::hide_widget_notice,
             paste::paste_text,
             ai::transcribe_and_clean,
+            ai::test_api_connection,
             logger::log_event,
             logger::get_log_path_cmd,
             logger::clear_logs,
