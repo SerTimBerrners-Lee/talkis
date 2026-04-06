@@ -1,33 +1,28 @@
 {
   "promptTitle": "TECH & DEV STYLE",
-  "whisperHintSuffix": "Сохраняй и корректно распознавай code tokens и команды: console.log, function, const, import, export, git push, git status, npm install, bun run dev, cargo check, src, api, ts, tsx, jsx, JSON.parse, useEffect, useState. Если слышишь 'слеш', 'точка', 'дефис', 'нижнее подчеркивание', корректно восстанавливай технический фрагмент.",
+  "whisperHintSuffix": "Сохраняй и корректно распознавай технические термины: console.log, function, const, import, export, git push, npm install, JSON, API, TypeScript, React, useState, useEffect. Если слышишь 'слеш', 'точка', 'дефис', 'нижнее подчеркивание', корректно восстанавливай технический фрагмент.",
   "rules": [
-    "The speaker is likely a software developer. Expect technical jargon, code fragments, package names, and English terms mixed with native grammar.",
-    "Detect code context aggressively. If the input appears to contain a file path, file name, import, command, URL, extension, identifier, env var, stack trace, or code fragment, preserve or reconstruct the technical structure instead of rewriting it as plain prose.",
-    "In explicit coding context, convert spoken names of programming constructs into their canonical code form when the intent is clear, for example JavaScript keywords, API names, shell commands, and dotted identifiers.",
-    "When the speaker is clearly dictating code, prefer exact developer-facing tokens over natural-language paraphrases: 'console log' should become 'console.log', 'git push' should stay 'git push', and spoken framework or package names should be normalized to their standard spelling.",
-    "Only do this aggressive conversion inside clear technical context. If the phrase is ordinary prose, keep it as ordinary prose.",
-    "Fix obvious misrecognitions of English technical terms to their correct spelling or accepted industry equivalent.",
-    "Format code elements, variable names, file names, package names, and commands properly if they appear in speech.",
-    "Preserve all technical context and wording as much as possible."
+    "The speaker is likely a developer. Expect technical terms, but the overall speech is usually natural language about technical topics.",
+    "Preserve the speaker's wording and sentence structure. Do not compress, summarize, or shorten the text.",
+    "When technical terms, package names, commands, or identifiers appear, normalize their spelling to the canonical form (e.g., 'реакт' → 'React', 'тайпскрипт' → 'TypeScript').",
+    "If the speaker is clearly dictating code (e.g., 'console log user id'), convert to code form: console.log(userId). Only do this for unambiguous code dictation.",
+    "If the speaker is talking ABOUT code or technology in natural language, keep it as natural language. Do not convert descriptions into code.",
+    "Fix misrecognitions of English technical terms to their correct spelling.",
+    "Do not aggressively shorten or restructure sentences. The output length should be similar to the input length."
   ],
-  "temperature": 0.15,
+  "temperature": 0.1,
   "examples": [
     {
-      "raw": "src slash tauri slash src slash ai dot rs",
-      "cleaned": "src-tauri/src/ai.rs"
+      "raw": "нам нужно использовать юз стейт для хранения данных",
+      "cleaned": "Нам нужно использовать useState для хранения данных."
     },
     {
       "raw": "console log user id",
       "cleaned": "console.log(userId)"
     },
     {
-      "raw": "import react from react",
-      "cleaned": "import React from \"react\""
-    },
-    {
-      "raw": "git push origin main",
-      "cleaned": "git push origin main"
+      "raw": "по вопросу кастом конфигурации бэкенд уже обрабатывает любое имя модели с транскрайб корректно",
+      "cleaned": "По вопросу custom конфигурации, бэкенд уже обрабатывает любое имя модели с transcribe корректно."
     }
   ]
 }
