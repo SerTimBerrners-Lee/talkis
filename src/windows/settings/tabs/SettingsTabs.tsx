@@ -312,7 +312,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             {settings.useOwnKey && !isCustom && (
               <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: (sttDropdownOpen || llmDropdownOpen) ? 20 : 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Модели</div>
-                <div style={{ display: "grid", gridTemplateColumns: (settings.whisperModel || "").includes("transcribe") ? "1fr" : "1fr 1fr", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {/* STT model dropdown */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Транскрипция</div>
@@ -336,7 +336,15 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                           ].map(opt => (
                             <button
                               key={opt.value}
-                              onClick={() => { update({ whisperModel: opt.value }); setSttDropdownOpen(false); }}
+                              onClick={() => {
+                                const patch: Partial<AppSettings> = { whisperModel: opt.value };
+                                // Auto-set LLM to 'none' when selecting a transcribe model
+                                if (opt.value.includes("transcribe") && !(settings.llmModel === "none")) {
+                                  patch.llmModel = "none";
+                                }
+                                update(patch);
+                                setSttDropdownOpen(false);
+                              }}
                               style={{
                                 width: "100%", textAlign: "left", border: "none", cursor: "pointer",
                                 padding: "10px 14px", display: "flex", alignItems: "center", gap: 8,
@@ -356,8 +364,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       )}
                     </div>
                   </div>
-                  {/* LLM model dropdown — hidden when transcribe model selected */}
-                  {!(settings.whisperModel || "").includes("transcribe") && (
+                  {/* LLM model dropdown */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div className="label">Обработка текста</div>
                     <div ref={llmDropdownRef} style={{ position: "relative" }}>
@@ -402,13 +409,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       )}
                     </div>
                   </div>
-                  )}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {(settings.whisperModel || "").includes("transcribe")
-                    ? "Transcribe-модель обеспечивает высокое качество текста без дополнительной обработки."
-                    : "Транскрипция — преобразование голоса в текст. Обработка — очистка и форматирование по стилю."
-                  }
+                  Транскрипция — преобразование голоса в текст. Обработка — очистка и форматирование по стилю.
                 </div>
               </div>
             )}

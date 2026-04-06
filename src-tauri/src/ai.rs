@@ -286,12 +286,11 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         .cloned()
         .unwrap_or_else(|| req.api_key.clone());
 
-    let skip_llm = is_transcribe_model
-        || req
-            .llm_model
-            .as_deref()
-            .map(|m| m == "none")
-            .unwrap_or(false)
+    let skip_llm = req
+        .llm_model
+        .as_deref()
+        .map(|m| m == "none")
+        .unwrap_or(false)
         || llm_key.trim().is_empty();
 
     if skip_llm {
