@@ -27,6 +27,7 @@ pub struct TranscribeRequest {
     pub language: String,
     pub api_key: String,
     pub whisper_api_key: Option<String>,
+    pub llm_api_key: Option<String>,
     pub style: String,
     pub whisper_endpoint: Option<String>,
     pub llm_endpoint: Option<String>,
@@ -260,13 +261,20 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 
     // ── Step 2: LLM Text Cleanup ────────────────────────────────────────
 
-    // Skip LLM processing when llm_model is "none" or api_key is empty
+    // Skip LLM processing when llm_model is "none" or no LLM key is available
+    let llm_key = req
+        .llm_api_key
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| req.api_key.clone());
+
     let skip_llm = req
         .llm_model
         .as_deref()
         .map(|m| m == "none")
         .unwrap_or(false)
-        || req.api_key.trim().is_empty();
+        || llm_key.trim().is_empty();
 
     if skip_llm {
         logger::log_info("LLM", "Skipping LLM cleanup (model=none or api_key empty)");
@@ -327,7 +335,7 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 
     let gpt_res = client
         .post(&llm_url)
-        .bearer_auth(&req.api_key)
+        .bearer_auth(&llm_key)
         .header("Content-Type", "application/json")
         .json(&gpt_body)
         .send()

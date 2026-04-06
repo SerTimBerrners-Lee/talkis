@@ -17,8 +17,10 @@ export type ApiProvider = "openai" | "custom";
 
 export interface AppSettings {
   apiKey: string;
-  /** Separate API key for Whisper endpoint (used only in custom mode, falls back to apiKey if empty) */
+  /** Separate API key for Whisper/STT endpoint (used in custom mode) */
   whisperApiKey: string;
+  /** Separate API key for LLM endpoint (used in custom mode; empty = skip LLM) */
+  llmApiKey: string;
   /** API provider preset: 'openai' uses default endpoints, 'custom' lets user configure everything */
   provider: ApiProvider;
   /** Model name for STT (e.g. "whisper-1", "whisper-large-v3-turbo") */
@@ -238,6 +240,7 @@ export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
   whisperApiKey: "",
+  llmApiKey: "",
   provider: "openai",
   whisperModel: "whisper-1",
   llmModel: "gpt-4o-mini",
@@ -277,6 +280,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
     whisperApiKey: typeof raw.whisperApiKey === "string" ? raw.whisperApiKey : undefined,
+    llmApiKey: typeof raw.llmApiKey === "string" ? raw.llmApiKey : undefined,
     provider: parseProvider(raw.provider),
     whisperModel: typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
     llmModel: typeof raw.llmModel === "string" ? raw.llmModel : undefined,

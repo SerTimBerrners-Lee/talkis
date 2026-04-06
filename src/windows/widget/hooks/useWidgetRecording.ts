@@ -96,7 +96,7 @@ export function useWidgetRecording({
       return;
     }
 
-    const hasKey = settings.apiKey.trim().length > 0 || settings.whisperApiKey.trim().length > 0;
+    const hasKey = settings.apiKey.trim().length > 0 || settings.whisperApiKey.trim().length > 0 || settings.llmApiKey.trim().length > 0;
     if (!hasKey) {
       logError("RECORDING", "API key not set");
       showError("Добавьте API ключ в настройках → Подписка.");
