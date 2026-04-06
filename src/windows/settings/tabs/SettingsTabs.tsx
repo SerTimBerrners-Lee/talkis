@@ -404,49 +404,56 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               </div>
             )}
 
-            {/* ── Custom provider: whisper key + endpoints & models ── */}
+            {/* ── Custom provider: STT + LLM configuration ── */}
             {settings.useOwnKey && isCustom && (
-              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Настройка провайдера</div>
 
-                {/* Whisper API key */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div className="label">Whisper API ключ</div>
-                  <input
-                    type="password"
-                    value={settings.whisperApiKey}
-                    onChange={(e) => { update({ whisperApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
-                    className="input"
-                    placeholder="Ключ для Whisper (если отличается от LLM)"
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                  />
-                  <div style={{ fontSize: 11, color: "var(--text-low)", lineHeight: 1.5 }}>
-                    Если пусто — используется LLM ключ выше.
+                {/* ── STT section ── */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Транскрипция (STT)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div className="label">Endpoint</div>
+                      <input type="text" value={settings.whisperEndpoint} onChange={(e) => update({ whisperEndpoint: e.target.value })} className="input" placeholder="https://api.openai.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div className="label">Модель</div>
+                      <input type="text" value={settings.whisperModel} onChange={(e) => update({ whisperModel: e.target.value })} className="input" placeholder="whisper-1" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    <div className="label">API ключ (если отличается от основного)</div>
+                    <input
+                      type="password"
+                      value={settings.whisperApiKey}
+                      onChange={(e) => { update({ whisperApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
+                      className="input"
+                      placeholder="Оставьте пустым, чтобы использовать основной ключ"
+                      style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                    />
                   </div>
                 </div>
 
                 <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="label">Whisper endpoint</div>
-                    <input type="text" value={settings.whisperEndpoint} onChange={(e) => update({ whisperEndpoint: e.target.value })} className="input" placeholder="https://api.groq.com/openai" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="label">Модель транскрипции</div>
-                    <input type="text" value={settings.whisperModel} onChange={(e) => update({ whisperModel: e.target.value })} className="input" placeholder="whisper-large-v3-turbo" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="label">LLM endpoint</div>
-                    <input type="text" value={settings.llmEndpoint} onChange={(e) => update({ llmEndpoint: e.target.value })} className="input" placeholder="https://api.deepseek.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="label">Модель обработки</div>
-                    <input type="text" value={settings.llmModel} onChange={(e) => update({ llmModel: e.target.value })} className="input" placeholder="deepseek-chat" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                {/* ── LLM section ── */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Обработка текста (LLM)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div className="label">Endpoint</div>
+                      <input type="text" value={settings.llmEndpoint} onChange={(e) => update({ llmEndpoint: e.target.value })} className="input" placeholder="https://api.openai.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div className="label">Модель</div>
+                      <input type="text" value={settings.llmModel} onChange={(e) => update({ llmModel: e.target.value })} className="input" placeholder="gpt-4o-mini" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                    </div>
                   </div>
                 </div>
+
                 <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Оба endpoint'а должны быть совместимы с форматом OpenAI API. Пустое поле = OpenAI по умолчанию.
+                  Оба endpoint'а должны быть совместимы с форматом OpenAI API. Пустое поле — OpenAI по умолчанию.
                 </div>
               </div>
             )}
