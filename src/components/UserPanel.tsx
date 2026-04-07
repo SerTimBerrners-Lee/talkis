@@ -41,8 +41,11 @@ export function UserPanel() {
 
   const handleActivate = async () => {
     try {
-      // Open auth URL in default browser via Tauri command
-      await openUrl(getAuthLoginUrl());
+      // If already authenticated, go to dashboard; otherwise login
+      const url = profile
+        ? `${getAuthLoginUrl().replace('/auth/login?device=true', '/dashboard')}`
+        : getAuthLoginUrl();
+      await openUrl(url);
     } catch (error) {
       logError("USER_PANEL", `Failed to open auth URL: ${error}`);
     }
@@ -62,28 +65,7 @@ export function UserPanel() {
   if (profile && profile.subscription.active) {
     return (
       <div style={styles.container}>
-        <div style={styles.profileRow}>
-          <div style={styles.avatar}>
-            {profile.user.avatarUrl ? (
-              <img
-                src={profile.user.avatarUrl}
-                alt=""
-                style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
-              />
-            ) : (
-              <User size={16} strokeWidth={1.5} color="var(--text-low)" />
-            )}
-          </div>
-          <div style={styles.profileInfo}>
-            <div style={styles.profileName}>
-              {profile.user.login || profile.user.email.split("@")[0]}
-            </div>
-            <div style={styles.profileEmail}>{profile.user.email}</div>
-          </div>
-          <button onClick={handleLogout} style={styles.logoutButton} title="Выйти">
-            <LogOut size={14} strokeWidth={1.8} />
-          </button>
-        </div>
+        <ProfileRow profile={profile} onLogout={handleLogout} />
         <div style={styles.badgeActive}>
           <div style={styles.badgeDot} />
           Подписка активна
@@ -96,21 +78,11 @@ export function UserPanel() {
   if (profile && !profile.subscription.active) {
     return (
       <div style={styles.container}>
-        <div style={{ ...styles.profileRow, marginBottom: 10 }}>
-          <div style={styles.avatar}>
-            <User size={16} strokeWidth={1.5} color="var(--text-low)" />
-          </div>
-          <div style={styles.profileInfo}>
-            <div style={styles.profileName}>
-              {profile.user.login || profile.user.email.split("@")[0]}
-            </div>
-            <div style={styles.profileEmail}>{profile.user.email}</div>
-          </div>
-          <button onClick={handleLogout} style={styles.logoutButton} title="Выйти">
-            <LogOut size={14} strokeWidth={1.8} />
-          </button>
-        </div>
-        <SubscriptionCTA onActivate={handleActivate} />
+        <ProfileRow profile={profile} onLogout={handleLogout} />
+        <button onClick={handleActivate} style={styles.compactCta}>
+          <Crown size={13} strokeWidth={2} color="var(--text-hi)" />
+          <span>Активировать подписку</span>
+        </button>
       </div>
     );
   }
@@ -119,6 +91,33 @@ export function UserPanel() {
   return (
     <div style={styles.container}>
       <SubscriptionCTA onActivate={handleActivate} />
+    </div>
+  );
+}
+
+function ProfileRow({ profile, onLogout }: { profile: CloudProfile; onLogout: () => void }) {
+  return (
+    <div style={styles.profileRow}>
+      <div style={styles.avatar}>
+        {profile.user.avatarUrl ? (
+          <img
+            src={profile.user.avatarUrl}
+            alt=""
+            style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
+          />
+        ) : (
+          <User size={16} strokeWidth={1.5} color="var(--text-low)" />
+        )}
+      </div>
+      <div style={styles.profileInfo}>
+        <div style={styles.profileName}>
+          {profile.user.login || profile.user.email.split("@")[0]}
+        </div>
+        <div style={styles.profileEmail}>{profile.user.email}</div>
+      </div>
+      <button onClick={onLogout} style={styles.logoutButton} title="Выйти">
+        <LogOut size={14} strokeWidth={1.8} />
+      </button>
     </div>
   );
 }
@@ -224,6 +223,26 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     background: "#000",
     flexShrink: 0,
+  },
+  compactCta: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    width: "calc(100% - 16px)",
+    margin: "8px 8px 0",
+    padding: "10px",
+    borderRadius: 8,
+    background: "#000",
+    color: "#fff",
+    border: "none",
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.06em",
+    cursor: "pointer",
+    transition: "opacity 0.15s",
+    fontFamily: "var(--font)",
   },
   ctaBox: {
     padding: "14px 14px",
