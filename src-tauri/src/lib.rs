@@ -9,7 +9,7 @@ use commands::{
     accessibility, runtime_info, settings_window,
     widget::{self, WIDGET_HEIGHT, WIDGET_WIDTH},
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
