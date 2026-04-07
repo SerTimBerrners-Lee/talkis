@@ -50,5 +50,12 @@
       "entitlements": "entitlements.plist",
       "infoPlist": "Info.plist"
     }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["talkis"]
+      }
+    }
   }
 }

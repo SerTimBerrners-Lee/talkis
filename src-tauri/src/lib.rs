@@ -10,10 +10,12 @@ use commands::{
     widget::{self, WIDGET_HEIGHT, WIDGET_WIDTH},
 };
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -63,6 +65,28 @@ pub fn run() {
                 let _ = settings_window::open_settings(handle).await;
             });
 
+            // ── Deep link handling ──────────────────────────
+            // Check if app was launched via deep link
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for url in &urls {
+                    logger::log_info("DEEP_LINK", &format!("Startup deep link: {}", url));
+                    if let Some(token) = extract_auth_token(url.as_str()) {
+                        let _ = app.emit("deep-link-auth", token);
+                    }
+                }
+            }
+
+            // Listen for deep links while running
+            let handle_for_dl = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    logger::log_info("DEEP_LINK", &format!("Runtime deep link: {}", url));
+                    if let Some(token) = extract_auth_token(url.as_str()) {
+                        let _ = handle_for_dl.emit("deep-link-auth", token.clone());
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -105,4 +129,17 @@ fn start_native_hotkey_capture(window: tauri::WebviewWindow) -> Result<(), Strin
 #[tauri::command]
 fn stop_native_hotkey_capture(window: tauri::WebviewWindow) -> Result<(), String> {
     hotkey_capture::stop_capture(&window)
+}
+
+/// Extract token from `talkis://auth?token=<jwt>` URLs.
+fn extract_auth_token(url_str: &str) -> Option<String> {
+    // Parse talkis://auth?token=xxx or talkis://auth/callback?token=xxx
+    if let Ok(url) = url::Url::parse(url_str) {
+        for (key, value) in url.query_pairs() {
+            if key == "token" && !value.is_empty() {
+                return Some(value.into_owned());
+            }
+        }
+    }
+    None
 }

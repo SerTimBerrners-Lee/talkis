@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { listen } from "@tauri-apps/api/event";
 import { LogOut, User, Crown } from "lucide-react";
 
-import { CloudProfile, fetchCloudProfile, cloudLogout, getAuthLoginUrl } from "../lib/cloudAuth";
+import { CloudProfile, fetchCloudProfile, cloudLogout, getAuthLoginUrl, handleAuthToken } from "../lib/cloudAuth";
 import { logError, logInfo } from "../lib/logger";
 
 export function UserPanel() {
@@ -23,6 +24,19 @@ export function UserPanel() {
 
   useEffect(() => {
     void loadProfile();
+  }, [loadProfile]);
+
+  // Listen for deep link auth tokens from Rust backend
+  useEffect(() => {
+    const unlistenPromise = listen<string>("deep-link-auth", async (event) => {
+      logInfo("USER_PANEL", "Received auth token via deep link");
+      await handleAuthToken(event.payload);
+      await loadProfile();
+    });
+
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
   }, [loadProfile]);
 
   const handleActivate = async () => {
