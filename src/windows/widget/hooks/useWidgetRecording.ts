@@ -96,8 +96,10 @@ export function useWidgetRecording({
       return;
     }
 
+    // Subscription mode: no API key needed, just a device token
+    const isSubscriptionMode = !settings.useOwnKey && (settings.deviceToken || "").trim().length > 0;
     const hasKey = settings.apiKey.trim().length > 0 || settings.whisperApiKey.trim().length > 0 || (settings.llmApiKey || "").trim().length > 0;
-    if (!hasKey) {
+    if (!isSubscriptionMode && !hasKey) {
       logError("RECORDING", "API key not set");
       showError("Добавьте API ключ в настройках → Подписка.");
       return;

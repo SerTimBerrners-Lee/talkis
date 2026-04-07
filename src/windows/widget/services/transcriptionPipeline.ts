@@ -71,7 +71,47 @@ function toUserFacingPasteErrorMessage(): string {
   return "Текст распознан, но вставить его не удалось. Скопируйте его из истории.";
 }
 
-async function transcribeAudio({
+const PROXY_BASE_URL = "https://proxy.talkis.ru";
+
+async function transcribeViaProxy({
+  audioBase64,
+  settings,
+}: {
+  audioBase64: string;
+  settings: AppSettings;
+}): Promise<{ raw: string; cleaned: string }> {
+  logInfo("API", `Sending to proxy, audio_size: ${audioBase64.length} chars`);
+
+  // Decode base64 → binary → Blob
+  const binary = atob(audioBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: "audio/webm" });
+
+  const form = new FormData();
+  form.append("file", blob, "recording.webm");
+  form.append("language", settings.language || "ru");
+  form.append("style", settings.style || "classic");
+
+  const resp = await fetch(`${PROXY_BASE_URL}/api/transcribe`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${settings.deviceToken}`,
+    },
+    body: form,
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`Proxy error (${resp.status}): ${body}`);
+  }
+
+  return resp.json();
+}
+
+async function transcribeViaBackend({
   audioBase64,
   settings,
 }: {
@@ -96,6 +136,22 @@ async function transcribeAudio({
   });
 
   return result;
+}
+
+async function transcribeAudio({
+  audioBase64,
+  settings,
+}: {
+  audioBase64: string;
+  settings: AppSettings;
+}): Promise<{ raw: string; cleaned: string }> {
+  // Subscription mode: send to proxy
+  if (!settings.useOwnKey && settings.deviceToken?.trim()) {
+    return transcribeViaProxy({ audioBase64, settings });
+  }
+
+  // Own key mode: send to Rust backend
+  return transcribeViaBackend({ audioBase64, settings });
 }
 
 async function pasteCleanedText(text: string): Promise<void> {
