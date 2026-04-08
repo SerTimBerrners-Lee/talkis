@@ -1,20 +1,38 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
+import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { LogOut, User, Crown } from "lucide-react";
 
-import { CloudProfile, fetchCloudProfile, cloudLogout, getAuthLoginUrl, handleAuthToken } from "../lib/cloudAuth";
+import { CloudProfile, fetchCloudProfile, cloudLogout, getAuthLoginUrl, handleAuthToken, generateExchangeCode, getAuthLoginUrlWithCode, pollForToken } from "../lib/cloudAuth";
 import { logError, logInfo } from "../lib/logger";
+
+/** Extract token from talkis://auth?token=... */
+function extractTokenFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.get("token") || null;
+  } catch {
+    return null;
+  }
+}
 
 export function UserPanel() {
   const [profile, setProfile] = useState<CloudProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [waitingForAuth, setWaitingForAuth] = useState(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const exchangeCodeRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchCloudProfile();
       setProfile(data);
+      if (data) {
+        // Got profile — stop polling
+        setWaitingForAuth(false);
+      }
     } catch (error) {
       logError("USER_PANEL", `Failed to load profile: ${error}`);
     } finally {
@@ -26,10 +44,10 @@ export function UserPanel() {
     void loadProfile();
   }, [loadProfile]);
 
-  // Listen for deep link auth tokens from Rust backend
+  // ── Deep link: Rust event ─────────────────────────────────
   useEffect(() => {
     const unlistenPromise = listen<string>("deep-link-auth", async (event) => {
-      logInfo("USER_PANEL", "Received auth token via deep link");
+      logInfo("USER_PANEL", "Received auth token via Tauri event");
       await handleAuthToken(event.payload);
       await loadProfile();
     });
@@ -39,13 +57,88 @@ export function UserPanel() {
     };
   }, [loadProfile]);
 
+  // ── Deep link: JS plugin API ──────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    const setup = async () => {
+      try {
+        await onOpenUrl(async (urls) => {
+          if (cancelled) return;
+          for (const url of urls) {
+            logInfo("USER_PANEL", `Deep link (JS): ${url}`);
+            const token = extractTokenFromUrl(url);
+            if (token) {
+              await handleAuthToken(token);
+              await loadProfile();
+            }
+          }
+        });
+      } catch (err) {
+        // Plugin may not be available in dev mode
+        logInfo("USER_PANEL", `Deep link JS API unavailable: ${err}`);
+      }
+    };
+
+    void setup();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProfile]);
+
+  // ── Polling fallback via exchange code ──────────────────────
+  useEffect(() => {
+    if (!waitingForAuth) {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      return;
+    }
+
+    logInfo("USER_PANEL", `Starting auth polling with code: ${exchangeCodeRef.current?.slice(0, 8)}...`);
+    pollingRef.current = setInterval(async () => {
+      const code = exchangeCodeRef.current;
+      if (!code) return;
+
+      const token = await pollForToken(code);
+      if (token) {
+        logInfo("USER_PANEL", "Auth polling: token received!");
+        await handleAuthToken(token);
+        const data = await fetchCloudProfile();
+        if (data) {
+          setProfile(data);
+        }
+        setWaitingForAuth(false);
+        exchangeCodeRef.current = null;
+      }
+    }, 3000);
+
+    // Stop polling after 2 minutes
+    const timeout = setTimeout(() => {
+      logInfo("USER_PANEL", "Auth polling timed out");
+      setWaitingForAuth(false);
+    }, 120_000);
+
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      clearTimeout(timeout);
+    };
+  }, [waitingForAuth]);
+
   const handleActivate = async () => {
     try {
-      // If already authenticated, go to dashboard; otherwise login
+      // Generate exchange code for polling
+      const code = generateExchangeCode();
+      exchangeCodeRef.current = code;
+
       const url = profile
         ? `${getAuthLoginUrl().replace('/auth/login?device=true', '/dashboard')}`
-        : getAuthLoginUrl();
+        : getAuthLoginUrlWithCode(code);
       await openUrl(url);
+      // Start polling for token via exchange code
+      setWaitingForAuth(true);
     } catch (error) {
       logError("USER_PANEL", `Failed to open auth URL: ${error}`);
     }

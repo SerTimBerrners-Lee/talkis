@@ -97,3 +97,43 @@ export async function isCloudAuthenticated(): Promise<boolean> {
 export function getAuthLoginUrl(): string {
   return `${CLOUD_API_BASE}/auth/login?device=true`;
 }
+
+/**
+ * Generate a random exchange code for device auth.
+ */
+export function generateExchangeCode(): string {
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  return Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Get the auth login URL with exchange code for polling support.
+ */
+export function getAuthLoginUrlWithCode(code: string): string {
+  return `${CLOUD_API_BASE}/auth/login?device=true&code=${code}`;
+}
+
+/**
+ * Poll the server for a device token using the exchange code.
+ * Returns the token if found, null otherwise.
+ */
+export async function pollForToken(code: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `${CLOUD_API_BASE}/api/auth/device-exchange?code=${code}`,
+    );
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+
+    if (data.token) {
+      return data.token;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
