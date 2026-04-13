@@ -45,6 +45,10 @@ function toUserFacingErrorMessage(error: unknown): string {
   }
 
   if (normalized.includes("403") || normalized.includes("forbidden")) {
+    if (normalized.includes("subscription inactive") || normalized.includes("активная подписка") || normalized.includes("cloud mode")) {
+      return "Для облачного режима нужна активная подписка Talkis.";
+    }
+
     return "Сервис отклонил запрос. Проверьте API-ключ, регион доступа или настройки endpoint.";
   }
 

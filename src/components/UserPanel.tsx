@@ -173,8 +173,8 @@ export function UserPanel() {
       <div style={styles.container}>
         <ProfileRow profile={profile} onLogout={handleLogout} />
         <button onClick={handleActivate} style={styles.compactCta}>
-          <Crown size={13} strokeWidth={2} color="var(--text-hi)" />
-          <span>Активировать подписку</span>
+          <Crown size={13} strokeWidth={2} color="#fff" />
+          <span style={styles.compactCtaLabel}>Активировать подписку</span>
         </button>
       </div>
     );
@@ -329,13 +329,21 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#000",
     color: "#fff",
     border: "none",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: 700,
     textTransform: "uppercase" as const,
-    letterSpacing: "0.06em",
+    letterSpacing: "0.04em",
+    lineHeight: 1,
+    whiteSpace: "nowrap" as const,
     cursor: "pointer",
     transition: "opacity 0.15s",
     fontFamily: "var(--font)",
+  },
+  compactCtaLabel: {
+    display: "flex",
+    alignItems: "center",
+    lineHeight: 1,
+    whiteSpace: "nowrap" as const,
   },
   ctaBox: {
     padding: "14px 14px",

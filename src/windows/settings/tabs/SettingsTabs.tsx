@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { AppSettings, ApiProvider, getSettings, saveSettings } from "../../../lib/store";
-import { Check, Briefcase, Code, MessageSquare, Crown, Zap, ChevronDown, LucideIcon } from "lucide-react";
-import { CloudProfile, fetchCloudProfile, getAuthLoginUrl } from "../../../lib/cloudAuth";
+import { Check, Briefcase, Code, MessageSquare, Crown, Zap, ChevronDown, LucideIcon, LogOut, User } from "lucide-react";
+import { CloudProfile, fetchCloudProfile, getAuthLoginUrl, cloudLogout } from "../../../lib/cloudAuth";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
 import { SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
@@ -88,6 +88,144 @@ function OptionCard({ active = false, icon, title, description, badge, onClick, 
   );
 }
 
+function CloudSubscriptionAccountCard({
+  profile,
+  onActivate,
+  onLogout,
+}: {
+  profile: CloudProfile;
+  onActivate: () => void;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="card" style={{ padding: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 8px" }}>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            background: "rgba(0,0,0,0.05)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            overflow: "hidden",
+          }}
+        >
+          {profile.user.avatarUrl ? (
+            <img
+              src={profile.user.avatarUrl}
+              alt=""
+              style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
+            />
+          ) : (
+            <User size={16} strokeWidth={1.5} color="var(--text-low)" />
+          )}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--text-hi)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {profile.user.login || profile.user.email.split("@")[0]}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-low)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {profile.user.email}
+          </div>
+        </div>
+
+        <button
+          onClick={onLogout}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 6,
+            borderRadius: 6,
+            color: "var(--text-low)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "color 0.15s, background 0.15s",
+          }}
+          title="Выйти"
+        >
+          <LogOut size={14} strokeWidth={1.8} />
+        </button>
+      </div>
+
+      <button
+        onClick={onActivate}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          width: "calc(100% - 16px)",
+          margin: "8px 8px 0",
+          padding: "10px",
+          borderRadius: 8,
+          background: "#000",
+          color: "#fff",
+          border: "none",
+          fontSize: 10,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          cursor: "pointer",
+          transition: "opacity 0.15s",
+          fontFamily: "var(--font)",
+        }}
+      >
+        <Crown size={13} strokeWidth={2} color="#fff" />
+        <span style={{ display: "flex", alignItems: "center", lineHeight: 1, whiteSpace: "nowrap" }}>Активировать подписку</span>
+      </button>
+    </div>
+  );
+}
+
+function SubscriptionGuestCard({ onActivate }: { onActivate: () => void }) {
+  return (
+    <div style={{ padding: "22px 20px", borderRadius: 14, background: "#000", color: "#fff" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <Crown size={16} strokeWidth={2.2} />
+        <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>Подписка Talkis</span>
+      </div>
+      <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px", fontSize: 12, lineHeight: 2, opacity: 0.85 }}>
+        <li>• Безлимитное использование без ограничений</li>
+        <li>• Без VPN и Прокси</li>
+        <li>• Синхронизация со всеми устройствами</li>
+      </ul>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
+        <span style={{ textDecoration: "line-through", opacity: 0.45, fontSize: 12 }}>1 500 ₽</span>
+        <span style={{ fontWeight: 800, fontSize: 22 }}>390 ₽</span>
+        <span style={{ opacity: 0.5, fontSize: 11 }}>/ мес</span>
+      </div>
+      <button onClick={onActivate} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#fff", color: "#000", border: "none", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s", fontFamily: "var(--font-main)" }}>
+        Активировать
+      </button>
+    </div>
+  );
+}
+
 export function SettingsTabs({ type }: SettingsTabsProps) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
@@ -99,6 +237,11 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
   const sttDropdownRef = useRef<HTMLDivElement>(null);
   const llmDropdownRef = useRef<HTMLDivElement>(null);
+
+  const loadCloudProfile = useCallback(async () => {
+    const profile = await fetchCloudProfile();
+    setCloudProfile(profile);
+  }, []);
 
   // Close model dropdowns on outside click
   useEffect(() => {
@@ -114,8 +257,28 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
   // Cloud profile — always fetch (regardless of tab) so hooks are stable
   useEffect(() => {
-    fetchCloudProfile().then(setCloudProfile).catch(() => {});
-  }, []);
+    loadCloudProfile().catch(() => {});
+  }, [loadCloudProfile]);
+
+  useEffect(() => {
+    const refreshCloudProfile = () => {
+      void loadCloudProfile();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshCloudProfile();
+      }
+    };
+
+    window.addEventListener("focus", refreshCloudProfile);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", refreshCloudProfile);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loadCloudProfile]);
 
   useEffect(() => {
     if (!settings || type !== "style" || !IS_DEV) return;
@@ -153,6 +316,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   };
 
   if (type === "model") {
+    const isAuthenticated = cloudProfile !== null;
     const hasActiveSubscription = cloudProfile?.subscription.active === true;
     const isCustom = settings.provider === "custom";
 
@@ -162,6 +326,11 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       } catch {
         // Error handled silently
       }
+    };
+
+    const handleCloudLogout = async () => {
+      await cloudLogout();
+      setCloudProfile(null);
     };
 
     const handleProviderChange = (provider: ApiProvider) => {
@@ -232,26 +401,16 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             </div>
             <div style={{ width: 10, height: 10, borderRadius: 999, background: "#000", flexShrink: 0 }} />
           </div>
+        ) : isAuthenticated ? (
+          <CloudSubscriptionAccountCard
+            profile={cloudProfile}
+            onActivate={handleActivateSubscription}
+            onLogout={() => {
+              void handleCloudLogout();
+            }}
+          />
         ) : (
-          <div style={{ padding: "22px 20px", borderRadius: 14, background: "#000", color: "#fff" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <Crown size={16} strokeWidth={2.2} />
-              <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>Подписка Talkis</span>
-            </div>
-            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 14px", fontSize: 12, lineHeight: 2, opacity: 0.85 }}>
-              <li>• Безлимитное использование без ограничений</li>
-              <li>• Без VPN и Прокси</li>
-              <li>• Синхронизация со всеми устройствами</li>
-            </ul>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
-              <span style={{ textDecoration: "line-through", opacity: 0.45, fontSize: 12 }}>1 500 ₽</span>
-              <span style={{ fontWeight: 800, fontSize: 22 }}>390 ₽</span>
-              <span style={{ opacity: 0.5, fontSize: 11 }}>/ мес</span>
-            </div>
-            <button onClick={handleActivateSubscription} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#fff", color: "#000", border: "none", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s", fontFamily: "var(--font-main)" }}>
-              Активировать
-            </button>
-          </div>
+          <SubscriptionGuestCard onActivate={handleActivateSubscription} />
         )}
 
         {/* ── Separator ── */}
