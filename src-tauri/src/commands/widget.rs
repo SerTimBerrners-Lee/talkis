@@ -7,7 +7,6 @@ pub const NOTICE_WIDTH: f64 = 212.0;
 pub const NOTICE_HEIGHT: f64 = 52.0;
 /// Must match NOTICE_WIDGET_GAP in src/windows/widget/widgetConstants.ts (logical pixels).
 pub const NOTICE_GAP: f64 = 2.0;
-pub const WIDGET_DEFAULT_BOTTOM_MARGIN: i32 = 16;
 pub const WIDGET_WIDTH: f64 = 50.0;
 pub const WIDGET_HEIGHT: f64 = 18.0;
 
@@ -72,22 +71,6 @@ fn position_widget_notice_window(
         .map_err(|e| e.to_string())?;
 
     Ok(())
-}
-
-pub fn calculate_default_widget_position(
-    monitor: &tauri::Monitor,
-    width: f64,
-    height: f64,
-) -> tauri::PhysicalPosition<i32> {
-    let work_area = monitor.work_area();
-    let scale_factor = monitor.scale_factor();
-    let width_px = (width * scale_factor).round() as i32;
-    let height_px = (height * scale_factor).round() as i32;
-    let bottom_margin_px = ((WIDGET_DEFAULT_BOTTOM_MARGIN as f64) * scale_factor).round() as i32;
-    let x = work_area.position.x + ((work_area.size.width as i32 - width_px) / 2);
-    let y = work_area.position.y + work_area.size.height as i32 - height_px - bottom_margin_px;
-
-    tauri::PhysicalPosition { x, y }
 }
 
 #[cfg(target_os = "macos")]

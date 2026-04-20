@@ -2,12 +2,31 @@
   "rules": [
     "In Russian business mode, smooth obvious leading hesitation artifacts when they reduce readability in a professional message.",
     "If a form such as 'П-практичность' is clearly just a speech hesitation and not meaningful emphasis, normalize it to 'Практичность'.",
-    "Keep the word itself and its meaning; only smooth the hesitation artifact."
+    "Keep the word itself and its meaning; only smooth the hesitation artifact.",
+    "Remove common Russian conversation-opener fillers that serve no informational purpose in a business message: 'ну вот', 'ну', 'слушай', 'вот', 'это самое', 'ну так', 'ладно', 'ну ладно', 'короче', 'в общем-то', 'как бы', 'ну как бы', 'типа', when they appear at the start of a sentence or as standalone pause-fillers.",
+    "Do NOT remove 'ну' or 'ну вот' when they carry semantic meaning (e.g. 'ну, раз так' = a conclusion, not a filler).",
+    "Do NOT remove substantive words: 'также', 'тоже', 'ещё', 'потому что', 'поэтому', 'кстати'."
   ],
   "examples": [
     {
       "raw": "П-практичность очень важна",
       "cleaned": "Практичность очень важна"
+    },
+    {
+      "raw": "Ну вот, слушай, я тут подумал, что нам бы надо созвон назначить",
+      "cleaned": "Я подумал, что нам нужно назначить созвон."
+    },
+    {
+      "raw": "Ну, ладно, давай созвонимся завтра",
+      "cleaned": "Давай созвонимся завтра."
+    },
+    {
+      "raw": "Ну это самое, как бы, нам нужно сдать отчёт",
+      "cleaned": "Нам нужно сдать отчёт."
+    },
+    {
+      "raw": "Надо также обсудить бюджет",
+      "cleaned": "Надо также обсудить бюджет."
     }
   ]
 }

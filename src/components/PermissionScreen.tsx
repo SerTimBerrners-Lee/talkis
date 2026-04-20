@@ -222,7 +222,11 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
   };
 
   const canContinue = micStatus === "granted" && accStatus === "granted";
-  const shouldShowInstallWarning = Boolean(runtimeInfo?.shouldMoveToApplications);
+  // In dev mode the binary lives in the build target dir (e.g. /Volumes/...),
+  // which is not /Applications — but that's expected, so skip the warning.
+  const shouldShowInstallWarning = import.meta.env.DEV
+    ? false
+    : Boolean(runtimeInfo?.shouldMoveToApplications);
   const canCompleteOnboarding = canContinue && !shouldShowInstallWarning;
 
   return (

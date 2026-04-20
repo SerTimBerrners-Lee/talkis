@@ -40,6 +40,24 @@ function toUserFacingErrorMessage(error: unknown): string {
   const raw = formatErrorMessage(error);
   const normalized = raw.toLowerCase();
 
+  const missingModelMatch = raw.match(/Model ['"]([^'"]+)['"] is not installed locally/i);
+  if (missingModelMatch) {
+    const model = missingModelMatch[1];
+    const encodedModel = encodeURIComponent(model);
+    return `Локальный сервер запущен, но модель ${model} ещё не скачана. Установите её командой: curl http://127.0.0.1:8000/v1/models/${encodedModel} -X POST`;
+  }
+
+  if (
+    normalized.includes("connection refused") ||
+    normalized.includes("tcp connect error") ||
+    normalized.includes("error trying to connect") ||
+    normalized.includes("failed to connect") ||
+    normalized.includes("os error 61") ||
+    normalized.includes("os error 111")
+  ) {
+    return "Не удалось подключиться к локальному серверу распознавания. Если Docker не установлен, откройте инструкцию Speaches и выберите установку без Docker, либо укажите другой локальный endpoint.";
+  }
+
   if (normalized.includes("unsupported_country_region_territory") || normalized.includes("country, region, or territory not supported")) {
     return "Сервис распознавания сейчас недоступен в вашем регионе. Попробуйте другой endpoint или VPN.";
   }
@@ -50,6 +68,22 @@ function toUserFacingErrorMessage(error: unknown): string {
     }
 
     return "Сервис отклонил запрос. Проверьте API-ключ, регион доступа или настройки endpoint.";
+  }
+
+  if (normalized.includes("invalid or expired token") || normalized.includes("token expired") || normalized.includes("token missing user id")) {
+    return "Сессия Talkis Cloud истекла. Войдите в облако заново.";
+  }
+
+  if (normalized.includes("talkis cloud session missing")) {
+    return "Войдите в Talkis Cloud заново, чтобы использовать облачный режим.";
+  }
+
+  if (normalized.includes("talkis cloud returned an invalid response")) {
+    return "Talkis Cloud вернул некорректный ответ. Попробуйте отправить запись ещё раз.";
+  }
+
+  if (normalized.includes("subscription check failed") || normalized.includes("cloud auth unavailable")) {
+    return "Talkis Cloud временно недоступен. Попробуйте ещё раз через несколько секунд.";
   }
 
   if (normalized.includes("401") || normalized.includes("unauthorized") || normalized.includes("invalid api key")) {
@@ -107,12 +141,26 @@ async function transcribeViaProxy({
     body: form,
   });
 
+  const body = await resp.text();
+
   if (!resp.ok) {
-    const body = await resp.text();
+    logError("API", `Proxy error (${resp.status}): ${body}`);
     throw new Error(`Proxy error (${resp.status}): ${body}`);
   }
 
-  return resp.json();
+  try {
+    const parsed = JSON.parse(body) as { raw?: string; cleaned?: string };
+    const result = {
+      raw: typeof parsed.raw === "string" ? parsed.raw : "",
+      cleaned: typeof parsed.cleaned === "string" ? parsed.cleaned : "",
+    };
+
+    logInfo("API", `Proxy response parsed: raw_type=${typeof parsed.raw}, cleaned_type=${typeof parsed.cleaned}, cleaned_len=${result.cleaned.length}`);
+    return result;
+  } catch (error) {
+    logError("API", `Proxy success response parse failed: ${formatErrorMessage(error)}; body=${body}`);
+    throw new Error("Talkis Cloud returned an invalid response");
+  }
 }
 
 async function transcribeViaBackend({
@@ -152,6 +200,10 @@ async function transcribeAudio({
   // Subscription mode: send to proxy
   if (!settings.useOwnKey && settings.deviceToken?.trim()) {
     return transcribeViaProxy({ audioBase64, settings });
+  }
+
+  if (!settings.useOwnKey) {
+    throw new Error("Talkis Cloud session missing");
   }
 
   // Own key mode: send to Rust backend
@@ -194,6 +246,8 @@ export async function processRecordingBlob({
       audioBase64: base64Audio,
       settings,
     });
+
+    logInfo("API", `Pipeline result received: raw_type=${typeof result.raw}, cleaned_type=${typeof result.cleaned}`);
     const processingTime = Date.now() - apiStart;
 
     if (!result.raw.trim() && !result.cleaned.trim()) {
@@ -228,6 +282,11 @@ export async function processRecordingBlob({
 
     return { durationSeconds, hasTranscription: true };
   } catch (error) {
+    const rawErrorMessage = error instanceof Error
+      ? `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ""}`
+      : String(error);
+    logError("API", `Pipeline raw error: ${rawErrorMessage}`);
+
     const userFacingErrorMessage = toUserFacingErrorMessage(error);
     const failedEntry: HistoryEntry = {
       id: crypto.randomUUID(),

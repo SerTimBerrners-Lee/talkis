@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppSettings, getSettings, getWidgetPosition, saveWidgetPosition } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
 import { formatErrorMessage } from "../../../lib/utils";
-import { WidgetNoticeState, WidgetState } from "../widgetConstants";
+import { IDLE_WIDGET_HEIGHT, IDLE_WIDGET_WIDTH, WidgetNoticeState, WidgetState } from "../widgetConstants";
 import { resolveInitialWidgetPosition } from "../widgetPositioning";
 import { useWidgetHotkey } from "./useWidgetHotkey";
 import { useWidgetNotice } from "./useWidgetNotice";
@@ -47,6 +47,10 @@ export function useWidgetController(): WidgetControllerState {
   const releaseStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const positionReadyRef = useRef(false);
+  const widgetSizeRef = useRef<{ width: number; height: number }>({
+    width: IDLE_WIDGET_WIDTH,
+    height: IDLE_WIDGET_HEIGHT,
+  });
   const stopAndProcessRef = useRef<() => Promise<void>>(async () => {});
 
   // ── Dispatch: apply action → update machine state → execute effects ─────
@@ -207,11 +211,18 @@ export function useWidgetController(): WidgetControllerState {
   // ── Widget resize ───────────────────────────────────────────────────────
   const resizeWidget = useCallback(async (width: number, height: number) => {
     try {
+      const currentSize = widgetSizeRef.current;
+
+      if (currentSize.width === width && currentSize.height === height) {
+        return;
+      }
+
       await invoke("widget_resize", { width, height });
+      widgetSizeRef.current = { width, height };
     } catch (error) {
       logError("WIDGET", `Resize failed: ${formatErrorMessage(error)}`);
     }
-  }, []);
+  }, [widgetWindow]);
 
   // ── Notice ──────────────────────────────────────────────────────────────
   const machineStateRefForNotice = useRef(machineRef);

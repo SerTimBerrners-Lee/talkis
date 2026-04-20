@@ -9,8 +9,31 @@
 
 import { getSettings, saveSettings } from "./store";
 import { logError, logInfo } from "./logger";
+import { emit } from "@tauri-apps/api/event";
+
+import { SETTINGS_UPDATED_EVENT } from "./hotkeyEvents";
 
 const CLOUD_API_BASE = "https://talkis.ru";
+
+type CloudProfileListener = (profile: CloudProfile | null | undefined) => void;
+
+let cachedCloudProfile: CloudProfile | null | undefined;
+let inflightCloudProfileRequest: Promise<CloudProfile | null> | null = null;
+const cloudProfileListeners = new Set<CloudProfileListener>();
+
+function notifyCloudProfileListeners(profile: CloudProfile | null | undefined): void {
+  cloudProfileListeners.forEach((listener) => listener(profile));
+}
+
+function setCachedCloudProfile(profile: CloudProfile | null | undefined): void {
+  cachedCloudProfile = profile;
+  notifyCloudProfileListeners(profile);
+}
+
+async function saveCloudSettings(settings: Parameters<typeof saveSettings>[0]): Promise<void> {
+  await saveSettings(settings);
+  await emit(SETTINGS_UPDATED_EVENT).catch(() => {});
+}
 
 export interface CloudUser {
   id: string;
@@ -31,48 +54,80 @@ export interface CloudProfile {
   subscription: CloudSubscription;
 }
 
+export function getCachedCloudProfile(): CloudProfile | null | undefined {
+  return cachedCloudProfile;
+}
+
+export function subscribeCloudProfile(listener: CloudProfileListener): () => void {
+  cloudProfileListeners.add(listener);
+  return () => {
+    cloudProfileListeners.delete(listener);
+  };
+}
+
 /**
  * Fetch user profile and subscription status from the cloud.
  * Returns null if token is missing or invalid.
  */
-export async function fetchCloudProfile(): Promise<CloudProfile | null> {
-  const settings = await getSettings();
-  const token = settings.deviceToken;
-
-  if (!token) {
-    return null;
+export async function fetchCloudProfile({ force = false }: { force?: boolean } = {}): Promise<CloudProfile | null> {
+  if (!force && inflightCloudProfileRequest) {
+    return inflightCloudProfileRequest;
   }
 
+  const request = (async () => {
+    const settings = await getSettings();
+    const token = settings.deviceToken;
+
+    if (!token) {
+      setCachedCloudProfile(null);
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${CLOUD_API_BASE}/api/subscription/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.status === 401) {
+        logInfo("CLOUD", "Device token invalid, clearing");
+        await saveCloudSettings({ deviceToken: "", useOwnKey: true });
+        setCachedCloudProfile(null);
+        return null;
+      }
+
+      if (!response.ok) {
+        logError("CLOUD", `API error: ${response.status}`);
+        return cachedCloudProfile ?? null;
+      }
+
+      const data = await response.json();
+      const profile = data as CloudProfile;
+      setCachedCloudProfile(profile);
+      return profile;
+    } catch (error) {
+      logError("CLOUD", `Failed to fetch profile: ${error instanceof Error ? error.message : String(error)}`);
+      return cachedCloudProfile ?? null;
+    }
+  })();
+
+  inflightCloudProfileRequest = request;
+
   try {
-    const response = await fetch(`${CLOUD_API_BASE}/api/subscription/status`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (response.status === 401) {
-      logInfo("CLOUD", "Device token invalid, clearing");
-      await saveSettings({ deviceToken: "" });
-      return null;
+    return await request;
+  } finally {
+    if (inflightCloudProfileRequest === request) {
+      inflightCloudProfileRequest = null;
     }
-
-    if (!response.ok) {
-      logError("CLOUD", `API error: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    return data as CloudProfile;
-  } catch (error) {
-    logError("CLOUD", `Failed to fetch profile: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
   }
 }
 
 /**
  * Save device token received from deep link callback.
  */
-export async function handleAuthToken(token: string): Promise<void> {
+export async function handleAuthToken(token: string): Promise<CloudProfile | null> {
   logInfo("CLOUD", "Received auth token from deep link");
-  await saveSettings({ deviceToken: token });
+  await saveCloudSettings({ deviceToken: token, useOwnKey: false });
+  return fetchCloudProfile({ force: true });
 }
 
 /**
@@ -80,7 +135,8 @@ export async function handleAuthToken(token: string): Promise<void> {
  */
 export async function cloudLogout(): Promise<void> {
   logInfo("CLOUD", "Logging out");
-  await saveSettings({ deviceToken: "" });
+  await saveCloudSettings({ deviceToken: "", useOwnKey: true });
+  setCachedCloudProfile(null);
 }
 
 /**

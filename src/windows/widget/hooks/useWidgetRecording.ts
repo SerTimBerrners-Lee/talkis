@@ -96,10 +96,26 @@ export function useWidgetRecording({
       return;
     }
 
-    // Subscription mode: no API key needed, just a device token
-    const isSubscriptionMode = !settings.useOwnKey && (settings.deviceToken || "").trim().length > 0;
+    // Cloud mode must have a device token. Do not silently fall back to direct OpenAI.
+    const isCloudMode = !settings.useOwnKey;
+    const isSubscriptionMode = isCloudMode && (settings.deviceToken || "").trim().length > 0;
     const hasKey = settings.apiKey.trim().length > 0 || settings.whisperApiKey.trim().length > 0 || (settings.llmApiKey || "").trim().length > 0;
-    if (!isSubscriptionMode && !hasKey) {
+
+    // In local STT mode the whisper server runs on localhost and requires no API key.
+    // Detect this case: custom provider + local-looking endpoint + no whisperApiKey.
+    const isLocalSttMode =
+      settings.useOwnKey &&
+      settings.provider === "custom" &&
+      (settings.whisperEndpoint || "").match(/127\.0\.0\.1|localhost/i) !== null &&
+      (settings.whisperApiKey || "").trim().length === 0;
+
+    if (isCloudMode && !isSubscriptionMode) {
+      logError("RECORDING", "Cloud mode selected but device token is missing");
+      showError("Войдите в Talkis Cloud заново, чтобы использовать облачный режим.");
+      return;
+    }
+
+    if (!isSubscriptionMode && !hasKey && !isLocalSttMode) {
       logError("RECORDING", "API key not set");
       showError("Добавьте API ключ в настройках → Подписка.");
       return;

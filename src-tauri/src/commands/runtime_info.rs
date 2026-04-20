@@ -22,12 +22,20 @@ fn build_runtime_info() -> Result<AppRuntimeInfo, String> {
     let launched_via_translocation = executable_path_str.contains("/AppTranslocation/");
     let launched_from_mounted_volume = bundle_path_str.starts_with("/Volumes/");
 
+    // In dev builds, never warn about Applications — the binary is
+    // expected to live wherever target-dir points.
+    let should_move = if cfg!(dev) {
+        false
+    } else {
+        launched_via_translocation || launched_from_mounted_volume
+    };
+
     Ok(AppRuntimeInfo {
         executable_path: executable_path_str,
         bundle_path: bundle_path_str,
         launched_via_translocation,
         launched_from_mounted_volume,
-        should_move_to_applications: launched_via_translocation || launched_from_mounted_volume,
+        should_move_to_applications: should_move,
     })
 }
 

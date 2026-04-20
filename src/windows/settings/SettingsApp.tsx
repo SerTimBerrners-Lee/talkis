@@ -77,6 +77,22 @@ export function SettingsApp() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    // In dev mode, never show the permission onboarding screen.
+    // Permissions can be granted via System Settings and the app works
+    // without the onboarding flow (hotkey, recording, paste all function).
+    if (import.meta.env.DEV) {
+      getHistory()
+        .then((history) => {
+          setInitialHistory(history);
+          setShowPermissions(false);
+        })
+        .catch(() => {
+          setInitialHistory([]);
+          setShowPermissions(false);
+        });
+      return;
+    }
+
     Promise.all([getPermissionsPassed(), checkAllPermissions(), getHistory()])
       .then(([passed, permissions, history]) => {
         const hasAllPermissions = permissions.microphone === "granted" && permissions.accessibility === "granted";
@@ -159,11 +175,19 @@ export function SettingsApp() {
                   {loadError}
                 </div>
               )}
-              <div key={`${activeTab}:${navigationNonce}`} style={{ animation: "slide-down 0.18s ease" }}>
-                {activeTab === "main" && <MainTab initialHistory={initialHistory} />}
-                {activeTab === "settings" && <SettingsTab />}
-                {activeTab === "model" && <SettingsTabs type="model" />}
-                {activeTab === "style" && <SettingsTabs type="style" />}
+              <div key={navigationNonce} style={{ animation: "slide-down 0.18s ease" }}>
+                <div style={{ display: activeTab === "main" ? "block" : "none" }}>
+                  <MainTab initialHistory={initialHistory} />
+                </div>
+                <div style={{ display: activeTab === "settings" ? "block" : "none" }}>
+                  <SettingsTab />
+                </div>
+                <div style={{ display: activeTab === "model" ? "block" : "none" }}>
+                  <SettingsTabs type="model" />
+                </div>
+                <div style={{ display: activeTab === "style" ? "block" : "none" }}>
+                  <SettingsTabs type="style" />
+                </div>
               </div>
             </div>
           </main>

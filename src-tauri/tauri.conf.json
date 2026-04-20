@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Talkis",
   "mainBinaryName": "Talkis",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "identifier": "com.trixter.talkis",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -20,7 +20,7 @@
         "height": 18,
         "minWidth": 18,
         "minHeight": 18,
-        "resizable": true,
+        "resizable": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

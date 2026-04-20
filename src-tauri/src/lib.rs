@@ -22,9 +22,20 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             logger::log_info("INIT", "Application starting...");
+
+            // Auto-prompt for accessibility if not granted.
+            // AXIsProcessTrustedWithOptions(prompt=true) makes macOS
+            // show its native dialog and auto-register the binary.
+            #[cfg(target_os = "macos")]
+            {
+                accessibility::prompt_accessibility_if_needed();
+            }
+
             let _ = widget::ensure_widget_notice_window(app.handle());
 
             if let Some(win) = app.get_webview_window("widget") {
+                let _ = win.set_resizable(false);
+
                 #[cfg(target_os = "macos")]
                 {
                     unsafe {
@@ -34,28 +45,14 @@ pub fn run() {
                     }
                 }
 
-                if let Ok(Some(monitor)) = win.primary_monitor() {
-                    if let Err(err) = win.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                        width: WIDGET_WIDTH,
-                        height: WIDGET_HEIGHT,
-                    })) {
-                        logger::log_error(
-                            "WINDOW",
-                            &format!("Failed to size widget window during setup: {}", err),
-                        );
-                    }
-
-                    let position = widget::calculate_default_widget_position(
-                        &monitor,
-                        WIDGET_WIDTH,
-                        WIDGET_HEIGHT,
+                if let Err(err) = win.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                    width: WIDGET_WIDTH,
+                    height: WIDGET_HEIGHT,
+                })) {
+                    logger::log_error(
+                        "WINDOW",
+                        &format!("Failed to size widget window during setup: {}", err),
                     );
-                    if let Err(err) = win.set_position(tauri::Position::Physical(position)) {
-                        logger::log_error(
-                            "WINDOW",
-                            &format!("Failed to position widget window during setup: {}", err),
-                        );
-                    }
                 }
             }
 
@@ -98,6 +95,7 @@ pub fn run() {
             paste::paste_text,
             ai::transcribe_and_clean,
             ai::test_api_connection,
+            ai::install_stt_model,
             logger::log_event,
             logger::get_log_path_cmd,
             logger::clear_logs,

@@ -370,3 +370,19 @@ select {
     transform: translateY(0) scale(1);
   }
 }
+
+/* ── Collapsible details/summary ──────────────────────── */
+
+details summary::-webkit-details-marker,
+details summary::marker {
+  display: none;
+  content: "";
+}
+
+details[open] summary svg {
+  transform: rotate(180deg);
+}
+
+details summary:focus {
+  outline: none;
+}

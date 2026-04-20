@@ -4,8 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { LogOut, User, Crown } from "lucide-react";
 
-import { CloudProfile, fetchCloudProfile, cloudLogout, getAuthLoginUrl, handleAuthToken, generateExchangeCode, getAuthLoginUrlWithCode, pollForToken } from "../lib/cloudAuth";
+import { CloudProfile, fetchCloudProfile, cloudLogout, getAuthLoginUrl, handleAuthToken, generateExchangeCode, getAuthLoginUrlWithCode, pollForToken, getCachedCloudProfile, subscribeCloudProfile } from "../lib/cloudAuth";
 import { logError, logInfo } from "../lib/logger";
+import { SETTINGS_UPDATED_EVENT } from "../lib/hotkeyEvents";
 
 /** Extract token from talkis://auth?token=... */
 function extractTokenFromUrl(url: string): string | null {
@@ -18,17 +19,18 @@ function extractTokenFromUrl(url: string): string | null {
 }
 
 export function UserPanel() {
-  const [profile, setProfile] = useState<CloudProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<CloudProfile | null | undefined>(() => getCachedCloudProfile());
+  const [loading, setLoading] = useState(() => getCachedCloudProfile() === undefined);
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const exchangeCodeRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(async () => {
-    setLoading(true);
+    if (getCachedCloudProfile() === undefined) {
+      setLoading(true);
+    }
     try {
-      const data = await fetchCloudProfile();
-      setProfile(data);
+      const data = await fetchCloudProfile({ force: true });
       if (data) {
         // Got profile — stop polling
         setWaitingForAuth(false);
@@ -42,6 +44,26 @@ export function UserPanel() {
 
   useEffect(() => {
     void loadProfile();
+  }, [loadProfile]);
+
+  useEffect(() => {
+    return subscribeCloudProfile((nextProfile) => {
+      setProfile(nextProfile);
+      setLoading(false);
+      if (nextProfile) {
+        setWaitingForAuth(false);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = listen(SETTINGS_UPDATED_EVENT, () => {
+      void loadProfile();
+    });
+
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
   }, [loadProfile]);
 
   // ── Deep link: Rust event ─────────────────────────────────
@@ -105,8 +127,7 @@ export function UserPanel() {
       const token = await pollForToken(code);
       if (token) {
         logInfo("USER_PANEL", "Auth polling: token received!");
-        await handleAuthToken(token);
-        const data = await fetchCloudProfile();
+        const data = await handleAuthToken(token);
         if (data) {
           setProfile(data);
         }
@@ -146,7 +167,6 @@ export function UserPanel() {
 
   const handleLogout = async () => {
     await cloudLogout();
-    setProfile(null);
     logInfo("USER_PANEL", "User logged out");
   };
 

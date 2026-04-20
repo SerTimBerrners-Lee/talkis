@@ -179,6 +179,11 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     let whisper_model = req.whisper_model.as_deref().unwrap_or("whisper-1");
     let is_transcribe_model = whisper_model.contains("transcribe");
 
+    // Speaches (faster-whisper) does not support verbose_json — it returns 500.
+    // Fall back to plain "json" for local endpoints so segments/duration won't
+    // be available, but transcription will succeed.
+    let is_local_endpoint = whisper_url.contains("127.0.0.1") || whisper_url.contains("localhost");
+
     let mut form = multipart::Form::new()
         .part("file", file_part)
         .text("model", whisper_model.to_string());
@@ -193,8 +198,19 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         if let Some(hint) = build_whisper_prompt(&req.language, &req.style) {
             form = form.text("instructions", hint);
         }
+    } else if is_local_endpoint {
+        // Local Speaches / faster-whisper: only supports plain "json"
+        form = form.text("response_format", "json");
+
+        if !lang_param.is_empty() {
+            form = form.text("language", lang_param);
+        }
+
+        if let Some(prompt) = build_whisper_prompt(&req.language, &req.style) {
+            form = form.text("prompt", prompt.to_string());
+        }
     } else {
-        // Classic Whisper models: support verbose_json, language, prompt
+        // Classic Whisper API (OpenAI / compatible): support verbose_json, language, prompt
         form = form.text("response_format", "verbose_json");
 
         if let Some(prompt) = build_whisper_prompt(&req.language, &req.style) {
@@ -414,8 +430,14 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 #[derive(Serialize, Deserialize)]
 pub struct TestConnectionRequest {
     pub api_key: String,
+    pub whisper_api_key: Option<String>,
+    pub whisper_endpoint: Option<String>,
+    pub whisper_model: Option<String>,
+    pub llm_api_key: Option<String>,
     pub llm_endpoint: Option<String>,
     pub llm_model: Option<String>,
+    pub test_stt: bool,
+    pub test_llm: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -425,11 +447,249 @@ pub struct TestConnectionResult {
     pub latency_ms: u64,
 }
 
+#[derive(Deserialize)]
+struct ModelsListResponse {
+    #[serde(default)]
+    data: Vec<ModelListItem>,
+}
+
+#[derive(Deserialize)]
+struct ModelListItem {
+    id: String,
+}
+
+fn is_likely_local_url(value: &str) -> bool {
+    let normalized = value.trim().to_lowercase();
+    normalized.contains("127.0.0.1") || normalized.contains("localhost")
+}
+
+fn resolve_whisper_url(endpoint: Option<&str>) -> String {
+    endpoint
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let base = s.trim_end_matches('/');
+            if base.ends_with("/transcriptions") {
+                base.to_string()
+            } else if base.ends_with("/audio") {
+                format!("{}/transcriptions", base)
+            } else {
+                format!("{}/v1/audio/transcriptions", base)
+            }
+        })
+        .unwrap_or_else(|| "https://api.openai.com/v1/audio/transcriptions".to_string())
+}
+
+fn resolve_whisper_models_url(whisper_url: &str) -> String {
+    if let Some(base) = whisper_url.strip_suffix("/v1/audio/transcriptions") {
+        return format!("{}/v1/models", base);
+    }
+
+    if let Some(base) = whisper_url.strip_suffix("/audio/transcriptions") {
+        return format!("{}/models", base);
+    }
+
+    if let Some(base) = whisper_url.strip_suffix("/transcriptions") {
+        return format!("{}/models", base);
+    }
+
+    format!("{}/v1/models", whisper_url.trim_end_matches('/'))
+}
+
+fn percent_encode_path_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+
+    for byte in value.bytes() {
+        let is_unreserved = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~');
+        if is_unreserved {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push_str(&format!("{:02X}", byte));
+        }
+    }
+
+    encoded
+}
+
+fn resolve_whisper_model_download_url(models_url: &str, model: &str) -> String {
+    let encoded_model = percent_encode_path_segment(model);
+    format!("{}/{}", models_url.trim_end_matches('/'), encoded_model)
+}
+
+async fn test_stt_connection(
+    client: &reqwest::Client,
+    req: &TestConnectionRequest,
+) -> Result<String, String> {
+    let whisper_url = resolve_whisper_url(req.whisper_endpoint.as_deref());
+    let models_url = resolve_whisper_models_url(&whisper_url);
+    let whisper_key = req
+        .whisper_api_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(req.api_key.as_str());
+
+    let mut request = client.get(&models_url);
+    if !whisper_key.trim().is_empty() {
+        request = request.bearer_auth(whisper_key);
+    }
+
+    let response = request.send().await.map_err(|err| {
+        if err.is_connect() {
+            if is_likely_local_url(&models_url) {
+                "Локальный STT сервер недоступен. Запустите его или проверьте endpoint.".to_string()
+            } else {
+                "Не удалось подключиться к STT endpoint. Проверьте адрес и сеть.".to_string()
+            }
+        } else if err.is_timeout() {
+            "STT endpoint не ответил вовремя.".to_string()
+        } else {
+            format!("Ошибка проверки STT: {}", err)
+        }
+    })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let message = match status.as_u16() {
+            401 => "STT endpoint отклонил API-ключ.".to_string(),
+            403 => "STT endpoint запретил доступ. Проверьте ключ и endpoint.".to_string(),
+            404 => {
+                if is_likely_local_url(&models_url) {
+                    "Локальный STT endpoint отвечает, но не поддерживает проверку моделей по /v1/models.".to_string()
+                } else {
+                    "STT endpoint не поддерживает проверку по /v1/models.".to_string()
+                }
+            }
+            _ => format!(
+                "STT endpoint вернул ошибку {}: {}",
+                status.as_u16(),
+                error_text.chars().take(200).collect::<String>()
+            ),
+        };
+        return Err(message);
+    }
+
+    let requested_model = req
+        .whisper_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("whisper-1");
+
+    let response_text = response.text().await.map_err(|err| format!("Ошибка чтения STT ответа: {}", err))?;
+    if let Ok(models) = serde_json::from_str::<ModelsListResponse>(&response_text) {
+        let has_model = models.data.iter().any(|item| item.id == requested_model);
+        if !has_model {
+            if is_likely_local_url(&models_url) {
+                let download_url = resolve_whisper_model_download_url(&models_url, requested_model);
+                return Err(format!(
+                    "STT сервер доступен, но модель «{}» не установлена. Установите её: curl {} -X POST",
+                    requested_model, download_url
+                ));
+            }
+
+            return Err(format!(
+                "STT endpoint доступен, но модель «{}» на нём не найдена.",
+                requested_model
+            ));
+        }
+    }
+
+    Ok(format!("STT доступен, модель «{}» найдена.", requested_model))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct InstallSttModelRequest {
+    pub api_key: String,
+    pub whisper_api_key: Option<String>,
+    pub whisper_endpoint: Option<String>,
+    pub whisper_model: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct InstallSttModelResult {
+    pub success: bool,
+    pub message: String,
+}
+
 #[tauri::command]
-pub async fn test_api_connection(req: TestConnectionRequest) -> Result<TestConnectionResult, String> {
-    logger::log_info("TEST", "Testing API connection...");
+pub async fn install_stt_model(req: InstallSttModelRequest) -> Result<InstallSttModelResult, String> {
+    let requested_model = req.whisper_model.trim();
+    if requested_model.is_empty() {
+        return Ok(InstallSttModelResult {
+            success: false,
+            message: "Укажите имя модели для установки.".to_string(),
+        });
+    }
+
+    logger::log_info("STT_INSTALL", &format!("Installing STT model: {}", requested_model));
+
+    let whisper_url = resolve_whisper_url(req.whisper_endpoint.as_deref());
+    let models_url = resolve_whisper_models_url(&whisper_url);
+    let download_url = resolve_whisper_model_download_url(&models_url, requested_model);
+    let whisper_key = req
+        .whisper_api_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(req.api_key.as_str());
 
     let client = http_client();
+    let mut request = client.post(&download_url);
+    if !whisper_key.trim().is_empty() {
+        request = request.bearer_auth(whisper_key);
+    }
+
+    let response = request.send().await.map_err(|err| {
+        let message = if err.is_connect() {
+            if is_likely_local_url(&download_url) {
+                "Локальный STT сервер недоступен. Сначала запустите Speaches.".to_string()
+            } else {
+                "Не удалось подключиться к STT endpoint для установки модели.".to_string()
+            }
+        } else if err.is_timeout() {
+            "STT сервер не ответил во время установки модели.".to_string()
+        } else {
+            format!("Ошибка установки модели: {}", err)
+        };
+        logger::log_error("STT_INSTALL", &message);
+        message
+    })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        let message = match status.as_u16() {
+            401 => "STT endpoint отклонил API-ключ при установке модели.".to_string(),
+            403 => "STT endpoint запретил установку модели. Проверьте права доступа.".to_string(),
+            404 => format!("Модель «{}» не найдена в реестре Speaches.", requested_model),
+            409 => format!("Модель «{}» уже устанавливается или уже доступна.", requested_model),
+            _ => format!(
+                "STT endpoint вернул ошибку {} при установке модели: {}",
+                status.as_u16(),
+                error_text.chars().take(200).collect::<String>()
+            ),
+        };
+        logger::log_error("STT_INSTALL", &message);
+        return Ok(InstallSttModelResult {
+            success: false,
+            message,
+        });
+    }
+
+    logger::log_info("STT_INSTALL", &format!("STT model install request accepted: {}", requested_model));
+    Ok(InstallSttModelResult {
+        success: true,
+        message: format!(
+            "Установка модели «{}» запущена. Если модель большая, подождите немного и затем нажмите «Тестировать соединение».",
+            requested_model
+        ),
+    })
+}
+
+async fn test_llm_connection(
+    client: &reqwest::Client,
+    req: &TestConnectionRequest,
+) -> Result<String, String> {
     let llm_model = req.llm_model.as_deref().unwrap_or("gpt-4o-mini");
     let llm_url = req
         .llm_endpoint
@@ -447,65 +707,112 @@ pub async fn test_api_connection(req: TestConnectionRequest) -> Result<TestConne
         })
         .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
 
+    let llm_key = req
+        .llm_api_key
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(req.api_key.as_str());
+
+    if llm_key.trim().is_empty() {
+        return Err("Для проверки LLM нужен API-ключ.".to_string());
+    }
+
     let body = serde_json::json!({
         "model": llm_model,
         "messages": [{"role": "user", "content": "Hi"}],
         "max_tokens": 1
     });
 
-    let start = std::time::Instant::now();
-
     let response = client
         .post(&llm_url)
-        .bearer_auth(&req.api_key)
+        .bearer_auth(llm_key)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
         .await;
 
-    let latency_ms = start.elapsed().as_millis() as u64;
-
     match response {
         Ok(res) => {
             let status = res.status();
             if status.is_success() {
-                logger::log_info("TEST", &format!("Connection OK, {}ms", latency_ms));
-                Ok(TestConnectionResult {
-                    success: true,
-                    message: format!("Соединение установлено ({}ms)", latency_ms),
-                    latency_ms,
-                })
+                Ok(format!("LLM доступен, модель «{}» отвечает.", llm_model))
             } else {
                 let error_text = res.text().await.unwrap_or_default();
                 let msg = match status.as_u16() {
-                    401 => "Неверный API ключ".to_string(),
-                    403 => "Доступ запрещён (проверьте ключ и endpoint)".to_string(),
-                    404 => format!("Модель «{}» не найдена на этом endpoint", llm_model),
-                    429 => "Превышен лимит запросов".to_string(),
-                    _ => format!("Ошибка {}: {}", status.as_u16(), error_text.chars().take(200).collect::<String>()),
+                    401 => "Неверный API ключ для LLM".to_string(),
+                    403 => "LLM endpoint запретил доступ (проверьте ключ и endpoint)".to_string(),
+                    404 => format!("Модель «{}» не найдена на LLM endpoint", llm_model),
+                    429 => "Превышен лимит запросов на LLM endpoint".to_string(),
+                    _ => format!("Ошибка LLM {}: {}", status.as_u16(), error_text.chars().take(200).collect::<String>()),
                 };
-                logger::log_error("TEST", &format!("Connection failed: {}", msg));
-                Ok(TestConnectionResult {
-                    success: false,
-                    message: msg,
-                    latency_ms,
-                })
+                Err(msg)
             }
         }
         Err(err) => {
-            let msg = if err.is_connect() {
-                "Не удалось подключиться. Проверьте endpoint и интернет-соединение.".to_string()
+            if err.is_connect() {
+                Err("Не удалось подключиться к LLM endpoint. Проверьте адрес и сеть.".to_string())
             } else if err.is_timeout() {
-                "Таймаут соединения. Сервер не отвечает.".to_string()
+                Err("Таймаут соединения с LLM endpoint.".to_string())
             } else {
-                format!("Ошибка сети: {}", err)
-            };
-            logger::log_error("TEST", &format!("Connection error: {}", msg));
-            Ok(TestConnectionResult {
-                success: false,
-                message: msg,
-                latency_ms,
-            })
+                Err(format!("Ошибка сети LLM: {}", err))
+            }
         }
     }
+}
+
+#[tauri::command]
+pub async fn test_api_connection(req: TestConnectionRequest) -> Result<TestConnectionResult, String> {
+    logger::log_info("TEST", "Testing API connection...");
+
+    let client = http_client();
+    let start = std::time::Instant::now();
+
+    let mut messages: Vec<String> = Vec::new();
+
+    if req.test_stt {
+        match test_stt_connection(client, &req).await {
+            Ok(message) => messages.push(message),
+            Err(message) => {
+                logger::log_error("TEST", &format!("STT test failed: {}", message));
+                let latency_ms = start.elapsed().as_millis() as u64;
+                return Ok(TestConnectionResult {
+                    success: false,
+                    message,
+                    latency_ms,
+                });
+            }
+        }
+    }
+
+    if req.test_llm {
+        match test_llm_connection(client, &req).await {
+            Ok(message) => messages.push(message),
+            Err(message) => {
+                logger::log_error("TEST", &format!("LLM test failed: {}", message));
+                let latency_ms = start.elapsed().as_millis() as u64;
+                return Ok(TestConnectionResult {
+                    success: false,
+                    message,
+                    latency_ms,
+                });
+            }
+        }
+    }
+
+    if messages.is_empty() {
+        let latency_ms = start.elapsed().as_millis() as u64;
+        return Ok(TestConnectionResult {
+            success: false,
+            message: "Нет активных endpoint'ов для проверки.".to_string(),
+            latency_ms,
+        });
+    }
+
+    let latency_ms = start.elapsed().as_millis() as u64;
+    logger::log_info("TEST", &format!("Connection OK, {}ms", latency_ms));
+    Ok(TestConnectionResult {
+        success: true,
+        message: format!("{} ({}ms)", messages.join(" "), latency_ms),
+        latency_ms,
+    })
 }
