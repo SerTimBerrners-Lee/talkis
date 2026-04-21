@@ -42,9 +42,11 @@ jobs:
 
       - name: Post-process macOS release artifacts
         run: bash scripts/postprocess-macos-release.sh "${RELEASE_TAG#v}"
+        env:
+          BUILD_ROOT: src-tauri/target/release/bundle
 
       - name: Archive macOS app bundle
-        run: ditto -c -k --sequesterRsrc --keepParent "/tmp/talkis-target/release/bundle/macos/Talkis.app" "Talkis-${{ env.RELEASE_TAG }}-macos.zip"
+        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Talkis.app" "Talkis-${{ env.RELEASE_TAG }}-macos.zip"
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
@@ -59,7 +61,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           files: |
-            /tmp/talkis-target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/dmg/*.dmg
             Talkis-${{ env.RELEASE_TAG }}-macos.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
