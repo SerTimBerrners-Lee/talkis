@@ -2,16 +2,52 @@
 
 Talkis is a lightweight macOS voice-to-text app built with Tauri.
 
-It sits in a small floating widget, listens while you hold a hotkey, sends audio to Whisper for transcription, cleans up the text with GPT-4o mini, and pastes the result into the active app.
+It sits in a small floating widget, listens while you hold a hotkey, sends audio for transcription, cleans up the text with an LLM, and pastes the result into the active app.
 
 ## What it does
 
-- Hold `Command + Space` to start recording
+- Hold `Shift + Command + Space` to start recording
 - Release the hotkey to stop and process the audio
 - The recognized text is pasted automatically into the current app
 - A second press during recording locks the recording mode
 - The settings window lets you choose language, microphone, API key, and text cleanup style
-- Recent recordings are saved in local history
+- Recent recordings are saved in local history with processing time
+
+## Access modes
+
+Talkis supports three modes of operation:
+
+### Subscription (Talkis Cloud)
+
+Sign in to [Talkis Cloud](https://talkis.ru) and use the service without managing your own API keys. All requests go through `proxy.talkis.ru`.
+
+### Custom provider — own API key
+
+Bring your own OpenAI-compatible API key. Configure separate keys and endpoints for STT (transcription) and LLM (text cleanup) independently.
+
+Supported STT models:
+- `whisper-1` — classic OpenAI Whisper
+- `gpt-4o-transcribe` / `gpt-4o-mini-transcribe` — newer transcribe models
+
+### Custom provider — local model
+
+Run a local [Speaches](https://speaches.ai) (faster-whisper) server via Docker. No API key needed.
+
+```bash
+# 1. Download the Docker config
+curl -O https://raw.githubusercontent.com/speaches-ai/speaches/master/compose.yaml
+curl -O https://raw.githubusercontent.com/speaches-ai/speaches/master/compose.cpu.yaml
+
+# 2. Start the local server
+docker compose -f compose.cpu.yaml up -d
+
+# 3. Install a model
+curl http://127.0.0.1:8000/v1/models/Systran%2Ffaster-whisper-large-v3 -X POST
+
+# 4. In Talkis settings, set STT endpoint to http://127.0.0.1:8000
+```
+
+LLM cleanup can be skipped entirely ("Без обработки") or pointed at a local LLM.
 
 ## macOS only
 
@@ -20,7 +56,7 @@ Talkis is currently designed for macOS.
 The app relies on:
 
 - microphone access
-- accessibility permission for automatic text pasting
+- accessibility permission for automatic text pasting (via CGEvent)
 - a global hotkey
 
 ## Setup
@@ -28,9 +64,9 @@ The app relies on:
 Before first use, make sure you have:
 
 1. macOS
-2. an OpenAI API key
-3. microphone access enabled
-4. accessibility access enabled for Talkis
+2. One of the access modes configured (subscription, own key, or local model)
+3. Microphone access enabled
+4. Accessibility access enabled for Talkis
 
 ### 1. Open the settings window
 
@@ -42,28 +78,24 @@ If it is hidden, click the floating widget to open it again.
 
 On first launch, Talkis asks for:
 
-- Microphone access - required for recording
-- Accessibility access - required to paste the final text into other apps
+- Microphone access — required for recording
+- Accessibility access — required to paste the final text into other apps
 
-Without accessibility permission, speech can still be processed, but automatic paste may not work correctly.
+Without accessibility permission, speech can still be processed, but automatic paste will not work.
 
-### 3. Add your OpenAI API key
+### 3. Configure your access mode
 
-Open the `Subscription` tab and paste your OpenAI API key.
+Open the `Subscription` tab and choose between:
 
-Right now Talkis works with your own API key only.
-
-The key is used for:
-
-- `whisper-1` for speech recognition
-- `gpt-4o-mini` for text cleanup
+- **Подписка** — sign in to Talkis Cloud
+- **Своя конфигурация** — enter your own API key or set up a local model
 
 ## How to use
 
 ### Basic flow
 
 1. Focus any app or text field where you want to insert text
-2. Hold `Command + Space`
+2. Hold `Shift + Command + Space`
 3. Start speaking
 4. Release the hotkey when finished
 5. Wait a moment while Talkis processes the audio
@@ -73,31 +105,35 @@ The key is used for:
 
 If you want to speak longer without holding the keys:
 
-1. Press and hold `Command + Space`
+1. Press and hold `Shift + Command + Space`
 2. While recording is active, press the hotkey again
 3. Recording becomes locked
 4. Press the hotkey once more to stop and process
 
 ### Settings you can change
 
-- Recognition language
+- Recognition language (`ru`, `en`, or auto)
 - Input microphone
 - Text cleanup style
-- OpenAI API key
+- STT / LLM endpoints and API keys (custom mode)
+- STT / LLM model names
+- Global hotkey
 
 ## Text styles
 
-Talkis supports several cleanup styles for the final text. The exact labels may evolve, but the idea is simple:
+Talkis supports several cleanup styles for the final text:
 
-- `Classic` - neutral cleanup for everyday dictation
-- `Business` - cleaner and more formal phrasing
-- `Tech` - better suited for technical language and terms
+- **Classic** — minimal cleanup, preserves the speaker's wording as closely as possible. Removes only obvious fillers. Keeps expressions like "ну вот" that may be the speaker's manner.
+- **Business** — cleaner and more formal phrasing. Strips filler openers ("ну вот", "слушай", "как бы"), smooths hesitation artifacts. Suitable for emails, tasks, and work chats.
+- **Tech** — code-aware processing. Normalizes technical terms ("юз стейт" → `useState`, "гит пуш" → `git push`), converts code dictation to canonical form, preserves natural-language descriptions about technology.
 
 ## History
 
 The `Main` tab stores recent recordings locally so you can:
 
-- review previous results
+- review previous results (raw and cleaned text)
+- see processing time for each entry
+- retry failed entries
 - copy text again
 - delete individual entries
 - clear the full history
@@ -107,26 +143,40 @@ History is stored locally on your machine.
 ## Privacy
 
 - Audio is sent to the API endpoints you configure for transcription and cleanup
-- By default, Talkis uses OpenAI endpoints
-- Your API key is stored locally in the app settings
-- Talkis does not require a Talkis account
+- In subscription mode, requests go through `proxy.talkis.ru`
+- In custom mode, requests go directly to your configured endpoints
+- In local mode, all processing stays on your machine
+- Your API key and device token are stored locally in the app settings
+- Talkis does not collect or store audio on its servers beyond the API call
 
 ## Advanced configuration
 
-Talkis supports custom compatible endpoints for:
+Talkis supports custom OpenAI-compatible endpoints for:
 
-- Whisper transcription
-- chat completion / cleanup
+- STT (Whisper transcription) — separate endpoint, API key, and model
+- LLM (text cleanup) — separate endpoint, API key, and model
 
-If these fields are left empty, the app uses the standard OpenAI API.
+If STT fields are left empty, the app uses the standard OpenAI API.
+If LLM model is set to "Без обработки", the raw transcription is pasted without cleanup.
 
 ## Troubleshooting
 
-### Nothing gets pasted
+### Nothing gets pasted / a stray "v" character appears
 
-- Check that Talkis has Accessibility permission in macOS System Settings
-- Make sure the target app allows normal paste input
+- Check that Talkis has Accessibility permission in macOS System Settings → Privacy & Security → Accessibility
+- Make sure the Talkis binary is checked in the list
 - Try again in a standard text field like Notes
+
+### Foreign characters (Chinese, Arabic) in transcription
+
+- Make sure a specific language is selected in settings (e.g. `ru`) instead of `auto`
+- The `language` parameter constrains the STT model to the selected language
+
+### Local Speaches model returns errors
+
+- Verify the Docker container is running: `curl http://127.0.0.1:8000/health`
+- Reinstall the model if you get 500 errors: delete and re-POST the model
+- Speaches does not support `verbose_json` — Talkis handles this automatically for local endpoints
 
 ### The microphone list is empty
 
@@ -141,7 +191,7 @@ If these fields are left empty, the app uses the standard OpenAI API.
 
 ### Build fails on external drives with `._*` files
 
-macOS can create AppleDouble metadata files on some external volumes. If Tauri fails while reading files like `._default.json` or `._default.toml`, remove them:
+macOS can create AppleDouble metadata files on some external volumes. If Tauri fails while reading files like `._default.json`, remove them:
 
 ```bash
 find . -name '._*' -delete
@@ -162,7 +212,7 @@ Useful commands:
 
 ```bash
 bunx tsc --noEmit
-bun run build:release:macos
+bun run tauri build
 bun run logs
 bun run logs:clear
 ```
@@ -173,10 +223,9 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.8` to build and publish a GitHub Release
-- Or run the workflow manually and provide a tag like `v0.1.8`
-- The current workflow publishes all currently supported release artifacts, which is macOS only right now
-- Windows and Linux are listed in the matrix but intentionally disabled until platform-specific support is added
+- Push a tag like `v0.1.10` to build and publish a GitHub Release
+- Or run the workflow manually and provide a tag
+- The current workflow publishes macOS release artifacts
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
 
 Optional macOS signing/notarization secrets:
@@ -193,12 +242,12 @@ Without these secrets, the workflow can still produce unsigned macOS release art
 ## Tech stack
 
 - Tauri v2
-- React
-- TypeScript
-- Rust
-- OpenAI Whisper
-- OpenAI GPT-4o mini
+- React + TypeScript
+- Rust (backend, CGEvent paste, prompt engine)
+- OpenAI Whisper / gpt-4o-transcribe
+- OpenAI GPT-4o mini (text cleanup)
+- Speaches / faster-whisper (optional local STT)
 
 ## Status
 
-Talkis is an active work in progress. Expect rough edges while the interaction model and onboarding continue to improve.
+Talkis is an active work in progress. Current version: **0.1.10**.
