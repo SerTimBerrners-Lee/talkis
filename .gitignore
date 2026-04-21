@@ -27,3 +27,6 @@ dist-ssr
 *.sln
 *.sw?
 target/*
+
+# Local-only Cargo config (contains absolute target-dir for external drive)
+.cargo/config.toml
