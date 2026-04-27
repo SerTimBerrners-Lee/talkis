@@ -10,6 +10,8 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - Release the hotkey to stop and process the audio
 - The recognized text is pasted automatically into the current app
 - A second press during recording locks the recording mode
+- The floating widget can start/stop recording with a mouse click and copy the latest result
+- Autostart can be enabled from settings
 - The settings window lets you choose language, microphone, API key, and text cleanup style
 - Recent recordings are saved in local history with processing time
 
@@ -110,6 +112,16 @@ If you want to speak longer without holding the keys:
 3. Recording becomes locked
 4. Press the hotkey once more to stop and process
 
+### Floating widget controls
+
+When the widget is idle, hover it to show quick controls:
+
+- click the red record button to start a locked recording
+- click the stop button during recording to finish and process
+- click the copy button to copy the latest successful result from local history
+
+The copy shortcut is cleared when history is cleared, and it refreshes after entries are deleted.
+
 ### Settings you can change
 
 - Recognition language (`ru`, `en`, or auto)
@@ -118,6 +130,7 @@ If you want to speak longer without holding the keys:
 - STT / LLM endpoints and API keys (custom mode)
 - STT / LLM model names
 - Global hotkey
+- Autostart at system login
 
 ## Text styles
 
@@ -135,6 +148,7 @@ The `Main` tab stores recent recordings locally so you can:
 - see processing time for each entry
 - retry failed entries
 - copy text again
+- copy the latest successful result from the floating widget
 - delete individual entries
 - clear the full history
 
@@ -223,7 +237,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.10` to build and publish a GitHub Release
+- Push a tag like `v0.1.11` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS release artifacts
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -250,4 +264,4 @@ Without these secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.10**.
+Talkis is an active work in progress. Current version: **0.1.11**.

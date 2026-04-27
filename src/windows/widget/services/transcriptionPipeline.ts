@@ -15,7 +15,6 @@ export interface ProcessRecordingBlobParams {
 export interface ProcessRecordingBlobResult {
   durationSeconds: number;
   hasTranscription: boolean;
-  pasteErrorMessage?: string;
 }
 
 export interface RetryHistoryEntryResult {
@@ -103,10 +102,6 @@ function toUserFacingErrorMessage(error: unknown): string {
   }
 
   return "Не удалось обработать запись. Попробуйте отправить ее повторно.";
-}
-
-function toUserFacingPasteErrorMessage(): string {
-  return "Текст распознан, но вставить его не удалось. Скопируйте его из истории.";
 }
 
 const PROXY_BASE_URL = "https://proxy.talkis.ru";
@@ -213,7 +208,7 @@ async function transcribeAudio({
 async function pasteCleanedText(text: string): Promise<void> {
   logInfo("PASTE", "Sending cleaned text to paste_text");
   await invoke("paste_text", { text });
-  logInfo("PASTE", "paste_text finished successfully");
+  logInfo("PASTE", "paste_text command finished; target app insertion cannot be confirmed reliably");
 }
 
 async function saveAndEmitHistoryEntry(entry: HistoryEntry, mode: "add" | "update"): Promise<void> {
@@ -268,18 +263,17 @@ export async function processRecordingBlob({
 
     await saveAndEmitHistoryEntry(historyEntry, "add");
 
+    let pasteFailed = false;
     try {
       await pasteCleanedText(result.cleaned);
     } catch (pasteError) {
+      pasteFailed = true;
       logError("PASTE", `Paste failed after successful transcription: ${formatErrorMessage(pasteError)}`);
-
-      return {
-        durationSeconds,
-        hasTranscription: true,
-        pasteErrorMessage: toUserFacingPasteErrorMessage(),
-      };
     }
 
+    logInfo("PASTE", pasteFailed
+      ? "Automatic paste command failed; latest text remains copyable from the idle widget"
+      : "Automatic paste command completed without OS-level errors");
     return { durationSeconds, hasTranscription: true };
   } catch (error) {
     const rawErrorMessage = error instanceof Error

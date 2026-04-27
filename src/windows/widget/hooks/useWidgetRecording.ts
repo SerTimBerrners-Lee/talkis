@@ -11,7 +11,6 @@ import {
   MIN_RECORDING_DURATION_MS,
   RECORDING_WIDGET_HEIGHT,
   RECORDING_WIDGET_WIDTH,
-  WidgetNoticeTone,
 } from "../widgetConstants";
 import { createRecordingRuntimeController } from "../services/recordingRuntime";
 import { processRecordingBlob } from "../services/transcriptionPipeline";
@@ -24,7 +23,7 @@ interface UseWidgetRecordingParams {
   setStream: Dispatch<SetStateAction<MediaStream | null>>;
   resizeWidget: (width: number, height: number) => Promise<void>;
   showError: (message: string) => void;
-  showNotice: (message: string, tone?: WidgetNoticeTone) => void;
+  hideNotice: () => void;
   stopAndProcessRef: MutableRefObject<() => Promise<void>>;
 }
 
@@ -77,7 +76,7 @@ export function useWidgetRecording({
   setStream,
   resizeWidget,
   showError,
-  showNotice,
+  hideNotice,
   stopAndProcessRef,
 }: UseWidgetRecordingParams): UseWidgetRecordingResult {
   const runtimeRef = useRef(createRecordingRuntimeController());
@@ -89,6 +88,7 @@ export function useWidgetRecording({
   // ── Start recording ─────────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     logInfo("RECORDING", "startRecording called");
+    hideNotice();
 
     if (!settings) {
       logError("RECORDING", "Settings not loaded");
@@ -172,7 +172,7 @@ export function useWidgetRecording({
         `Ошибка запуска записи: ${error instanceof Error ? error.message : "Неизвестная ошибка"}`,
       );
     }
-  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError]);
+  }, [dispatch, hideNotice, machineRef, resizeWidget, setStream, settings, showError]);
 
   // ── Stop and process ────────────────────────────────────────────────────
   const stopAndProcess = useCallback(async () => {
@@ -235,10 +235,6 @@ export function useWidgetRecording({
       runtimeRef.current.reset();
       dispatch({ type: "PROCESSING_COMPLETE" });
       await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
-
-      if (pipelineResult.pasteErrorMessage) {
-        showNotice(pipelineResult.pasteErrorMessage, "info");
-      }
     } catch (error) {
       const errorMessage = formatErrorMessage(error);
       logError("API", `Processing error: ${errorMessage}`);
@@ -248,7 +244,7 @@ export function useWidgetRecording({
       runtimeRef.current.reset();
       showError(message);
     }
-  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError, showNotice]);
+  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError]);
 
   // ── Keep stopAndProcessRef current ──────────────────────────────────────
   useEffect(() => {

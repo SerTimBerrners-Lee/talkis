@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import { Check, ChevronDown, Search } from "lucide-react";
+
+import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
 import {
   HOTKEY_CAPTURE_STATE_EVENT,
   HOTKEY_CHANGE_REQUEST_EVENT,
@@ -41,6 +43,9 @@ export function SettingsTab() {
   const [hotkeyDraft, setHotkeyDraft] = useState<string | null>(null);
   const [hotkeyFeedback, setHotkeyFeedback] = useState("Нажмите на поле и введите новую комбинацию. Esc отменяет ввод.");
   const [hotkeyFeedbackTone, setHotkeyFeedbackTone] = useState<HotkeyFeedbackTone>("idle");
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [autostartLoaded, setAutostartLoaded] = useState(false);
+  const [autostartPending, setAutostartPending] = useState(false);
 
   type MicAvailabilityState = "ready" | "missing-selected" | "permission-needed" | "empty";
 
@@ -58,6 +63,29 @@ export function SettingsTab() {
       setSettings(s);
       settingsRef.current = s;
     });
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadAutostartState = async (): Promise<void> => {
+      try {
+        const enabled = await isAutostartEnabled();
+        if (!mounted) return;
+        setAutostartEnabled(enabled);
+        setAutostartLoaded(true);
+      } catch (error) {
+        if (!mounted) return;
+        setAutostartLoaded(true);
+        void logError("SETTINGS", `Failed to load autostart state: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
+    void loadAutostartState();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -335,6 +363,32 @@ export function SettingsTab() {
     void startHotkeyCapture();
   };
 
+  const toggleAutostart = async (): Promise<void> => {
+    if (autostartPending) {
+      return;
+    }
+
+    const nextEnabled = !autostartEnabled;
+    setAutostartPending(true);
+
+    try {
+      if (nextEnabled) {
+        await enableAutostart();
+      } else {
+        await disableAutostart();
+      }
+
+      const confirmedEnabled = await isAutostartEnabled();
+      setAutostartEnabled(confirmedEnabled);
+      setAutostartLoaded(true);
+      void logInfo("SETTINGS", `Autostart ${confirmedEnabled ? "enabled" : "disabled"}`);
+    } catch (error) {
+      void logError("SETTINGS", `Failed to update autostart: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setAutostartPending(false);
+    }
+  };
+
   const getMicrophoneLabel = (mic: MediaDeviceInfo, index: number): string => {
     const label = mic.label?.trim();
     return label ? label : `Микрофон ${index + 1}`;
@@ -364,6 +418,7 @@ export function SettingsTab() {
     : hotkeyFeedbackTone === "success"
       ? "#027a48"
       : "var(--text-mid)";
+  const autostartDisabled = !autostartLoaded || autostartPending;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -516,6 +571,68 @@ export function SettingsTab() {
           <div style={{ fontSize: 12, color: "var(--text-low)", whiteSpace: "nowrap" }}>
             Текущая: {formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY)}
           </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", alignItems: "center", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Автозапуск</div>
+            <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65, marginTop: 6 }}>
+              Запускать Talkis автоматически при входе в систему.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autostartEnabled}
+            aria-disabled={autostartDisabled}
+            onClick={() => { void toggleAutostart(); }}
+            className="btn"
+            style={{
+              width: "100%",
+              minHeight: 46,
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) 42px",
+              alignItems: "center",
+              gap: 12,
+              opacity: autostartDisabled ? 0.72 : 1,
+              cursor: autostartDisabled ? "wait" : "pointer",
+              transform: "none",
+            }}
+          >
+            <span style={{ color: "var(--text-hi)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 74 }}>
+              {autostartEnabled ? "Включен" : "Выключен"}
+            </span>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 42,
+                height: 24,
+                borderRadius: 999,
+                background: autostartEnabled ? "#111" : "rgba(0,0,0,0.12)",
+                padding: 3,
+                position: "relative",
+                transition: "background 0.15s ease",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  left: 3,
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  background: "#fff",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                  transform: autostartEnabled ? "translateX(18px)" : "translateX(0)",
+                  transition: "transform 0.18s ease",
+                }}
+              />
+            </span>
+          </button>
         </div>
       </div>
     </div>

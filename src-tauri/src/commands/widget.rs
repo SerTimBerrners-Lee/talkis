@@ -7,8 +7,8 @@ pub const NOTICE_WIDTH: f64 = 212.0;
 pub const NOTICE_HEIGHT: f64 = 52.0;
 /// Must match NOTICE_WIDGET_GAP in src/windows/widget/widgetConstants.ts (logical pixels).
 pub const NOTICE_GAP: f64 = 2.0;
-pub const WIDGET_WIDTH: f64 = 50.0;
-pub const WIDGET_HEIGHT: f64 = 18.0;
+pub const WIDGET_WIDTH: f64 = 78.0;
+pub const WIDGET_HEIGHT: f64 = 32.0;
 
 #[derive(Clone, Serialize)]
 struct WidgetNoticePayload {
@@ -155,7 +155,12 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn show_widget_notice(app: AppHandle, message: String, tone: String, _anchor_state: String) -> Result<(), String> {
+pub async fn show_widget_notice(
+    app: AppHandle,
+    message: String,
+    tone: String,
+    _anchor_state: String,
+) -> Result<(), String> {
     let widget_window = app
         .get_webview_window("widget")
         .ok_or_else(|| "Widget window not found".to_string())?;

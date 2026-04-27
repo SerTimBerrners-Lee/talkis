@@ -3,6 +3,27 @@ use std::time::Duration;
 
 use crate::logger;
 
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> u8;
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_input_event_permission() -> Result<(), String> {
+    let trusted = unsafe { AXIsProcessTrusted() != 0 };
+    if trusted {
+        return Ok(());
+    }
+
+    Err("Accessibility permission is required to paste text into other apps".into())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ensure_input_event_permission() -> Result<(), String> {
+    Ok(())
+}
+
 /// Simulate Cmd+V using CoreGraphics directly.
 ///
 /// Unlike enigo (which sends separate Meta-press and V-click events that can
@@ -92,6 +113,8 @@ fn simulate_cmd_v() -> Result<(), String> {
 #[tauri::command]
 pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
+
+    ensure_input_event_permission()?;
 
     let char_count = text.chars().count();
     let previous_clipboard_text = app.clipboard().read_text().ok();

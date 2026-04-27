@@ -10,15 +10,26 @@ interface UseWidgetNoticeParams {
 
 interface UseWidgetNoticeResult {
   showNotice: (message: string, tone?: WidgetNoticeTone) => void;
+  hideNotice: () => void;
 }
 
 export function useWidgetNotice({ stateRef }: UseWidgetNoticeParams): UseWidgetNoticeResult {
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const hideNotice = useCallback(() => {
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+
+    void invoke("hide_widget_notice");
+  }, []);
+
   const showNotice = useCallback(
     (message: string, tone: WidgetNoticeTone = "error") => {
       if (noticeTimerRef.current) {
         clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = null;
       }
 
       void invoke("show_widget_notice", {
@@ -28,24 +39,20 @@ export function useWidgetNotice({ stateRef }: UseWidgetNoticeParams): UseWidgetN
       });
 
       noticeTimerRef.current = setTimeout(() => {
-        void invoke("hide_widget_notice");
-        noticeTimerRef.current = null;
+        hideNotice();
       }, NOTICE_TIMEOUT_MS);
     },
-    [stateRef],
+    [hideNotice, stateRef],
   );
 
   useEffect(() => {
     return () => {
-      if (noticeTimerRef.current) {
-        clearTimeout(noticeTimerRef.current);
-      }
-
-      void invoke("hide_widget_notice");
+      hideNotice();
     };
-  }, []);
+  }, [hideNotice]);
 
   return {
     showNotice,
+    hideNotice,
   };
 }

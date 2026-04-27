@@ -23,6 +23,12 @@ pub fn run() {
         .setup(|app| {
             logger::log_info("INIT", "Application starting...");
 
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ))?;
+
             // Auto-prompt for accessibility if not granted.
             // AXIsProcessTrustedWithOptions(prompt=true) makes macOS
             // show its native dialog and auto-register the binary.

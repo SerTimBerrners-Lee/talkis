@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { clearHistory, DEFAULT_HOTKEY, deleteHistoryEntry, formatHotkeyLabel, getHistory, getSettings, HistoryEntry } from "../../../lib/store";
 import { AlertCircle, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
-import { HISTORY_UPDATED_EVENT, SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
+import { HISTORY_CLEARED_EVENT, HISTORY_DELETED_EVENT, HISTORY_UPDATED_EVENT, SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 import { retryHistoryEntry } from "../../widget/services/transcriptionPipeline";
 
 interface MainTabProps {
@@ -73,6 +73,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const deleteEntry = async (id: string) => {
     await deleteHistoryEntry(id);
     setHistory((h) => h.filter((x) => x.id !== id));
+    await emit(HISTORY_DELETED_EVENT, { id });
   };
 
   const clearAllHistory = async () => {
@@ -87,6 +88,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     await clearHistory();
     setHistory([]);
     setIsClearArmed(false);
+    await emit(HISTORY_CLEARED_EVENT);
   };
 
   const copyText = async (id: string, text: string) => {

@@ -71,6 +71,8 @@ export type WidgetAction =
   | { type: "RELEASE_STOP_TIMER_FIRED" }
   // State transitions
   | { type: "SET_PROCESSING" }
+  | { type: "MANUAL_RECORDING_START" }
+  | { type: "MANUAL_RECORDING_STOP" }
   // Error
   | { type: "ERROR"; message: string }
   // Direct state transitions for hotkey capture interference
@@ -106,6 +108,10 @@ export function widgetReducer(
       return handleReleaseStopTimerFired(state);
     case "SET_PROCESSING":
       return handleSetProcessing(state);
+    case "MANUAL_RECORDING_START":
+      return handleManualRecordingStart(state);
+    case "MANUAL_RECORDING_STOP":
+      return handleManualRecordingStop(state);
     case "ERROR":
       return handleError(state, action.message);
     case "RESET_HOTKEY_STATE":
@@ -184,8 +190,14 @@ function handleRecordingStarted(state: WidgetMachineState, timestamp: number): R
     recordingStartTimestamp: timestamp,
   };
 
-  // If user released while we were starting up → immediate stop
-  if ((!state.hotkeyHeld || state.pendingStopAfterStart) && !state.lockedRecording) {
+  // If user requested stop while recorder was starting up → immediate stop.
+  if (state.pendingStopAfterStart) {
+    next.pendingStopAfterStart = false;
+    return result(next, [{ type: "stop_and_process" }]);
+  }
+
+  // If user released while we were starting up → immediate stop.
+  if (!state.hotkeyHeld && !state.lockedRecording) {
     next.pendingStopAfterStart = false;
     return result(next, [{ type: "stop_and_process" }]);
   }
@@ -227,6 +239,41 @@ function handleSetProcessing(state: WidgetMachineState): ReducerResult {
     lockedRecording: false,
     releaseStopTimerActive: false,
   }, []);
+}
+
+function handleManualRecordingStart(state: WidgetMachineState): ReducerResult {
+  if (state.widgetState !== "idle") {
+    return result(state, []);
+  }
+
+  return result({
+    ...state,
+    widgetState: "recording",
+    hotkeyHeld: false,
+    lockedRecording: true,
+    recordingActive: false,
+    pendingStopAfterStart: false,
+    releaseStopTimerActive: false,
+    suppressNextRelease: false,
+  }, [
+    { type: "set_locked_recording_ui", value: true },
+    { type: "start_recording" },
+  ]);
+}
+
+function handleManualRecordingStop(state: WidgetMachineState): ReducerResult {
+  if (state.widgetState !== "recording") {
+    return result(state, []);
+  }
+
+  if (!state.recordingActive) {
+    return result({
+      ...state,
+      pendingStopAfterStart: true,
+    }, []);
+  }
+
+  return result(state, [{ type: "stop_and_process" }]);
 }
 
 function handleReleaseStopTimerFired(state: WidgetMachineState): ReducerResult {

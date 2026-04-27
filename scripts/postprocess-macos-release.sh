@@ -9,6 +9,7 @@ BUILD_ROOT="${BUILD_ROOT:-/tmp/talkis-target/release/bundle}"
 APP_PATH="${BUILD_ROOT}/macos/${APP_NAME}.app"
 DMG_PATH="${BUILD_ROOT}/dmg/${APP_NAME}_${VERSION}_aarch64.dmg"
 STAGING_DIR="${BUILD_ROOT}/macos/dmg-staging"
+DMG_DIR="$(dirname "${DMG_PATH}")"
 
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "App bundle not found at ${APP_PATH}" >&2
@@ -21,6 +22,7 @@ codesign --force --deep --sign - --identifier "${APP_IDENTIFIER}" "${APP_PATH}"
 echo "Rebuilding DMG from signed app bundle"
 rm -rf "${STAGING_DIR}"
 mkdir -p "${STAGING_DIR}"
+mkdir -p "${DMG_DIR}"
 cp -R "${APP_PATH}" "${STAGING_DIR}/"
 ln -s /Applications "${STAGING_DIR}/Applications"
 rm -f "${DMG_PATH}"

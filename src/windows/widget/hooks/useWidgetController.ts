@@ -24,6 +24,7 @@ interface WidgetControllerState {
   stream: MediaStream | null;
   notice: WidgetNoticeState | null;
   lockedRecording: boolean;
+  toggleManualRecording: () => void;
 }
 
 export function useWidgetController(): WidgetControllerState {
@@ -233,7 +234,7 @@ export function useWidgetController(): WidgetControllerState {
     stateRefForNotice.current = widgetState;
   }, [widgetState]);
 
-  const { showNotice } = useWidgetNotice({ stateRef: stateRefForNotice });
+  const { showNotice, hideNotice } = useWidgetNotice({ stateRef: stateRefForNotice });
 
   // ── Error handler ───────────────────────────────────────────────────────
   const showError = useCallback(
@@ -254,7 +255,7 @@ export function useWidgetController(): WidgetControllerState {
     setStream,
     resizeWidget,
     showError,
-    showNotice,
+    hideNotice,
     stopAndProcessRef,
   });
 
@@ -275,6 +276,19 @@ export function useWidgetController(): WidgetControllerState {
     showError,
   });
 
+  const toggleManualRecording = useCallback(() => {
+    const currentState = machineRef.current.widgetState;
+
+    if (currentState === "idle") {
+      dispatch({ type: "MANUAL_RECORDING_START" });
+      return;
+    }
+
+    if (currentState === "recording") {
+      dispatch({ type: "MANUAL_RECORDING_STOP" });
+    }
+  }, [dispatch]);
+
   // ── Cleanup ─────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -288,5 +302,6 @@ export function useWidgetController(): WidgetControllerState {
     stream,
     notice: null,
     lockedRecording,
+    toggleManualRecording,
   };
 }

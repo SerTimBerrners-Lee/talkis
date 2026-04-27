@@ -1,6 +1,6 @@
 [package]
 name = "talkis"
-version = "0.1.10"
+version = "0.1.11"
 description = "Talkis - Voice to Text macOS Widget"
 authors = ["trixter"]
 edition = "2021"
@@ -36,3 +36,6 @@ block2 = "0.6"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSView", "NSWindow", "NSEvent", "block2"] }
 objc2-foundation = "0.3"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-autostart = "2.5.1"

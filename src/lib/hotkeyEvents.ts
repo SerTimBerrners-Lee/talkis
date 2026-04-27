@@ -1,5 +1,7 @@
 export const SETTINGS_UPDATED_EVENT = "settings-updated";
 export const HISTORY_UPDATED_EVENT = "history-updated";
+export const HISTORY_DELETED_EVENT = "history-deleted";
+export const HISTORY_CLEARED_EVENT = "history-cleared";
 export const HOTKEY_CHANGE_REQUEST_EVENT = "hotkey-change-request";
 export const HOTKEY_REGISTRATION_RESULT_EVENT = "hotkey-registration-result";
 export const NATIVE_HOTKEY_CAPTURE_EVENT = "native-hotkey-capture";
