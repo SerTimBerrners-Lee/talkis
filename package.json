@@ -8,7 +8,7 @@
     "prepare:ffmpeg-sidecar": "bun scripts/prepare-ffmpeg-sidecar.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
-    "check": "bunx tsc --noEmit && cargo check --manifest-path src-tauri/Cargo.toml",
+    "check": "bun run prepare:ffmpeg-sidecar && bunx tsc --noEmit && cargo check --manifest-path src-tauri/Cargo.toml",
     "test": "bun test",
     "smoke:hotkey": "bun test ./src/windows/widget/services/hotkeyFsm.test.js",
     "check:versions": "bash scripts/check-version-sync.sh",

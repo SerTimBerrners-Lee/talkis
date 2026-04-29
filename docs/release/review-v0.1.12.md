@@ -37,6 +37,7 @@
   - Release diff reviewed for widget, file transcription, updater, and history behavior.
   - GitHub release workflow history checked: previous `v0.1.11` Release workflow completed successfully.
   - GitHub repository secrets checked: `TAURI_SIGNING_PRIVATE_KEY` exists; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is not configured.
+  - First `v0.1.12` GitHub Actions run failed because `cargo check` ran before preparing the ffmpeg sidecar on a fresh runner; `bun run check` now prepares the sidecar before Rust checks.
 
 ## Manual review
 
