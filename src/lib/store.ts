@@ -6,6 +6,9 @@ export interface HistoryEntry {
   duration: number;
   raw: string;
   cleaned: string;
+  source?: "voice" | "file";
+  fileName?: string;
+  fileSize?: number;
   status?: "completed" | "failed";
   errorMessage?: string;
   audioBase64?: string;
@@ -48,6 +51,10 @@ export interface WidgetPosition {
   x: number;
   y: number;
 }
+
+const HISTORY_MAX_VOICE_ENTRIES = 1000;
+const HISTORY_MAX_FILE_ENTRIES = 200;
+const HISTORY_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 const MODIFIER_ORDER = ["Control", "Alt", "Shift", "Command"] as const;
 const MODIFIER_ALIASES: Record<string, (typeof MODIFIER_ORDER)[number]> = {
@@ -307,6 +314,52 @@ async function getStore() {
   return _store;
 }
 
+function getHistoryEntrySource(entry: HistoryEntry): NonNullable<HistoryEntry["source"]> {
+  return entry.source === "file" ? "file" : "voice";
+}
+
+function estimateJsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).length;
+}
+
+function pruneHistory(history: HistoryEntry[]): HistoryEntry[] {
+  // History is ordered newest first. Keep the newest entries per source and
+  // trim from the bottom so old voice recordings cannot evict recent file
+  // transcriptions, and large file transcripts cannot grow storage forever.
+  //
+  // Limits:
+  // - voice: 1000 entries
+  // - file: 200 entries
+  // - combined JSON payload: 50 MB
+  const limitedByType: HistoryEntry[] = [];
+  let voiceCount = 0;
+  let fileCount = 0;
+
+  for (const entry of history) {
+    const source = getHistoryEntrySource(entry);
+
+    if (source === "file") {
+      if (fileCount >= HISTORY_MAX_FILE_ENTRIES) {
+        continue;
+      }
+      fileCount += 1;
+    } else {
+      if (voiceCount >= HISTORY_MAX_VOICE_ENTRIES) {
+        continue;
+      }
+      voiceCount += 1;
+    }
+
+    limitedByType.push(entry);
+  }
+
+  while (limitedByType.length > 1 && estimateJsonBytes(limitedByType) > HISTORY_MAX_TOTAL_BYTES) {
+    limitedByType.pop();
+  }
+
+  return limitedByType;
+}
+
 export async function getSettings(): Promise<AppSettings> {
   const store = await getStore();
   const saved = await store.get<unknown>("settings");
@@ -345,7 +398,7 @@ export async function getHistory(): Promise<HistoryEntry[]> {
 export async function addHistoryEntry(entry: HistoryEntry): Promise<void> {
   const store = await getStore();
   const history = await getHistory();
-  const updated = [entry, ...history].slice(0, 500); // max 500 entries
+  const updated = pruneHistory([entry, ...history]);
   await store.set("history", updated);
   await store.save();
 }
@@ -353,7 +406,7 @@ export async function addHistoryEntry(entry: HistoryEntry): Promise<void> {
 export async function updateHistoryEntry(entry: HistoryEntry): Promise<void> {
   const store = await getStore();
   const history = await getHistory();
-  const updated = history.map((item) => (item.id === entry.id ? entry : item));
+  const updated = pruneHistory(history.map((item) => (item.id === entry.id ? entry : item)));
   await store.set("history", updated);
   await store.save();
 }

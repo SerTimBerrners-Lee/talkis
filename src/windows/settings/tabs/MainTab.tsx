@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import type { ReactElement } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { clearHistory, DEFAULT_HOTKEY, deleteHistoryEntry, formatHotkeyLabel, getHistory, getSettings, HistoryEntry } from "../../../lib/store";
 import { AlertCircle, Check, Copy, RotateCcw, Trash2 } from "lucide-react";
@@ -13,6 +14,65 @@ interface HistoryGroup {
   id: string;
   label: string;
   items: HistoryEntry[];
+}
+
+type HistorySource = "voice" | "file";
+type HistoryFilter = "all" | HistorySource;
+
+const HISTORY_TEXT_PREVIEW_LIMIT = 250;
+const HISTORY_FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "voice", label: "Голос" },
+  { id: "file", label: "Файл" },
+];
+
+function getHistorySource(entry: HistoryEntry): HistorySource {
+  return entry.source === "file" ? "file" : "voice";
+}
+
+function sourceLabel(source: HistorySource): string {
+  return source === "file" ? "Файл" : "Голос";
+}
+
+function ExpandableHistoryText({
+  text,
+  expanded,
+  onToggle,
+}: {
+  text: string;
+  expanded: boolean;
+  onToggle: () => void;
+}): ReactElement {
+  const shouldCollapse = text.length > HISTORY_TEXT_PREVIEW_LIMIT;
+  const visibleText = shouldCollapse && !expanded
+    ? `${text.slice(0, HISTORY_TEXT_PREVIEW_LIMIT).trimEnd()}...`
+    : text;
+
+  return (
+    <span style={{ display: "grid", gap: 2, color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+      <span>{visibleText}</span>
+      {shouldCollapse && (
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{
+            marginLeft: 0,
+            padding: 0,
+            border: "none",
+            background: "transparent",
+            color: "var(--text-hi)",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            textDecoration: "none",
+            justifySelf: "start",
+          }}
+        >
+          {expanded ? "Скрыть" : "Раскрыть"}
+        </button>
+      )}
+    </span>
+  );
 }
 
 function formatDayLabel(timestamp: string): string {
@@ -38,6 +98,8 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [retrySucceededId, setRetrySucceededId] = useState<string | null>(null);
   const [hotkeyLabel, setHotkeyLabel] = useState(formatHotkeyLabel(DEFAULT_HOTKEY));
   const [isClearArmed, setIsClearArmed] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     const syncHotkeyLabel = async () => {
@@ -48,16 +110,8 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     getHistory().then(setHistory);
     void syncHotkeyLabel();
 
-    const unlistenHistory = listen<HistoryEntry>(HISTORY_UPDATED_EVENT, (event) => {
-      setHistory((current) => {
-        const existingIndex = current.findIndex((item) => item.id === event.payload.id);
-
-        if (existingIndex === -1) {
-          return [event.payload, ...current].slice(0, 500);
-        }
-
-        return current.map((item) => (item.id === event.payload.id ? event.payload : item));
-      });
+    const unlistenHistory = listen<HistoryEntry>(HISTORY_UPDATED_EVENT, () => {
+      void getHistory().then(setHistory);
     });
 
     const unlistenSettings = listen(SETTINGS_UPDATED_EVENT, () => {
@@ -97,6 +151,20 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     setTimeout(() => setCopied((current) => (current === id ? null : current)), 1500);
   };
 
+  const toggleExpanded = (id: string): void => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      return next;
+    });
+  };
+
   const retryEntry = async (entry: HistoryEntry) => {
     setRetryingId(entry.id);
 
@@ -124,10 +192,18 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     }
   };
 
+  const filteredHistory = useMemo<HistoryEntry[]>(() => {
+    if (historyFilter === "all") {
+      return history;
+    }
+
+    return history.filter((item) => getHistorySource(item) === historyFilter);
+  }, [history, historyFilter]);
+
   const groupedHistory = useMemo<HistoryGroup[]>(() => {
     const groups: HistoryGroup[] = [];
 
-    for (const item of history) {
+    for (const item of filteredHistory) {
       const label = formatDayLabel(item.timestamp);
       const existing = groups[groups.length - 1];
 
@@ -144,7 +220,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     }
 
     return groups;
-  }, [history]);
+  }, [filteredHistory]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -193,7 +269,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
             </h2>
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {history.length > 0
-                ? `Последние записи доступны для копирования и удаления.`
+                ? "Последние записи доступны для копирования и удаления."
                 : `Записей пока нет. Удерживайте ${hotkeyLabel} для записи.`}
             </div>
           </div>
@@ -212,6 +288,38 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
           )}
         </div>
 
+        {history.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.05)", borderRadius: 10, padding: 3, gap: 2 }}>
+              {HISTORY_FILTER_OPTIONS.map((option) => {
+                const active = historyFilter === option.id;
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setHistoryFilter(option.id)}
+                    style={{
+                      minWidth: 72,
+                      padding: "7px 12px",
+                      borderRadius: 8,
+                      border: "none",
+                      fontSize: 12,
+                      fontWeight: active ? 700 : 500,
+                      background: active ? "rgba(255,255,255,0.84)" : "transparent",
+                      color: active ? "var(--text-hi)" : "var(--text-mid)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
+          </div>
+        )}
+
         <div
           style={{
             display: "grid",
@@ -228,6 +336,10 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                 Записей пока нет. Удерживайте <b>{hotkeyLabel}</b> для записи.
               </p>
             </div>
+          ) : filteredHistory.length === 0 ? (
+            <div style={{ padding: "28px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center", color: "var(--text-mid)" }}>
+              В этом фильтре записей пока нет.
+            </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {groupedHistory.map((group) => (
@@ -236,12 +348,15 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                 <table className="b-table" style={{ background: "transparent" }}>
                     <thead>
                       <tr>
-                        <th style={{ width: 110 }}>Время</th>
-                        <th>Текст</th>
+                        <th style={{ width: 92 }}>Время</th>
+                        <th style={{ paddingLeft: 8 }}>Текст</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {group.items.map((item, index) => (
+                      {group.items.map((item, index) => {
+                        const source = getHistorySource(item);
+
+                        return (
                         <tr key={item.id} onDoubleClick={() => navigator.clipboard.writeText(item.cleaned)} style={{ borderBottom: index < group.items.length - 1 ? "1px solid rgba(0,0,0,0.04)" : "none", cursor: "default" }}>
                           <td style={{ whiteSpace: "nowrap", verticalAlign: "top", color: "var(--text-low)" }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -258,10 +373,15 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                     : `${(item.processingTime / 1000).toFixed(1)}с`}
                                 </span>
                               )}
+                              {historyFilter === "all" && (
+                                <span style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.02em" }}>
+                                  {sourceLabel(source)}
+                                </span>
+                              )}
                             </div>
                           </td>
-                          <td style={{ verticalAlign: "top" }}>
-                            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+                          <td style={{ verticalAlign: "top", paddingLeft: 8 }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
                                <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 8 }}>
                                   {item.status === "failed" ? (
                                     <>
@@ -274,34 +394,38 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                       </div>
                                     </>
                                   ) : (
-                                    <span style={{ color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>{item.cleaned}</span>
+                                    <ExpandableHistoryText
+                                      text={item.cleaned}
+                                      expanded={expandedIds.has(item.id)}
+                                      onToggle={() => toggleExpanded(item.id)}
+                                    />
                                   )}
                                 </div>
-                                 {item.status === "failed" ? (
+                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 32, flexShrink: 0 }}>
+                                {item.status === "failed" && source === "voice" ? (
                                     <button
                                       onClick={() => retryEntry(item)}
                                       className="btn"
                                       disabled={retryingId === item.id}
-                                      style={{ minWidth: 96, height: 32, minHeight: 32, padding: "0 10px", flexShrink: 0, borderRadius: 999 }}
+                                      style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }}
                                       title="Отправить повторно"
                                     >
                                       <RotateCcw size={12} strokeWidth={2} style={{ opacity: retryingId === item.id ? 0.45 : 1 }} />
-                                      <span style={{ opacity: retryingId === item.id ? 0.6 : 1 }}>
-                                        {retryingId === item.id ? "Повтор..." : "Повторить"}
-                                      </span>
                                     </button>
                                 ) : (
                                   <button onClick={() => copyText(item.id, item.cleaned)} className="btn" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title={retrySucceededId === item.id ? "Успешно" : "Скопировать"}>
                                     {copied === item.id || retrySucceededId === item.id ? <Check size={12} strokeWidth={2.5} /> : <Copy size={12} strokeWidth={2} />}
                                   </button>
                                 )}
-                               <button onClick={() => deleteEntry(item.id)} className="btn btn-danger" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Удалить">
-                                 <Trash2 size={12} strokeWidth={2} />
-                               </button>
+                                 <button onClick={() => deleteEntry(item.id)} className="btn btn-danger" style={{ width: 32, minWidth: 32, height: 32, minHeight: 32, padding: 0, flexShrink: 0, borderRadius: 8 }} title="Удалить">
+                                   <Trash2 size={12} strokeWidth={2} />
+                                 </button>
+                               </div>
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
               </div>

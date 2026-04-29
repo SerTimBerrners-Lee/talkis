@@ -12,9 +12,15 @@ import {
   RECORDING_WIDGET_HEIGHT,
   RECORDING_WIDGET_WIDTH,
 } from "../widgetConstants";
+import type { WidgetNoticeTone } from "../widgetConstants";
 import { createRecordingRuntimeController } from "../services/recordingRuntime";
 import { processRecordingBlob } from "../services/transcriptionPipeline";
 import type { WidgetAction, WidgetMachineState } from "../services/widgetMachine";
+
+const LOW_MIC_GRACE_MS = 1800;
+const LOW_MIC_SUSTAINED_MS = 2600;
+const LOW_MIC_RMS_THRESHOLD = 0.012;
+const LOW_MIC_SAMPLE_INTERVAL_MS = 250;
 
 interface UseWidgetRecordingParams {
   settings: AppSettings | null;
@@ -23,6 +29,7 @@ interface UseWidgetRecordingParams {
   setStream: Dispatch<SetStateAction<MediaStream | null>>;
   resizeWidget: (width: number, height: number) => Promise<void>;
   showError: (message: string) => void;
+  showNotice: (message: string, tone?: WidgetNoticeTone) => void;
   hideNotice: () => void;
   stopAndProcessRef: MutableRefObject<() => Promise<void>>;
 }
@@ -76,14 +83,89 @@ export function useWidgetRecording({
   setStream,
   resizeWidget,
   showError,
+  showNotice,
   hideNotice,
   stopAndProcessRef,
 }: UseWidgetRecordingParams): UseWidgetRecordingResult {
   const runtimeRef = useRef(createRecordingRuntimeController());
+  const lowMicMonitorCleanupRef = useRef<(() => void) | null>(null);
 
   // NOTE: Microphone pre-warm was removed because on macOS, calling
   // getUserMedia activates an audio session that ducks other app volumes.
   // The mic is now acquired only when recording actually starts.
+
+  const stopLowMicMonitor = useCallback(() => {
+    if (!lowMicMonitorCleanupRef.current) {
+      return;
+    }
+
+    lowMicMonitorCleanupRef.current();
+    lowMicMonitorCleanupRef.current = null;
+  }, []);
+
+  const startLowMicMonitor = useCallback((recordingStream: MediaStream) => {
+    stopLowMicMonitor();
+
+    try {
+      const audioContext = new AudioContext({ latencyHint: "interactive" });
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.45;
+
+      const source = audioContext.createMediaStreamSource(recordingStream);
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.fftSize);
+      const startedAt = Date.now();
+      let lowStartedAt: number | null = null;
+      let noticeShown = false;
+      let normalSignalSamples = 0;
+
+      const interval = window.setInterval(() => {
+        analyser.getByteTimeDomainData(dataArray);
+
+        let sumSquares = 0;
+        for (let index = 0; index < dataArray.length; index += 1) {
+          const normalized = (dataArray[index] - 128) / 128;
+          sumSquares += normalized * normalized;
+        }
+
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+        if (rms >= LOW_MIC_RMS_THRESHOLD) {
+          normalSignalSamples += 1;
+        }
+        const now = Date.now();
+
+        if (now - startedAt < LOW_MIC_GRACE_MS || noticeShown || normalSignalSamples >= 3) {
+          if (rms >= LOW_MIC_RMS_THRESHOLD) {
+            lowStartedAt = null;
+          }
+          return;
+        }
+
+        if (rms >= LOW_MIC_RMS_THRESHOLD) {
+          lowStartedAt = null;
+          return;
+        }
+
+        lowStartedAt ??= now;
+        if (now - lowStartedAt >= LOW_MIC_SUSTAINED_MS) {
+          noticeShown = true;
+          showNotice("Микрофон слышит слишком тихо. Поднесите его ближе или проверьте выбранное устройство.", "info");
+        }
+      }, LOW_MIC_SAMPLE_INTERVAL_MS);
+
+      void audioContext.resume().catch(() => {});
+
+      lowMicMonitorCleanupRef.current = () => {
+        window.clearInterval(interval);
+        source.disconnect();
+        void audioContext.close();
+      };
+    } catch (error) {
+      logError("RECORDING", `Low mic monitor failed: ${formatErrorMessage(error)}`);
+    }
+  }, [showNotice, stopLowMicMonitor]);
 
   // ── Start recording ─────────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
@@ -155,6 +237,7 @@ export function useWidgetRecording({
 
       await waitForTrackReady(recordingStream, 250);
       setStream(recordingStream);
+      startLowMicMonitor(recordingStream);
       const codec = runtimeRef.current.start(recordingStream);
       if (codec === "webm") {
         logInfo("RECORDING", "Using webm codec");
@@ -165,6 +248,7 @@ export function useWidgetRecording({
       logInfo("RECORDING", "Recording started successfully");
       dispatch({ type: "RECORDING_STARTED", timestamp: Date.now() });
     } catch (error) {
+      stopLowMicMonitor();
       runtimeRef.current.dispose();
       setStream(null);
       logError("RECORDING", `Start error: ${error instanceof Error ? error.message : "unknown"}`);
@@ -172,7 +256,7 @@ export function useWidgetRecording({
         `Ошибка запуска записи: ${error instanceof Error ? error.message : "Неизвестная ошибка"}`,
       );
     }
-  }, [dispatch, hideNotice, machineRef, resizeWidget, setStream, settings, showError]);
+  }, [dispatch, hideNotice, machineRef, resizeWidget, setStream, settings, showError, startLowMicMonitor, stopLowMicMonitor]);
 
   // ── Stop and process ────────────────────────────────────────────────────
   const stopAndProcess = useCallback(async () => {
@@ -194,6 +278,7 @@ export function useWidgetRecording({
     };
 
     await runtimeRef.current.stop();
+    stopLowMicMonitor();
     setStream(null);
 
     await resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
@@ -244,7 +329,7 @@ export function useWidgetRecording({
       runtimeRef.current.reset();
       showError(message);
     }
-  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError]);
+  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError, stopLowMicMonitor]);
 
   // ── Keep stopAndProcessRef current ──────────────────────────────────────
   useEffect(() => {
@@ -254,9 +339,10 @@ export function useWidgetRecording({
   // ── Cleanup ─────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
+      stopLowMicMonitor();
       runtimeRef.current.dispose();
     };
-  }, []);
+  }, [stopLowMicMonitor]);
 
   return { startRecording, stopAndProcess };
 }

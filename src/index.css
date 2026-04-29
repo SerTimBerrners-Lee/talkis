@@ -371,6 +371,115 @@ select {
   }
 }
 
+@keyframes widgetProcessingDash {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+
+.flow-recording-widget {
+  --widget-dot-left: 8px;
+  --widget-dot-size: 7px;
+  --widget-wave-scale: 1;
+  --widget-wave-opacity: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 74px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #050505;
+  box-shadow: none;
+}
+
+.flow-recording-widget svg,
+.flow-widget-idle {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.flow-recording-widget svg {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  opacity: var(--widget-wave-opacity);
+  transform: scaleY(var(--widget-wave-scale));
+  transform-origin: center;
+}
+
+.flow-widget-idle {
+  position: relative;
+}
+
+.flow-widget-idle span:first-child {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  left: 2px;
+  height: 1px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.34);
+  transition: opacity 0.16s ease;
+}
+
+.flow-widget-idle span:last-child {
+  display: none;
+}
+
+.flow-recording-widget.is-controls-visible .flow-widget-idle span:first-child {
+  opacity: 0;
+}
+
+.widget-wave-line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 1;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.widget-wave-line-1 {
+  opacity: 0.62;
+  stroke-width: 0.75;
+}
+
+.widget-wave-line-2 {
+  opacity: 1;
+  stroke-width: 1.05;
+}
+
+.widget-wave-line-3 {
+  opacity: 0.72;
+  stroke-width: 0.85;
+}
+
+.flow-recording-widget.is-processing {
+  background: #0c0c0c;
+}
+
+.flow-recording-widget.is-processing .widget-wave-line {
+  opacity: 0.34;
+  stroke-dasharray: 4 5;
+  animation: widgetProcessingDash 0.8s linear infinite;
+}
+
+.flow-recording-widget.is-long {
+  box-shadow: none;
+}
+
+.flow-widget-long-mark {
+  position: absolute;
+  left: var(--widget-dot-left);
+  top: 50%;
+  width: var(--widget-dot-size);
+  height: var(--widget-dot-size);
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: #ff4d4d;
+  box-shadow: none;
+}
+
 /* ── Collapsible details/summary ──────────────────────── */
 
 details summary::-webkit-details-marker,

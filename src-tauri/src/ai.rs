@@ -33,6 +33,9 @@ pub struct TranscribeRequest {
     pub llm_endpoint: Option<String>,
     pub whisper_model: Option<String>,
     pub llm_model: Option<String>,
+    pub file_name: Option<String>,
+    pub mime_type: Option<String>,
+    pub mode: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -165,9 +168,20 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         ),
     );
 
+    let file_name = req
+        .file_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("audio.webm");
+    let mime_type = req
+        .mime_type
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("audio/webm");
+
     let file_part = multipart::Part::bytes(audio_bytes)
-        .file_name("audio.webm")
-        .mime_str("audio/webm")
+        .file_name(file_name.to_string())
+        .mime_str(mime_type)
         .map_err(|e| format!("MIME error: {}", e))?;
 
     let lang_param = if req.language == "auto" {
@@ -222,7 +236,9 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         }
     }
 
-    let whisper_key = req.whisper_api_key.as_ref()
+    let whisper_key = req
+        .whisper_api_key
+        .as_ref()
         .filter(|s| !s.is_empty())
         .unwrap_or(&req.api_key);
 
@@ -267,7 +283,10 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     if is_known_whisper_hallucination(&raw) {
         logger::log_info(
             "WHISPER",
-            &format!("Detected likely silence hallucination, dropping transcription: \"{}\"", raw),
+            &format!(
+                "Detected likely silence hallucination, dropping transcription: \"{}\"",
+                raw
+            ),
         );
         return Ok(TranscribeResponse {
             raw: String::new(),
@@ -277,7 +296,11 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
 
     // Transcribe models don't return segments/duration, skip uncertainty check
     if !is_transcribe_model
-        && is_likely_short_uncertain_transcription(&raw, whisper_body.duration, &whisper_body.segments)
+        && is_likely_short_uncertain_transcription(
+            &raw,
+            whisper_body.duration,
+            &whisper_body.segments,
+        )
     {
         logger::log_info(
             "WHISPER",
@@ -302,15 +325,17 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
         .cloned()
         .unwrap_or_else(|| req.api_key.clone());
 
-    let skip_llm = req
-        .llm_model
-        .as_deref()
-        .map(|m| m == "none")
-        .unwrap_or(false)
+    let transcribe_only = req.mode.as_deref() == Some("transcribe_only");
+    let skip_llm = transcribe_only
+        || req
+            .llm_model
+            .as_deref()
+            .map(|m| m == "none")
+            .unwrap_or(false)
         || llm_key.trim().is_empty();
 
     if skip_llm {
-        logger::log_info("LLM", "Skipping LLM cleanup (model=none or api_key empty)");
+        logger::log_info("LLM", "Skipping LLM cleanup");
         return Ok(TranscribeResponse {
             raw: raw.clone(),
             cleaned: raw,
@@ -425,6 +450,12 @@ pub async fn transcribe_and_clean(req: TranscribeRequest) -> Result<TranscribeRe
     Ok(TranscribeResponse { raw, cleaned })
 }
 
+#[tauri::command]
+pub async fn transcribe_only(mut req: TranscribeRequest) -> Result<TranscribeResponse, String> {
+    req.mode = Some("transcribe_only".to_string());
+    transcribe_and_clean(req).await
+}
+
 // ── Connection test ──────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize)]
@@ -499,7 +530,8 @@ fn percent_encode_path_segment(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
 
     for byte in value.bytes() {
-        let is_unreserved = byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~');
+        let is_unreserved =
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~');
         if is_unreserved {
             encoded.push(char::from(byte));
         } else {
@@ -576,7 +608,10 @@ async fn test_stt_connection(
         .filter(|value| !value.is_empty())
         .unwrap_or("whisper-1");
 
-    let response_text = response.text().await.map_err(|err| format!("Ошибка чтения STT ответа: {}", err))?;
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| format!("Ошибка чтения STT ответа: {}", err))?;
     if let Ok(models) = serde_json::from_str::<ModelsListResponse>(&response_text) {
         let has_model = models.data.iter().any(|item| item.id == requested_model);
         if !has_model {
@@ -595,7 +630,10 @@ async fn test_stt_connection(
         }
     }
 
-    Ok(format!("STT доступен, модель «{}» найдена.", requested_model))
+    Ok(format!(
+        "STT доступен, модель «{}» найдена.",
+        requested_model
+    ))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -613,7 +651,9 @@ pub struct InstallSttModelResult {
 }
 
 #[tauri::command]
-pub async fn install_stt_model(req: InstallSttModelRequest) -> Result<InstallSttModelResult, String> {
+pub async fn install_stt_model(
+    req: InstallSttModelRequest,
+) -> Result<InstallSttModelResult, String> {
     let requested_model = req.whisper_model.trim();
     if requested_model.is_empty() {
         return Ok(InstallSttModelResult {
@@ -622,7 +662,10 @@ pub async fn install_stt_model(req: InstallSttModelRequest) -> Result<InstallStt
         });
     }
 
-    logger::log_info("STT_INSTALL", &format!("Installing STT model: {}", requested_model));
+    logger::log_info(
+        "STT_INSTALL",
+        &format!("Installing STT model: {}", requested_model),
+    );
 
     let whisper_url = resolve_whisper_url(req.whisper_endpoint.as_deref());
     let models_url = resolve_whisper_models_url(&whisper_url);
@@ -661,8 +704,14 @@ pub async fn install_stt_model(req: InstallSttModelRequest) -> Result<InstallStt
         let message = match status.as_u16() {
             401 => "STT endpoint отклонил API-ключ при установке модели.".to_string(),
             403 => "STT endpoint запретил установку модели. Проверьте права доступа.".to_string(),
-            404 => format!("Модель «{}» не найдена в реестре Speaches.", requested_model),
-            409 => format!("Модель «{}» уже устанавливается или уже доступна.", requested_model),
+            404 => format!(
+                "Модель «{}» не найдена в реестре Speaches.",
+                requested_model
+            ),
+            409 => format!(
+                "Модель «{}» уже устанавливается или уже доступна.",
+                requested_model
+            ),
             _ => format!(
                 "STT endpoint вернул ошибку {} при установке модели: {}",
                 status.as_u16(),
@@ -676,7 +725,10 @@ pub async fn install_stt_model(req: InstallSttModelRequest) -> Result<InstallStt
         });
     }
 
-    logger::log_info("STT_INSTALL", &format!("STT model install request accepted: {}", requested_model));
+    logger::log_info(
+        "STT_INSTALL",
+        &format!("STT model install request accepted: {}", requested_model),
+    );
     Ok(InstallSttModelResult {
         success: true,
         message: format!(
@@ -743,7 +795,11 @@ async fn test_llm_connection(
                     403 => "LLM endpoint запретил доступ (проверьте ключ и endpoint)".to_string(),
                     404 => format!("Модель «{}» не найдена на LLM endpoint", llm_model),
                     429 => "Превышен лимит запросов на LLM endpoint".to_string(),
-                    _ => format!("Ошибка LLM {}: {}", status.as_u16(), error_text.chars().take(200).collect::<String>()),
+                    _ => format!(
+                        "Ошибка LLM {}: {}",
+                        status.as_u16(),
+                        error_text.chars().take(200).collect::<String>()
+                    ),
                 };
                 Err(msg)
             }
@@ -761,7 +817,9 @@ async fn test_llm_connection(
 }
 
 #[tauri::command]
-pub async fn test_api_connection(req: TestConnectionRequest) -> Result<TestConnectionResult, String> {
+pub async fn test_api_connection(
+    req: TestConnectionRequest,
+) -> Result<TestConnectionResult, String> {
     logger::log_info("TEST", "Testing API connection...");
 
     let client = http_client();

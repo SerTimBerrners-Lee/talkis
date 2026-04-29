@@ -39,6 +39,14 @@ jobs:
 
       - name: Build macOS bundles
         run: bun run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Create updater metadata
+        run: bash scripts/create-updater-latest-json.sh "${RELEASE_TAG#v}" "${RELEASE_TAG}"
+        env:
+          BUILD_ROOT: src-tauri/target/release/bundle
 
       - name: Post-process macOS release artifacts
         run: bash scripts/postprocess-macos-release.sh "${RELEASE_TAG#v}"
@@ -56,12 +64,15 @@ jobs:
           body: |
             Automated release for ${{ env.RELEASE_TAG }}.
 
-            Current workflow publishes all currently supported release artifacts, which is macOS only right now.
+            Current workflow publishes all currently supported release artifacts and updater metadata, which is macOS only right now.
             Windows and Linux are intentionally disabled until platform-specific support is implemented.
           draft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/release/bundle/latest.json
             Talkis-${{ env.RELEASE_TAG }}-macos.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

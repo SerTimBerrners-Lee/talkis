@@ -2,6 +2,7 @@ mod ai;
 mod commands;
 mod hotkey_capture;
 mod logger;
+mod media;
 mod paste;
 mod prompt_config;
 
@@ -17,9 +18,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             logger::log_info("INIT", "Application starting...");
 
@@ -100,6 +104,8 @@ pub fn run() {
             widget::hide_widget_notice,
             paste::paste_text,
             ai::transcribe_and_clean,
+            ai::transcribe_only,
+            media::prepare_media_for_transcription,
             ai::test_api_connection,
             ai::install_stt_model,
             logger::log_event,

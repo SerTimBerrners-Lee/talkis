@@ -25,6 +25,9 @@
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
     "deep-link:default",
+    "process:allow-restart",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled"

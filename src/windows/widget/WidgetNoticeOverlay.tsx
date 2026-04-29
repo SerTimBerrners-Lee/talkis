@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Bell } from "lucide-react";
 
 import { NOTICE_AREA_HEIGHT, NOTICE_WIDGET_WIDTH, WIDGET_NOTICE_EVENT, type WidgetNoticeState } from "./widgetConstants";
 
@@ -29,8 +28,6 @@ export function WidgetNoticeOverlay(): ReactElement | null {
   if (!notice) {
     return null;
   }
-
-  const Icon = notice.tone === "error" ? AlertCircle : Bell;
 
   const handleNoticeClick = async () => {
     await invoke("open_settings_tab", { tab: "main" });
@@ -68,7 +65,7 @@ export function WidgetNoticeOverlay(): ReactElement | null {
           position: "relative",
           width: NOTICE_WIDGET_WIDTH,
           minHeight: NOTICE_AREA_HEIGHT,
-          padding: "10px 34px 10px 14px",
+          padding: "10px 14px",
           borderRadius: 16,
           fontSize: 11,
           lineHeight: 1.4,
@@ -84,21 +81,6 @@ export function WidgetNoticeOverlay(): ReactElement | null {
           cursor: "pointer",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            width: 18,
-            height: 18,
-            color: notice.tone === "error" ? "#c45a48" : "#61758a",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Icon size={11} strokeWidth={2.2} />
-        </div>
         <div
           style={{
             display: "-webkit-box",

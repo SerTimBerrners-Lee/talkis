@@ -7,8 +7,8 @@ pub const NOTICE_WIDTH: f64 = 212.0;
 pub const NOTICE_HEIGHT: f64 = 52.0;
 /// Must match NOTICE_WIDGET_GAP in src/windows/widget/widgetConstants.ts (logical pixels).
 pub const NOTICE_GAP: f64 = 2.0;
-pub const WIDGET_WIDTH: f64 = 78.0;
-pub const WIDGET_HEIGHT: f64 = 32.0;
+pub const WIDGET_WIDTH: f64 = 86.0;
+pub const WIDGET_HEIGHT: f64 = 34.0;
 
 #[derive(Clone, Serialize)]
 struct WidgetNoticePayload {
@@ -125,7 +125,10 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
         let scale_factor = win.scale_factor().unwrap_or(1.0);
 
         if let Err(err) = win.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height })) {
-            logger::log_error("WINDOW", &format!("Failed to resize widget window: {}", err));
+            logger::log_error(
+                "WINDOW",
+                &format!("Failed to resize widget window: {}", err),
+            );
         }
 
         if let (Some(position), Some(size)) = (current_position, current_size) {
@@ -146,7 +149,10 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
         } else if let Ok(Some(monitor)) = win.primary_monitor() {
             let position = calculate_default_widget_position(&monitor, width, height);
             if let Err(err) = win.set_position(tauri::Position::Physical(position)) {
-                logger::log_error("WINDOW", &format!("Failed to reposition widget window: {}", err));
+                logger::log_error(
+                    "WINDOW",
+                    &format!("Failed to reposition widget window: {}", err),
+                );
             }
         }
     }

@@ -255,6 +255,7 @@ export function useWidgetController(): WidgetControllerState {
     setStream,
     resizeWidget,
     showError,
+    showNotice,
     hideNotice,
     stopAndProcessRef,
   });

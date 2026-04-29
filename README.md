@@ -10,10 +10,11 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - Release the hotkey to stop and process the audio
 - The recognized text is pasted automatically into the current app
 - A second press during recording locks the recording mode
-- The floating widget can start/stop recording with a mouse click and copy the latest result
+- The floating widget can start/stop recording with a mouse click, copy the latest result, and show a low microphone signal notice
 - Autostart can be enabled from settings
-- The settings window lets you choose language, microphone, API key, and text cleanup style
-- Recent recordings are saved in local history with processing time
+- The settings window lets you choose language, microphone, API key, text cleanup style, and transcribe audio/video files
+- Recent voice recordings and file transcriptions are saved in local history with processing time
+- The app checks for updates after startup and then periodically in the background
 
 ## Access modes
 
@@ -132,6 +133,15 @@ The copy shortcut is cleared when history is cleared, and it refreshes after ent
 - Global hotkey
 - Autostart at system login
 
+### File transcription
+
+The `Файлы` tab can transcribe audio or video files without LLM cleanup. Supported audio files under 25 MB are sent directly. Larger files, video files, and less common formats are converted inside the app with a bundled ffmpeg sidecar before upload.
+
+File transcription uses the same access mode as voice recording:
+
+- Talkis Cloud sends files to `proxy.talkis.ru/api/transcribe-only`
+- Custom provider mode sends files to the configured OpenAI-compatible STT endpoint
+
 ## Text styles
 
 Talkis supports several cleanup styles for the final text:
@@ -145,6 +155,7 @@ Talkis supports several cleanup styles for the final text:
 The `Main` tab stores recent recordings locally so you can:
 
 - review previous results (raw and cleaned text)
+- filter entries by all, voice, or file
 - see processing time for each entry
 - retry failed entries
 - copy text again
@@ -152,12 +163,13 @@ The `Main` tab stores recent recordings locally so you can:
 - delete individual entries
 - clear the full history
 
-History is stored locally on your machine.
+History is stored locally on your machine. The app keeps the newest 1000 voice entries and 200 file entries, capped by a combined JSON payload of 50 MB.
 
 ## Privacy
 
 - Audio is sent to the API endpoints you configure for transcription and cleanup
 - In subscription mode, requests go through `proxy.talkis.ru`
+- File transcription in subscription mode uses the raw transcription endpoint and skips text cleanup
 - In custom mode, requests go directly to your configured endpoints
 - In local mode, all processing stays on your machine
 - Your API key and device token are stored locally in the app settings
@@ -237,9 +249,9 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.11` to build and publish a GitHub Release
+- Push a tag like `v0.1.12` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
-- The current workflow publishes macOS release artifacts
+- The current workflow publishes macOS release artifacts and updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
 
 Optional macOS signing/notarization secrets:

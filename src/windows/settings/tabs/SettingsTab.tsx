@@ -19,6 +19,9 @@ import { LANGUAGES } from "../../../config/languages";
 
 type HotkeyFeedbackTone = "idle" | "success" | "error";
 
+const SETTING_ROW_COLUMNS = "minmax(0, 1fr) 280px";
+const SETTING_ROW_GAP = 16;
+
 export function SettingsTab() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
@@ -423,11 +426,11 @@ export function SettingsTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="card" style={{ display: "grid", gap: 10, zIndex: langOpen ? 20 : 1 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", alignItems: "start", gap: 16 }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Язык распознавания</div>
           </div>
-        <div ref={langRef} style={{ position: "relative", width: "100%" }}>
+        <div ref={langRef} style={{ position: "relative", width: "100%", justifySelf: "end" }}>
           <button onClick={() => setLangOpen((o) => !o)} className="btn" style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 46 }}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {currentLang ? `${currentLang.native} (${currentLang.name})` : settings.language}
@@ -479,11 +482,11 @@ export function SettingsTab() {
       </div>
 
       <div className="card" style={{ display: "grid", gap: 10, zIndex: micOpen ? 20 : 1 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", alignItems: "start", gap: 16 }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Микрофон</div>
           </div>
-        <div ref={micRef} style={{ position: "relative", width: "100%" }}>
+        <div ref={micRef} style={{ position: "relative", width: "100%", justifySelf: "end" }}>
           <button
             onClick={() => {
               if (microphones.length === 0 || micStatus === "permission-needed") return;
@@ -532,12 +535,9 @@ export function SettingsTab() {
       </div>
 
       <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", alignItems: "start", gap: 16 }}>
-          <div>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Горячая клавиша</div>
-            <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65, marginTop: 6 }}>
-              Нажмите на поле справа и введите новую комбинацию. Если сочетание занято, оставим предыдущую клавишу.
-            </div>
           </div>
           <div
             ref={hotkeyButtonRef}
@@ -556,6 +556,7 @@ export function SettingsTab() {
               boxShadow: isHotkeyCaptureActive ? "0 0 0 4px rgba(15,118,110,0.08)" : undefined,
               opacity: isHotkeySubmitting ? 0.8 : 1,
               cursor: isHotkeySubmitting ? "wait" : "pointer",
+              justifySelf: "end",
             }}
           >
             <span style={{ color: "var(--text-hi)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -566,6 +567,9 @@ export function SettingsTab() {
             </span>
           </div>
         </div>
+        <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65 }}>
+          Нажмите на поле справа и введите новую комбинацию. Если сочетание занято, оставим предыдущую клавишу.
+        </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, color: hotkeyFeedbackColor, lineHeight: 1.6 }}>{hotkeyFeedback}</div>
           <div style={{ fontSize: 12, color: "var(--text-low)", whiteSpace: "nowrap" }}>
@@ -575,12 +579,9 @@ export function SettingsTab() {
       </div>
 
       <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", alignItems: "center", gap: 16 }}>
-          <div>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Автозапуск</div>
-            <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65, marginTop: 6 }}>
-              Запускать Talkis автоматически при входе в систему.
-            </div>
           </div>
           <button
             type="button"
@@ -599,6 +600,7 @@ export function SettingsTab() {
               opacity: autostartDisabled ? 0.72 : 1,
               cursor: autostartDisabled ? "wait" : "pointer",
               transform: "none",
+              justifySelf: "end",
             }}
           >
             <span style={{ color: "var(--text-hi)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 74 }}>
@@ -633,6 +635,9 @@ export function SettingsTab() {
               />
             </span>
           </button>
+        </div>
+        <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65 }}>
+          Запускать Talkis автоматически при входе в систему.
         </div>
       </div>
     </div>

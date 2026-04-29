@@ -257,6 +257,7 @@ export async function processRecordingBlob({
       duration: durationSeconds,
       raw: result.raw,
       cleaned: result.cleaned,
+      source: "voice",
       status: "completed",
       processingTime,
     };
@@ -288,6 +289,7 @@ export async function processRecordingBlob({
       duration: durationSeconds,
       raw: "",
       cleaned: "",
+      source: "voice",
       status: "failed",
       errorMessage: userFacingErrorMessage,
       audioBase64: base64Audio,

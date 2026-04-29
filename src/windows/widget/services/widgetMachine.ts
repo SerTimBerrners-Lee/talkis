@@ -153,6 +153,7 @@ function handleHotkeyPressed(state: WidgetMachineState): ReducerResult {
   // Fresh press from idle → start recording
   return result({
     ...state,
+    widgetState: "recording",
     hotkeyHeld: true,
     lockedRecording: false,
     recordingActive: false,

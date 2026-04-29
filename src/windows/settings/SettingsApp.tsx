@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
+import type { ReactElement } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { Home, Cpu, Sparkles, Sliders, LucideIcon } from "lucide-react";
+import { FileAudio, Home, Cpu, Sparkles, Sliders, LucideIcon } from "lucide-react";
 import { TitleBar } from "../../components/TitleBar";
 import { MainTab } from "./tabs/MainTab";
+import { FileTranscriptionTab } from "./tabs/FileTranscriptionTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { SettingsTabs } from "./tabs/SettingsTabs";
 import { PermissionScreen } from "../../components/PermissionScreen";
@@ -12,12 +15,12 @@ import { checkAllPermissions } from "../../lib/permissions";
 import { logError } from "../../lib/logger";
 import { UserPanel } from "../../components/UserPanel";
 
-type Tab = "main" | "settings" | "model" | "style";
+type Tab = "main" | "file" | "settings" | "model" | "style";
 
 function resolveInitialTab(): Tab {
   const requestedTab = new URLSearchParams(window.location.search).get("tab");
 
-  if (requestedTab === "settings" || requestedTab === "model" || requestedTab === "style") {
+  if (requestedTab === "file" || requestedTab === "settings" || requestedTab === "model" || requestedTab === "style") {
     return requestedTab;
   }
 
@@ -26,6 +29,7 @@ function resolveInitialTab(): Tab {
 
 const TABS: { id: Tab; label: string; icon: LucideIcon; note: string }[] = [
   { id: "main", label: "Главное", icon: Home, note: "История записей" },
+  { id: "file", label: "Файлы", icon: FileAudio, note: "Транскрибация файла" },
   { id: "settings", label: "Настройки", icon: Sliders, note: "Язык, микрофон и горячая клавиша" },
   { id: "model", label: "Подписка", icon: Cpu, note: "Ключи и подключение модели" },
   { id: "style", label: "Стиль", icon: Sparkles, note: "Обработка текста" },
@@ -65,6 +69,48 @@ function SidebarLogo() {
           Talkis
         </div>
       </div>
+    </div>
+  );
+}
+
+function AppVersionFooter(): ReactElement | null {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getVersion()
+      .then((appVersion) => {
+        if (mounted) {
+          setVersion(appVersion);
+        }
+      })
+      .catch((error) => {
+        void logError("SETTINGS_APP", `Failed to load app version: ${error instanceof Error ? error.message : String(error)}`);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!version) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-label={`Версия приложения ${version}`}
+      style={{
+        padding: "0 8px",
+        fontSize: 11,
+        lineHeight: 1.2,
+        color: "var(--text-low)",
+        textAlign: "center",
+        userSelect: "none",
+      }}
+    >
+      v{version}
     </div>
   );
 }
@@ -166,6 +212,7 @@ export function SettingsApp() {
             </nav>
 
             <UserPanel />
+            <AppVersionFooter />
           </aside>
 
           <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "rgba(250,249,246,0.72)" }}>
@@ -178,6 +225,9 @@ export function SettingsApp() {
               <div key={navigationNonce} style={{ animation: "slide-down 0.18s ease" }}>
                 <div style={{ display: activeTab === "main" ? "block" : "none" }}>
                   <MainTab initialHistory={initialHistory} />
+                </div>
+                <div style={{ display: activeTab === "file" ? "block" : "none" }}>
+                  <FileTranscriptionTab />
                 </div>
                 <div style={{ display: activeTab === "settings" ? "block" : "none" }}>
                   <SettingsTab />
