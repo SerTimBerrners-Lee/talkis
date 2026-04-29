@@ -14,7 +14,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - Autostart can be enabled from settings
 - The settings window lets you choose language, microphone, API key, text cleanup style, and transcribe audio/video files
 - Recent voice recordings and file transcriptions are saved in local history with processing time
-- The app checks for updates after startup and then periodically in the background
+- The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
 
 ## Access modes
 
@@ -133,6 +133,10 @@ The copy shortcut is cleared when history is cleared, and it refreshes after ent
 - Global hotkey
 - Autostart at system login
 
+### Updates
+
+Talkis checks for a new app version in the background after startup and then periodically. When an update is available, the settings sidebar shows `Установить обновление vN.N.N` above the current app version. Installation starts only after clicking that button; recording and transcription are not interrupted by an automatic restart.
+
 ### File transcription
 
 The `Файлы` tab can transcribe audio or video files without LLM cleanup. Supported audio files under 25 MB are sent directly. Larger files, video files, and less common formats are converted inside the app with a bundled ffmpeg sidecar before upload.
@@ -249,7 +253,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.12` to build and publish a GitHub Release
+- Push a tag like `v0.1.13` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS release artifacts and updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access

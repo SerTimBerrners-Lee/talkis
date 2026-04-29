@@ -1,6 +1,6 @@
 [package]
 name = "talkis"
-version = "0.1.12"
+version = "0.1.13"
 description = "Talkis - Voice to Text macOS Widget"
 authors = ["trixter"]
 edition = "2021"

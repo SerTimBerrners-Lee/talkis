@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { ReactElement } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { FileAudio, Home, Cpu, Sparkles, Sliders, LucideIcon } from "lucide-react";
+import { Download, FileAudio, Home, Cpu, Loader2, Sparkles, Sliders, LucideIcon } from "lucide-react";
 import { TitleBar } from "../../components/TitleBar";
 import { MainTab } from "./tabs/MainTab";
 import { FileTranscriptionTab } from "./tabs/FileTranscriptionTab";
@@ -14,6 +14,12 @@ import { getPermissionsPassed, setPermissionsPassed, getHistory, HistoryEntry } 
 import { checkAllPermissions } from "../../lib/permissions";
 import { logError } from "../../lib/logger";
 import { UserPanel } from "../../components/UserPanel";
+import {
+  checkForAppUpdateNow,
+  installAvailableAppUpdate,
+  subscribeToAppUpdateState,
+  type AppUpdateState,
+} from "../../lib/updater";
 
 type Tab = "main" | "file" | "settings" | "model" | "style";
 
@@ -73,8 +79,13 @@ function SidebarLogo() {
   );
 }
 
-function AppVersionFooter(): ReactElement | null {
+function formatUpdateVersion(version: string): string {
+  return version.startsWith("v") ? version : `v${version}`;
+}
+
+function AppUpdateFooter(): ReactElement | null {
   const [version, setVersion] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<AppUpdateState>({ status: "idle" });
 
   useEffect(() => {
     let mounted = true;
@@ -94,23 +105,88 @@ function AppVersionFooter(): ReactElement | null {
     };
   }, []);
 
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      return;
+    }
+
+    const unsubscribe = subscribeToAppUpdateState(setUpdateState);
+    void checkForAppUpdateNow();
+
+    return unsubscribe;
+  }, []);
+
   if (!version) {
     return null;
   }
 
+  const showUpdateButton = !import.meta.env.DEV
+    && Boolean(updateState.version)
+    && (updateState.status === "available" || updateState.status === "installing" || updateState.status === "error");
+  const updateVersion = updateState.version ? formatUpdateVersion(updateState.version) : "";
+  const installing = updateState.status === "installing";
+
   return (
     <div
-      aria-label={`Версия приложения ${version}`}
       style={{
+        display: "grid",
+        gap: 4,
         padding: "0 8px",
-        fontSize: 11,
-        lineHeight: 1.2,
-        color: "var(--text-low)",
-        textAlign: "center",
-        userSelect: "none",
       }}
     >
-      v{version}
+      {showUpdateButton && (
+        <div style={{ display: "grid", gap: 5 }}>
+          <button
+            type="button"
+            className="btn"
+            disabled={installing}
+            onClick={() => {
+              void installAvailableAppUpdate().catch((error) => {
+                void logError("SETTINGS_APP", `Failed to install app update: ${error instanceof Error ? error.message : String(error)}`);
+              });
+            }}
+            style={{
+              width: "100%",
+              minHeight: 32,
+              height: "auto",
+              padding: "7px 9px",
+              justifyContent: "center",
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 700,
+              lineHeight: 1.25,
+              whiteSpace: "normal",
+              textAlign: "center",
+            }}
+          >
+            {installing ? (
+              <Loader2 size={13} strokeWidth={2} style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }} />
+            ) : (
+              <Download size={13} strokeWidth={2} style={{ flexShrink: 0 }} />
+            )}
+            <span>{installing ? "Устанавливаем..." : `Установить обновление ${updateVersion}`}</span>
+          </button>
+
+          {updateState.status === "error" && (
+            <div style={{ fontSize: 10, lineHeight: 1.35, color: "var(--danger)", textAlign: "center" }}>
+              Не удалось установить обновление
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        aria-label={`Версия приложения ${version}`}
+        style={{
+          fontSize: 11,
+          lineHeight: 1.2,
+          color: "var(--text-low)",
+          textAlign: "center",
+          userSelect: "none",
+        }}
+      >
+        v{version}
+      </div>
     </div>
   );
 }
@@ -211,8 +287,10 @@ export function SettingsApp() {
               ))}
             </nav>
 
-            <UserPanel />
-            <AppVersionFooter />
+            <div style={{ display: "grid", gap: 4, marginTop: "auto" }}>
+              <UserPanel />
+              <AppUpdateFooter />
+            </div>
           </aside>
 
           <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "rgba(250,249,246,0.72)" }}>

@@ -4526,7 +4526,7 @@ dependencies = [
 
 [[package]]
 name = "talkis"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
