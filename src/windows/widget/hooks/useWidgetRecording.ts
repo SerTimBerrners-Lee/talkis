@@ -199,7 +199,7 @@ export function useWidgetRecording({
 
     if (!isSubscriptionMode && !hasKey && !isLocalSttMode) {
       logError("RECORDING", "API key not set");
-      showError("Добавьте API ключ в настройках → Подписка.");
+      showError("Добавьте API ключ в настройках → Модели.");
       return;
     }
 

@@ -37,7 +37,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon; note: string }[] = [
   { id: "main", label: "Главное", icon: Home, note: "История записей" },
   { id: "file", label: "Файлы", icon: FileAudio, note: "Транскрибация файла" },
   { id: "settings", label: "Настройки", icon: Sliders, note: "Язык, микрофон и горячая клавиша" },
-  { id: "model", label: "Подписка", icon: Cpu, note: "Ключи и подключение модели" },
+  { id: "model", label: "Модели", icon: Cpu, note: "Ключи и подключение модели" },
   { id: "style", label: "Стиль", icon: Sparkles, note: "Обработка текста" },
 ];
 

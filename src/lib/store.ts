@@ -20,8 +20,19 @@ export interface HistoryEntry {
 
 export type ApiProvider = "openai" | "custom";
 
+export interface ApiAdapterSettings {
+  apiKey: string;
+  model: string;
+  connectionStatus?: "saved" | "verified";
+  lastConnectedAt?: string;
+  lastTestedApiKey?: string;
+  lastTestedModel?: string;
+}
+
 export interface AppSettings {
   apiKey: string;
+  /** Saved API adapter credentials keyed by adapter id */
+  apiAdapters: Record<string, ApiAdapterSettings>;
   /** Separate API key for Whisper/STT endpoint (used in custom mode) */
   whisperApiKey: string;
   /** Separate API key for LLM endpoint (used in custom mode; empty = skip LLM) */
@@ -248,6 +259,7 @@ export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: 
 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
+  apiAdapters: {},
   whisperApiKey: "",
   llmApiKey: "",
   provider: "openai",
@@ -285,9 +297,28 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
   }
 
   const raw = saved as Record<string, unknown>;
+  const rawApiAdapters = raw.apiAdapters && typeof raw.apiAdapters === "object"
+    ? Object.entries(raw.apiAdapters as Record<string, unknown>).reduce<Record<string, ApiAdapterSettings>>((acc, [key, value]) => {
+        if (!value || typeof value !== "object") return acc;
+
+        const adapter = value as Record<string, unknown>;
+        acc[key] = {
+          apiKey: typeof adapter.apiKey === "string" ? adapter.apiKey : "",
+          model: typeof adapter.model === "string" ? adapter.model : "",
+          connectionStatus: adapter.connectionStatus === "saved" || adapter.connectionStatus === "verified"
+            ? adapter.connectionStatus
+            : undefined,
+          lastConnectedAt: typeof adapter.lastConnectedAt === "string" ? adapter.lastConnectedAt : undefined,
+          lastTestedApiKey: typeof adapter.lastTestedApiKey === "string" ? adapter.lastTestedApiKey : undefined,
+          lastTestedModel: typeof adapter.lastTestedModel === "string" ? adapter.lastTestedModel : undefined,
+        };
+        return acc;
+      }, {})
+    : undefined;
 
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
+    apiAdapters: rawApiAdapters,
     whisperApiKey: typeof raw.whisperApiKey === "string" ? raw.whisperApiKey : undefined,
     llmApiKey: typeof raw.llmApiKey === "string" ? raw.llmApiKey : undefined,
     provider: parseProvider(raw.provider),

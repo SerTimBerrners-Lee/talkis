@@ -4,41 +4,42 @@ import { listen } from "@tauri-apps/api/event";
 import { emit } from "@tauri-apps/api/event";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  Briefcase,
+  Check,
+  Cloud,
+  Code,
+  Crown,
+  Download,
+  LogOut,
+  LucideIcon,
+  MessageSquare,
+  Server,
+  User,
+  Zap,
+} from "lucide-react";
 
-import { AppSettings, ApiProvider, getSettings, saveSettings } from "../../../lib/store";
-import { Check, Briefcase, Code, MessageSquare, Crown, Zap, ChevronDown, LucideIcon, LogOut, User } from "lucide-react";
+import { AppSettings, getSettings, saveSettings } from "../../../lib/store";
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl, cloudLogout, handleAuthToken, generateExchangeCode, getAuthLoginUrlWithCode, pollForToken, getCachedCloudProfile, subscribeCloudProfile } from "../../../lib/cloudAuth";
 import { logInfo } from "../../../lib/logger";
 
 import { TRANSCRIPTION_STYLE_OPTIONS } from "../../../lib/transcriptionPrompts";
 import { SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
+import assemblyAiAvatar from "../../../assets/adapters/assemblyai.png";
+import cartesiaAvatar from "../../../assets/adapters/cartesia.png";
+import deepgramAvatar from "../../../assets/adapters/deepgram.jpeg";
+import elevenLabsAvatar from "../../../assets/adapters/elevenlabs.png";
+import fireworksAvatar from "../../../assets/adapters/fireworks.png";
+import groqAvatar from "../../../assets/adapters/groq.png";
+import mistralAvatar from "../../../assets/adapters/mistral.png";
+import openAiAvatar from "../../../assets/adapters/openai.svg";
+import volcengineAvatar from "../../../assets/adapters/volcengine.webp";
+import xAiAvatar from "../../../assets/adapters/xai.png";
 
 const IS_DEV = import.meta.env.DEV;
 const LOCAL_STT_PRESET_ENDPOINT = "http://127.0.0.1:8000";
 const LOCAL_STT_PRESET_MODEL = "whisper-1";
 const LOCAL_STT_HELP_URL = "https://speaches.ai/installation/";
-
-function isLikelyLocalEndpoint(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized.startsWith("http://127.0.0.1") ||
-    normalized.startsWith("http://localhost") ||
-    normalized.startsWith("https://127.0.0.1") ||
-    normalized.startsWith("https://localhost")
-  );
-}
-
-function inferSttAccessMode(settings: AppSettings | null | undefined): "api" | "local" {
-  if (!settings) {
-    return "api";
-  }
-
-  if (isLikelyLocalEndpoint(settings.whisperEndpoint || "")) {
-    return "local";
-  }
-
-  return "api";
-}
 
 interface SettingsTabsProps { type: "model" | "style"; }
 
@@ -48,6 +49,134 @@ interface PromptPreview {
   profileKey: string;
   version: number;
 }
+
+type ApiAdapterId =
+  | "openai"
+  | "deepgram"
+  | "cartesia"
+  | "mistral"
+  | "elevenlabs"
+  | "fireworks"
+  | "groq"
+  | "assemblyai"
+  | "volcengine"
+  | "xai";
+
+type AdapterTestStatus = "idle" | "testing" | "success" | "error" | "info";
+
+interface ApiAdapterOption {
+  id: ApiAdapterId;
+  name: string;
+  description: string;
+  recommendedModel: string;
+  initials: string;
+  accent: string;
+  avatar?: string;
+  testable: boolean;
+}
+
+const API_ADAPTERS: ApiAdapterOption[] = [
+  {
+    id: "openai",
+    name: "OpenAI API",
+    description: "Подключение через OpenAI API для распознавания речи.",
+    recommendedModel: "gpt-4o-transcribe",
+    initials: "AI",
+    accent: "#0f172a",
+    avatar: openAiAvatar,
+    testable: true,
+  },
+  {
+    id: "deepgram",
+    name: "Deepgram API",
+    description: "Адаптер для облачного распознавания речи через Deepgram.",
+    recommendedModel: "nova-3",
+    initials: "DG",
+    accent: "#13ef93",
+    avatar: deepgramAvatar,
+    testable: false,
+  },
+  {
+    id: "cartesia",
+    name: "Cartesia API",
+    description: "Адаптер под речевые модели Cartesia.",
+    recommendedModel: "sonic",
+    initials: "CA",
+    accent: "#6d5dfc",
+    avatar: cartesiaAvatar,
+    testable: false,
+  },
+  {
+    id: "mistral",
+    name: "Mistral AI",
+    description: "Адаптер под модели распознавания и обработки Mistral AI.",
+    recommendedModel: "voxtral-mini-latest",
+    initials: "MI",
+    accent: "#ff7000",
+    avatar: mistralAvatar,
+    testable: false,
+  },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs API",
+    description: "Адаптер для speech-to-text сценариев через ElevenLabs.",
+    recommendedModel: "scribe_v1",
+    initials: "EL",
+    accent: "#111827",
+    avatar: elevenLabsAvatar,
+    testable: false,
+  },
+  {
+    id: "fireworks",
+    name: "Fireworks AI API",
+    description: "Адаптер под hosted speech-модели Fireworks AI.",
+    recommendedModel: "whisper-v3",
+    initials: "FW",
+    accent: "#f97316",
+    avatar: fireworksAvatar,
+    testable: false,
+  },
+  {
+    id: "groq",
+    name: "Groq API",
+    description: "Адаптер под быстрые hosted Whisper-модели Groq.",
+    recommendedModel: "whisper-large-v3-turbo",
+    initials: "GQ",
+    accent: "#f55036",
+    avatar: groqAvatar,
+    testable: false,
+  },
+  {
+    id: "assemblyai",
+    name: "AssemblyAI",
+    description: "Адаптер для распознавания речи через AssemblyAI.",
+    recommendedModel: "universal",
+    initials: "AA",
+    accent: "#2563eb",
+    avatar: assemblyAiAvatar,
+    testable: false,
+  },
+  {
+    id: "volcengine",
+    name: "Volcengine API",
+    description: "Адаптер под речевые сервисы Volcengine.",
+    recommendedModel: "seed-asr",
+    initials: "VE",
+    accent: "#7c3aed",
+    avatar: volcengineAvatar,
+    testable: false,
+  },
+  {
+    id: "xai",
+    name: "xAI API",
+    description: "Адаптер под API xAI для будущих voice/STT сценариев.",
+    recommendedModel: "grok-voice",
+    initials: "xAI",
+    accent: "#000000",
+    avatar: xAiAvatar,
+    testable: false,
+  },
+];
 
 interface OptionCardProps {
   active?: boolean;
@@ -66,10 +195,10 @@ function OptionCard({ active = false, icon, title, description, badge, onClick, 
       style={{
         position: "relative",
         padding: 18,
-        borderRadius: 12,
-        background: active ? "#000" : "rgba(255,255,255,0.72)",
-        border: `1px solid ${active ? "#000" : "rgba(0,0,0,0.08)"}`,
-        color: active ? "#fff" : "var(--text-hi)",
+        borderRadius: 10,
+        background: active ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.72)",
+        border: `1px solid ${active ? "rgba(0,0,0,0.16)" : "rgba(0,0,0,0.08)"}`,
+        color: "var(--text-hi)",
         cursor: disabled ? "not-allowed" : onClick ? "pointer" : "default",
         transition: "transform 0.16s ease, border-color 0.16s ease, background 0.16s ease",
         opacity: disabled ? 0.72 : 1,
@@ -87,11 +216,11 @@ function OptionCard({ active = false, icon, title, description, badge, onClick, 
             width: 42,
             height: 42,
             borderRadius: 999,
-            background: active ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.05)",
+            background: active ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.05)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: active ? "#fff" : "var(--text-mid)",
+            color: active ? "var(--text-hi)" : "var(--text-mid)",
             flexShrink: 0,
           }}
         >
@@ -100,16 +229,16 @@ function OptionCard({ active = false, icon, title, description, badge, onClick, 
 
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: active ? "#fff" : "var(--text-hi)" }}>{title}</div>
-            {badge && <div className="label" style={{ color: active ? "rgba(255,255,255,0.6)" : "var(--text-low)" }}>{badge}</div>}
+            <div style={{ fontSize: 15, fontWeight: active ? 700 : 600, color: "var(--text-hi)" }}>{title}</div>
+            {badge && <div className="label" style={{ color: "var(--text-low)" }}>{badge}</div>}
           </div>
-          <div style={{ fontSize: 13, lineHeight: 1.65, color: active ? "rgba(255,255,255,0.8)" : "var(--text-mid)" }}>{description}</div>
+          <div style={{ fontSize: 13, lineHeight: 1.65, color: "var(--text-mid)" }}>{description}</div>
         </div>
       </div>
 
       {active && (
-        <div style={{ position: "absolute", top: 16, right: 16, color: "#fff" }}>
-          <Check size={18} strokeWidth={3} />
+        <div style={{ position: "absolute", top: 16, right: 16, color: "var(--text-hi)" }}>
+          <Check size={18} strokeWidth={2.6} />
         </div>
       )}
     </div>
@@ -270,13 +399,12 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const [cloudProfile, setCloudProfile] = useState<CloudProfile | null | undefined>(() => getCachedCloudProfile());
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [sttAccessMode, setSttAccessMode] = useState<"api" | "local">("api");
+  const [installStatus, setInstallStatus] = useState<"idle" | "installing" | "success" | "error">("idle");
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const [waitingForSubscriptionRefresh, setWaitingForSubscriptionRefresh] = useState(false);
-  const [sttDropdownOpen, setSttDropdownOpen] = useState(false);
-  const [llmDropdownOpen, setLlmDropdownOpen] = useState(false);
-  const sttDropdownRef = useRef<HTMLDivElement>(null);
-  const llmDropdownRef = useRef<HTMLDivElement>(null);
+  const [expandedApiAdapter, setExpandedApiAdapter] = useState<ApiAdapterId | null>(null);
+  const [apiAdapterTestStates, setApiAdapterTestStates] = useState<Partial<Record<ApiAdapterId, { status: AdapterTestStatus; message: string }>>>({});
   const authPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const exchangeCodeRef = useRef<string | null>(null);
 
@@ -301,36 +429,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     return profile;
   }, [loadCloudProfile, syncSettings]);
 
-  // Close model dropdowns on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (sttDropdownRef.current && !sttDropdownRef.current.contains(e.target as Node)) setSttDropdownOpen(false);
-      if (llmDropdownRef.current && !llmDropdownRef.current.contains(e.target as Node)) setLlmDropdownOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   useEffect(() => { void syncSettings(); }, [syncSettings]);
-
-  useEffect(() => {
-    if (!settings) {
-      return;
-    }
-
-    if (settings.provider !== "custom") {
-      setSttAccessMode("api");
-      return;
-    }
-
-    setSttAccessMode((current) => {
-      if (current === "local" && isLikelyLocalEndpoint(settings.whisperEndpoint || "")) {
-        return current;
-      }
-
-      return inferSttAccessMode(settings);
-    });
-  }, [settings]);
 
   // Cloud profile — always fetch (regardless of tab) so hooks are stable
   useEffect(() => {
@@ -503,9 +602,208 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const hasActiveSubscription = cloudProfile?.subscription.active === true;
     const isCloudMode = !settings.useOwnKey;
     const isCustom = settings.provider === "custom";
-    const isLocalSttMode = isCustom && sttAccessMode === "local";
+    const activeModelMode: "cloud" | "api" | "local" = isCloudMode ? "cloud" : isCustom ? "local" : "api";
+    const isApiMode = activeModelMode === "api";
+    const isLocalMode = activeModelMode === "local";
+    const localSttEndpoint = (settings.whisperEndpoint || "").trim();
+    const isInstallLocalModelDisabled = installStatus === "installing" || !localSttEndpoint;
     const localSttTargetModel = (settings.whisperModel || LOCAL_STT_PRESET_MODEL).trim() || LOCAL_STT_PRESET_MODEL;
-    const modeOptions = ["cloud", "openai", "custom"] as const;
+    const apiKeyValue = (settings.apiKey || "").trim();
+    const apiModelValue = (settings.whisperModel || "").trim();
+    const isApiTestDisabled = testStatus === "testing" || !apiKeyValue || !apiModelValue;
+    const modeOptions: Array<{
+      id: "cloud" | "api" | "local";
+      label: string;
+      Icon: LucideIcon;
+    }> = [
+      {
+        id: "cloud",
+        label: "Облако",
+        Icon: Cloud,
+      },
+      {
+        id: "api",
+        label: "API",
+        Icon: Code,
+      },
+      {
+        id: "local",
+        label: "Локально",
+        Icon: Server,
+      },
+    ];
+
+    const resetTestState = () => {
+      setTestStatus("idle");
+      setTestMessage(null);
+    };
+
+    const resetInstallState = () => {
+      setInstallStatus("idle");
+      setInstallMessage(null);
+    };
+
+    const getApiAdapterValues = (adapter: ApiAdapterOption) => {
+      if (adapter.id === "openai") {
+        return {
+          apiKey: settings.apiKey || "",
+          model: settings.whisperModel || "",
+        };
+      }
+
+      const savedAdapter = settings.apiAdapters?.[adapter.id];
+      return {
+        apiKey: savedAdapter?.apiKey || "",
+        model: savedAdapter?.model || adapter.recommendedModel,
+      };
+    };
+
+    const getPersistedAdapterStatus = (adapter: ApiAdapterOption, apiKey: string, model: string) => {
+      const savedAdapter = settings.apiAdapters?.[adapter.id];
+      const normalizedApiKey = apiKey.trim();
+      const normalizedModel = model.trim();
+
+      if (!savedAdapter?.connectionStatus || !normalizedApiKey || !normalizedModel) {
+        return null;
+      }
+
+      if (
+        savedAdapter.lastTestedApiKey !== normalizedApiKey ||
+        savedAdapter.lastTestedModel !== normalizedModel
+      ) {
+        return null;
+      }
+
+      return savedAdapter.connectionStatus;
+    };
+
+    const updateApiAdapterValues = (adapter: ApiAdapterOption, patch: Partial<{ apiKey: string; model: string }>) => {
+      if (adapter.id === "openai") {
+        update({
+          ...(patch.apiKey !== undefined ? { apiKey: patch.apiKey } : {}),
+          ...(patch.model !== undefined ? { whisperModel: patch.model } : {}),
+        });
+        resetTestState();
+        return;
+      }
+
+      const currentValues = getApiAdapterValues(adapter);
+      update({
+        apiAdapters: {
+          ...(settings.apiAdapters || {}),
+          [adapter.id]: {
+            ...currentValues,
+            ...patch,
+          },
+        },
+      });
+      setApiAdapterTestStates((prev) => ({
+        ...prev,
+        [adapter.id]: { status: "idle", message: "" },
+      }));
+    };
+
+    const getAdapterStatus = (adapter: ApiAdapterOption, apiKey: string, model: string) => {
+      const persistedStatus = getPersistedAdapterStatus(adapter, apiKey, model);
+
+      if (adapter.id === "openai") {
+        const hasCredentials = Boolean(apiKey.trim()) && Boolean(model.trim());
+        const effectiveStatus = testStatus === "idle" && persistedStatus === "verified"
+          ? "success"
+          : testStatus as AdapterTestStatus;
+        const label = !apiKey.trim()
+          ? "Нужен API-ключ"
+          : effectiveStatus === "success"
+            ? "Подключен"
+            : effectiveStatus === "error"
+              ? "Ошибка"
+              : effectiveStatus === "testing"
+                ? "Проверяем"
+                : "Готов к проверке";
+        const connectionLabel = !hasCredentials
+          ? "API-ключ не указан"
+          : effectiveStatus === "success"
+            ? "Соединение работает"
+            : effectiveStatus === "error"
+              ? "Ошибка соединения"
+              : effectiveStatus === "testing"
+                ? "Проверяем соединение..."
+                : "Соединение не проверено";
+        const color = effectiveStatus === "success"
+          ? "#16a34a"
+          : effectiveStatus === "error"
+            ? "#dc2626"
+            : "var(--text-low)";
+
+        return {
+          label,
+          message: testMessage || (persistedStatus === "verified" ? "Соединение проверено и сохранено." : null),
+          status: effectiveStatus,
+          color,
+          connectionLabel,
+        };
+      }
+
+      const adapterState = apiAdapterTestStates[adapter.id];
+      const hasCredentials = Boolean(apiKey.trim()) && Boolean(model.trim());
+      const effectiveStatus: AdapterTestStatus = adapterState?.status === "error"
+        ? "error"
+        : persistedStatus
+          ? "success"
+          : adapterState?.status || "idle";
+      const label = effectiveStatus === "success"
+        ? "Сохранен"
+        : !apiKey.trim()
+          ? "Нужен API-ключ"
+          : !model.trim()
+            ? "Нужна модель"
+            : "Готов к подключению";
+
+      return {
+        label,
+        message: adapterState?.message || (persistedStatus ? `${adapter.name}: ключ и модель сохранены.` : null),
+        status: effectiveStatus,
+        color: effectiveStatus === "success" ? "#16a34a" : effectiveStatus === "error" ? "#dc2626" : hasCredentials ? "var(--text-hi)" : "var(--text-low)",
+        connectionLabel: effectiveStatus === "success" ? "Ключ и модель сохранены" : hasCredentials ? "Готов к сохранению" : "Заполните ключ и модель",
+      };
+    };
+
+    const handleApiAdapterTest = async (adapter: ApiAdapterOption) => {
+      if (adapter.id === "openai") {
+        await handleTestConnection();
+        return;
+      }
+
+      const values = getApiAdapterValues(adapter);
+      if (!values.apiKey.trim() || !values.model.trim()) {
+        setApiAdapterTestStates((prev) => ({
+          ...prev,
+          [adapter.id]: { status: "error", message: "Укажите API-ключ и название модели перед проверкой." },
+        }));
+        return;
+      }
+
+      setApiAdapterTestStates((prev) => ({
+        ...prev,
+        [adapter.id]: {
+          status: "success",
+          message: `${adapter.name}: ключ и модель сохранены. Реальная проверка соединения будет доступна после подключения backend-адаптера.`,
+        },
+      }));
+      update({
+        apiAdapters: {
+          ...(settings.apiAdapters || {}),
+          [adapter.id]: {
+            apiKey: values.apiKey,
+            model: values.model,
+            connectionStatus: "saved",
+            lastConnectedAt: new Date().toISOString(),
+            lastTestedApiKey: values.apiKey.trim(),
+            lastTestedModel: values.model.trim(),
+          },
+        },
+      });
+    };
 
     const handleActivateSubscription = async () => {
       try {
@@ -533,23 +831,13 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       exchangeCodeRef.current = null;
     };
 
-    const getProviderPatch = (provider: ApiProvider): Partial<AppSettings> => {
-      if (provider === "openai") {
-        return {
-          provider: "openai",
-          whisperEndpoint: "",
-          llmEndpoint: "",
-          whisperModel: "whisper-1",
-          llmModel: "gpt-4o-mini",
-        };
+    const handleModeChange = (mode: typeof modeOptions[number]["id"]) => {
+      if (mode === activeModelMode) {
+        return;
       }
 
-      return { provider: "custom" };
-    };
-
-    const handleModeChange = (mode: typeof modeOptions[number]) => {
-      setTestStatus("idle");
-      setTestMessage(null);
+      resetTestState();
+      resetInstallState();
 
       if (mode === "cloud") {
         update({ useOwnKey: false });
@@ -558,7 +846,21 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
       update({
         useOwnKey: true,
-        ...getProviderPatch(mode),
+        ...(mode === "api"
+          ? {
+              provider: "openai" as const,
+              whisperEndpoint: "",
+              llmEndpoint: "",
+              whisperModel: "whisper-1",
+              llmModel: "gpt-4o-mini",
+            }
+          : {
+              provider: "custom" as const,
+              whisperApiKey: "",
+              whisperEndpoint: LOCAL_STT_PRESET_ENDPOINT,
+              whisperModel: LOCAL_STT_PRESET_MODEL,
+              llmModel: settings.llmModel || "gpt-4o-mini",
+            }),
       });
     };
 
@@ -583,51 +885,123 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             api_key: settings.apiKey || "",
             whisper_api_key: isCustom ? (settings.whisperApiKey || null) : null,
             whisper_endpoint: isCustom ? (settings.whisperEndpoint || null) : null,
-            whisper_model: isCustom ? (settings.whisperModel || null) : "whisper-1",
+            whisper_model: isCustom ? (settings.whisperModel || null) : (settings.whisperModel || "whisper-1"),
             llm_api_key: isCustom ? (settings.llmApiKey || null) : null,
             llm_endpoint: isCustom ? (settings.llmEndpoint || null) : null,
-            llm_model: isCustom ? (settings.llmModel || null) : "gpt-4o-mini",
+            llm_model: isCustom ? (settings.llmModel || null) : (settings.llmModel || "gpt-4o-mini"),
             test_stt: testStt,
             test_llm: testLlm,
           },
         });
         setTestStatus(result.success ? "success" : "error");
         setTestMessage(result.message);
+        if (result.success && !isCustom) {
+          const normalizedApiKey = (settings.apiKey || "").trim();
+          const normalizedModel = (settings.whisperModel || "whisper-1").trim();
+
+          update({
+            apiAdapters: {
+              ...(settings.apiAdapters || {}),
+              openai: {
+                apiKey: settings.apiKey || "",
+                model: settings.whisperModel || "whisper-1",
+                connectionStatus: "verified",
+                lastConnectedAt: new Date().toISOString(),
+                lastTestedApiKey: normalizedApiKey,
+                lastTestedModel: normalizedModel,
+              },
+            },
+          });
+        }
       } catch (err) {
         setTestStatus("error");
         setTestMessage(err instanceof Error ? err.message : String(err));
       }
     };
 
-    const handleSttAccessModeChange = (mode: "api" | "local") => {
-      setTestStatus("idle");
-      setTestMessage(null);
-      setSttAccessMode(mode);
-
-      if (mode === "local") {
-        update({
-          whisperApiKey: "",
-          whisperEndpoint: isLikelyLocalEndpoint(settings.whisperEndpoint || "")
-            ? settings.whisperEndpoint
-            : LOCAL_STT_PRESET_ENDPOINT,
-          whisperModel: settings.whisperModel || LOCAL_STT_PRESET_MODEL,
-        });
-        return;
-      }
-
-      update({
-        whisperEndpoint: isLikelyLocalEndpoint(settings.whisperEndpoint || "")
-          ? ""
-          : settings.whisperEndpoint,
-        whisperModel: settings.whisperModel || "whisper-1",
-      });
-    };
-
     const handleOpenLocalSttDocs = async () => {
       await openUrl(LOCAL_STT_HELP_URL);
     };
 
-    const keyPlaceholder = isCustom ? "API ключ или токен..." : "sk-...";
+    const handleInstallLocalSttModel = async () => {
+      setInstallStatus("installing");
+      setInstallMessage(null);
+
+      try {
+        const result = await invoke<{ success: boolean; message: string }>("install_stt_model", {
+          req: {
+            api_key: settings.apiKey || "",
+            whisper_api_key: settings.whisperApiKey || null,
+            whisper_endpoint: localSttEndpoint || LOCAL_STT_PRESET_ENDPOINT,
+            whisper_model: localSttTargetModel,
+          },
+        });
+
+        setInstallStatus(result.success ? "success" : "error");
+        setInstallMessage(result.message);
+      } catch (err) {
+        setInstallStatus("error");
+        setInstallMessage(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    const renderTestConnectionBlock = (description: string) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <button
+            onClick={handleTestConnection}
+            disabled={testStatus === "testing"}
+            style={{
+              padding: "10px 20px",
+              borderRadius: 10,
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: testStatus === "testing" ? "rgba(0,0,0,0.04)" : "rgba(0,0,0,0.02)",
+              color: "var(--text-hi)",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "var(--font-main)",
+              cursor: testStatus === "testing" ? "wait" : "pointer",
+              transition: "all 0.15s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            {testStatus === "testing" ? (
+              <>
+                <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "var(--text-hi)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                Проверяем...
+              </>
+            ) : (
+              <>
+                <Zap size={14} strokeWidth={2.2} />
+                Тестировать соединение
+              </>
+            )}
+          </button>
+          {testStatus === "success" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#16a34a", fontSize: 13, fontWeight: 600 }}>
+              <Check size={16} strokeWidth={2.5} />
+              Работает
+            </div>
+          )}
+        </div>
+        {testMessage && (
+          <div style={{
+            fontSize: 12,
+            lineHeight: 1.6,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: testStatus === "success" ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
+            color: testStatus === "success" ? "#16a34a" : "#dc2626",
+            border: `1px solid ${testStatus === "success" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"}`,
+          }}>
+            {testMessage}
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>{description}</div>
+      </div>
+    );
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -669,35 +1043,43 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           </div>
         )}
 
-        {/* ── Provider toggle ── */}
         <>
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>
               Режим распознавания
             </div>
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6, marginBottom: 14 }}>
-              Вы можете в любой момент переключаться между Talkis Cloud, OpenAI и своей конфигурацией.
+              Вы можете в любой момент переключаться между облаком, своим API-ключом и локальной моделью.
             </div>
 
-            {/* segmented control */}
             <div style={{ display: "flex", background: "rgba(0,0,0,0.05)", borderRadius: 10, padding: 3, gap: 2 }}>
-              {modeOptions.map((mode) => {
-                const active = mode === "cloud"
-                  ? isCloudMode
-                  : settings.useOwnKey && settings.provider === mode;
-                const label = mode === "cloud"
-                  ? "Talkis Cloud"
-                  : mode === "openai"
-                    ? "OpenAI ключ"
-                    : "Своя конфигурация";
+              {modeOptions.map(({ id, label, Icon }) => {
+                const active = activeModelMode === id;
 
                 return (
                   <button
-                    key={mode}
-                    onClick={() => handleModeChange(mode)}
-                    style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", fontSize: 13, fontWeight: active ? 700 : 500, fontFamily: "var(--font-main)", background: active ? "#000" : "transparent", color: active ? "#fff" : "var(--text-mid)", cursor: "pointer", transition: "all 0.18s ease" }}
+                    key={id}
+                    onClick={() => handleModeChange(id)}
+                    style={{
+                      flex: 1,
+                      padding: "10px 0",
+                      borderRadius: 8,
+                      border: "none",
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 500,
+                      fontFamily: "var(--font-main)",
+                      background: active ? "#000" : "transparent",
+                      color: active ? "#fff" : "var(--text-mid)",
+                      cursor: "pointer",
+                      transition: "all 0.18s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 7,
+                    }}
                   >
-                    {label}
+                    <Icon size={15} strokeWidth={active ? 2.2 : 1.7} />
+                    <span>{label}</span>
                   </button>
                 );
               })}
@@ -706,7 +1088,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
           {hasActiveSubscription && !settings.useOwnKey && (
             <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Talkis Cloud</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Облако</div>
               <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
                 Запросы на распознавание и обработку текста идут через облако Talkis. Все данные шифруются при передаче, а аудио и текст не сохраняются на сервере после обработки.
               </div>
@@ -715,283 +1097,303 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
           {isCloudMode && !hasActiveSubscription && (
             <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Talkis Cloud</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Облако</div>
               <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
                 Для облачного режима нужна авторизация и активная подписка. После входа плашка и статус подписки обновятся автоматически.
               </div>
             </div>
           )}
 
-            {/* ── API Key input (OpenAI mode only) ── */}
-          {settings.useOwnKey && !isCustom && (
-              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>OpenAI API ключ</div>
-                <input
-                  type="password"
-                  value={settings.apiKey}
-                  onChange={(e) => { update({ apiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
-                  className="input"
-                  placeholder={keyPlaceholder}
-                  style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
-                />
-                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Получить ключ на{" "}
-                  <span style={{ color: "var(--text-hi)", fontWeight: 600 }}>platform.openai.com</span>
+          {isApiMode && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>
+                  Доступные API-адаптеры
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
+                  Выберите адаптер, раскройте его и укажите ключ вместе с названием модели распознавания.
                 </div>
               </div>
-            )}
 
-            {/* ── OpenAI mode: model selectors ── */}
-          {settings.useOwnKey && !isCustom && (
-              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: (sttDropdownOpen || llmDropdownOpen) ? 20 : 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Модели</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  {/* STT model dropdown */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="label">Транскрипция</div>
-                    <div ref={sttDropdownRef} style={{ position: "relative" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {API_ADAPTERS.map((adapter) => {
+                  const isExpanded = expandedApiAdapter === adapter.id;
+                  const adapterValues = getApiAdapterValues(adapter);
+                  const adapterStatus = getAdapterStatus(adapter, adapterValues.apiKey, adapterValues.model);
+                  const isAdapterConnected = adapterStatus.status === "success";
+                  const isAdapterTestDisabled = adapter.id === "openai"
+                    ? isApiTestDisabled
+                    : !adapterValues.apiKey.trim() || !adapterValues.model.trim();
+
+                  return (
+                    <div key={adapter.id} className="card" style={{ padding: 0, overflow: "hidden", background: "rgba(255,255,255,0.72)" }}>
                       <button
-                        onClick={() => { setSttDropdownOpen(o => !o); setLlmDropdownOpen(false); }}
-                        className="btn"
-                        style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 40 }}
+                        type="button"
+                        onClick={() => setExpandedApiAdapter(isExpanded ? null : adapter.id)}
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          background: "transparent",
+                          padding: "12px 14px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontFamily: "var(--font-main)",
+                        }}
                       >
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                          {settings.whisperModel || "whisper-1"}
-                        </span>
-                        <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, transform: sttDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+                        <div style={{ width: 36, height: 36, borderRadius: 999, background: "rgba(0,0,0,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                          {adapter.avatar ? (
+                            <img
+                              src={adapter.avatar}
+                              alt=""
+                              aria-hidden="true"
+                              style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+                            />
+                          ) : (
+                            <span style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: adapter.accent, color: "#fff", fontSize: adapter.initials.length > 2 ? 10 : 12, fontWeight: 800 }}>
+                              {adapter.initials}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 3 }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>{adapter.name}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: adapterStatus.color, padding: "5px 9px", borderRadius: 999, background: "rgba(0,0,0,0.04)", whiteSpace: "nowrap" }}>
+                              {adapterStatus.label}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 12, lineHeight: 1.45, color: "var(--text-mid)" }}>
+                            {adapter.description} Рекомендуемая модель: {adapter.recommendedModel}.
+                          </div>
+                        </div>
                       </button>
-                      {sttDropdownOpen && (
-                        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 16, boxShadow: "var(--shadow-panel)", zIndex: 100, overflow: "hidden" }}>
-                          {[
-                            { value: "whisper-1", label: "whisper-1", desc: "Классическая" },
-                            { value: "gpt-4o-mini-transcribe", label: "gpt-4o-mini-transcribe", desc: "Быстрая, дешевле" },
-                            { value: "gpt-4o-transcribe", label: "gpt-4o-transcribe", desc: "Лучшее качество" },
-                          ].map(opt => (
-                            <button
-                              key={opt.value}
-                              onClick={() => {
-                                const patch: Partial<AppSettings> = { whisperModel: opt.value };
-                                // Auto-set LLM to the same transcribe model for style processing
-                                if (opt.value.includes("transcribe")) {
-                                  patch.llmModel = opt.value;
-                                }
-                                update(patch);
-                                setSttDropdownOpen(false);
-                              }}
-                              style={{
-                                width: "100%", textAlign: "left", border: "none", cursor: "pointer",
-                                padding: "10px 14px", display: "flex", alignItems: "center", gap: 8,
-                                background: (settings.whisperModel || "whisper-1") === opt.value ? "rgba(0,0,0,0.04)" : "transparent",
-                                color: (settings.whisperModel || "whisper-1") === opt.value ? "var(--text-hi)" : "var(--text-mid)",
-                                fontSize: 12, transition: "background 0.1s",
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
-                              onMouseLeave={e => e.currentTarget.style.background = (settings.whisperModel || "whisper-1") === opt.value ? "rgba(0,0,0,0.04)" : "transparent"}
-                            >
-                              <span style={{ flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{opt.label}</span>
-                              <span style={{ fontSize: 10, color: "var(--text-low)" }}>{opt.desc}</span>
-                              {(settings.whisperModel || "whisper-1") === opt.value && <Check size={12} strokeWidth={2.5} style={{ color: "var(--text-hi)", flexShrink: 0 }} />}
-                            </button>
-                          ))}
+
+                      {isExpanded && (
+                        <div style={{ borderTop: "1px solid rgba(0,0,0,0.07)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div className="label" style={{ width: 76, flexShrink: 0 }}>API-ключ</div>
+                            <input
+                              type="password"
+                              value={adapterValues.apiKey}
+                              onChange={(e) => updateApiAdapterValues(adapter, { apiKey: e.target.value })}
+                              className="input"
+                              placeholder="API key"
+                              style={{ flex: 1, minWidth: 0, height: 36, padding: "8px 10px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                            />
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div className="label" style={{ width: 76, flexShrink: 0 }}>Модель</div>
+                            <input
+                              type="text"
+                              value={adapterValues.model}
+                              onChange={(e) => updateApiAdapterValues(adapter, { model: e.target.value })}
+                              className="input"
+                              placeholder={adapter.recommendedModel}
+                              style={{ flex: 1, minWidth: 0, height: 36, padding: "8px 10px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                            />
+                            <div style={{ fontSize: 11, color: "var(--text-low)", whiteSpace: "nowrap", flexShrink: 0 }}>Рекомендуем: {adapter.recommendedModel}</div>
+                          </div>
+
+                          {adapterStatus.message && (
+                            <div style={{
+                              fontSize: 12,
+                              lineHeight: 1.6,
+                              padding: "8px 10px",
+                              borderRadius: 8,
+                              background: adapterStatus.status === "success" ? "rgba(22,163,74,0.06)" : adapterStatus.status === "error" ? "rgba(220,38,38,0.06)" : "rgba(0,0,0,0.04)",
+                              color: adapterStatus.status === "success" ? "#16a34a" : adapterStatus.status === "error" ? "#dc2626" : "var(--text-mid)",
+                              border: `1px solid ${adapterStatus.status === "success" ? "rgba(22,163,74,0.15)" : adapterStatus.status === "error" ? "rgba(220,38,38,0.15)" : "rgba(0,0,0,0.07)"}`,
+                            }}>
+                              {adapterStatus.message}
+                            </div>
+                          )}
+
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, color: adapterStatus.color, fontSize: 12, fontWeight: 600 }}>
+                              {adapterStatus.status === "success" && <Check size={15} strokeWidth={2.5} />}
+                              {adapterStatus.connectionLabel}
+                            </div>
+                            {isAdapterConnected ? (
+                              <div style={{
+                                padding: "9px 12px",
+                                borderRadius: 10,
+                                border: "1px solid rgba(22,163,74,0.16)",
+                                background: "rgba(22,163,74,0.06)",
+                                color: "#16a34a",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}>
+                                <Check size={14} strokeWidth={2.5} />
+                                Подключено
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => void handleApiAdapterTest(adapter)}
+                                disabled={isAdapterTestDisabled}
+                                style={{
+                                  padding: "9px 12px",
+                                  borderRadius: 10,
+                                  border: "1px solid rgba(0,0,0,0.12)",
+                                  background: isAdapterTestDisabled ? "rgba(0,0,0,0.04)" : "#000",
+                                  color: isAdapterTestDisabled ? "var(--text-mid)" : "#fff",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  fontFamily: "var(--font-main)",
+                                  cursor: adapterStatus.status === "testing" ? "wait" : isAdapterTestDisabled ? "not-allowed" : "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                }}
+                              >
+                                {adapterStatus.status === "testing" ? (
+                                  <>
+                                    <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                                    Проверяем...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap size={14} strokeWidth={2.2} />
+                                    {adapter.testable ? "Тестировать и сохранить" : "Сохранить"}
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
-                  </div>
-                  {/* LLM model dropdown */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div className="label">Обработка текста</div>
-                    <div ref={llmDropdownRef} style={{ position: "relative" }}>
-                      <button
-                        onClick={() => { setLlmDropdownOpen(o => !o); setSttDropdownOpen(false); }}
-                        className="btn"
-                        style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 40 }}
-                      >
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                          {(settings.llmModel || "gpt-4o-mini") === "none" ? "Без обработки" : (settings.llmModel || "gpt-4o-mini")}
-                        </span>
-                        <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, transform: llmDropdownOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
-                      </button>
-                      {llmDropdownOpen && (
-                        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 16, boxShadow: "var(--shadow-panel)", zIndex: 100, overflow: "hidden" }}>
-                          {[
-                            ...((settings.whisperModel || "").includes("transcribe") ? [
-                              { value: settings.whisperModel!, label: settings.whisperModel!, desc: "Та же модель" },
-                            ] : []),
-                            { value: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Баланс цена/качество" },
-                            { value: "gpt-4o", label: "gpt-4o", desc: "Лучшее качество" },
-                            { value: "gpt-4.1-mini", label: "gpt-4.1-mini", desc: "Новая, быстрая" },
-                            { value: "gpt-4.1-nano", label: "gpt-4.1-nano", desc: "Самая дешёвая" },
-                            { value: "none", label: "Без обработки", desc: "Сырой текст" },
-                          ].map(opt => (
-                            <button
-                              key={opt.value}
-                              onClick={() => { update({ llmModel: opt.value }); setLlmDropdownOpen(false); }}
-                              style={{
-                                width: "100%", textAlign: "left", border: "none", cursor: "pointer",
-                                padding: "10px 14px", display: "flex", alignItems: "center", gap: 8,
-                                background: (settings.llmModel || "gpt-4o-mini") === opt.value ? "rgba(0,0,0,0.04)" : "transparent",
-                                color: (settings.llmModel || "gpt-4o-mini") === opt.value ? "var(--text-hi)" : "var(--text-mid)",
-                                fontSize: 12, transition: "background 0.1s",
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
-                              onMouseLeave={e => e.currentTarget.style.background = (settings.llmModel || "gpt-4o-mini") === opt.value ? "rgba(0,0,0,0.04)" : "transparent"}
-                            >
-                              <span style={{ flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{opt.label}</span>
-                              <span style={{ fontSize: 10, color: "var(--text-low)" }}>{opt.desc}</span>
-                              {(settings.llmModel || "gpt-4o-mini") === opt.value && <Check size={12} strokeWidth={2.5} style={{ color: "var(--text-hi)", flexShrink: 0 }} />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  Транскрипция — преобразование голоса в текст. Обработка — очистка и форматирование по стилю.
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {isLocalMode && (
+            <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>Локально</div>
+                <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
+                  Режим для локального OpenAI-compatible STT сервера. По умолчанию используется Speaches на localhost.
                 </div>
               </div>
-            )}
 
-            {/* ── Custom provider: STT + LLM configuration ── */}
-          {settings.useOwnKey && isCustom && (
-              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Настройка провайдера</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <div className="label">Endpoint локального сервера</div>
+                  <input
+                    type="text"
+                    value={settings.whisperEndpoint}
+                    onChange={(e) => { update({ whisperEndpoint: e.target.value }); resetTestState(); resetInstallState(); }}
+                    className="input"
+                    placeholder={LOCAL_STT_PRESET_ENDPOINT}
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <div className="label">Локальная модель</div>
+                  <input
+                    type="text"
+                    value={settings.whisperModel}
+                    onChange={(e) => { update({ whisperModel: e.target.value }); resetTestState(); resetInstallState(); }}
+                    className="input"
+                    placeholder={LOCAL_STT_PRESET_MODEL}
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                  />
+                </div>
+              </div>
 
-                {/* ── STT section ── */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Транскрипция (STT)</div>
-                  <div style={{ display: "flex", background: "rgba(0,0,0,0.05)", borderRadius: 10, padding: 3, gap: 2 }}>
-                    {([
-                      { id: "api", label: "Через API-ключ" },
-                       { id: "local", label: "Через локальную модель" },
-                    ] as const).map((option) => {
-                      const active = sttAccessMode === option.id;
-                      return (
-                        <button
-                          key={option.id}
-                          onClick={() => handleSttAccessModeChange(option.id)}
-                          style={{
-                            flex: 1,
-                            padding: "10px 0",
-                            borderRadius: 8,
-                            border: "none",
-                            fontSize: 12,
-                            fontWeight: active ? 700 : 500,
-                            fontFamily: "var(--font-main)",
-                            background: active ? "#000" : "transparent",
-                            color: active ? "#fff" : "var(--text-mid)",
-                            cursor: "pointer",
-                            transition: "all 0.18s ease",
-                          }}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+                <div style={{ borderRadius: 10, background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.06)", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-hi)" }}>Подготовка</div>
+                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>1. Установите Docker Desktop и запустите Speaches.</div>
+                  <div style={{ fontSize: 11, color: "var(--text-hi)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", lineHeight: 1.7, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.72)", border: "1px solid rgba(0,0,0,0.06)", overflowX: "auto" }}>
+                    docker compose -f compose.cpu.yaml up -d
                   </div>
-
-                  {sttAccessMode === "api" ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div className="label">API ключ</div>
-                        <input
-                          type="password"
-                          value={settings.whisperApiKey}
-                          onChange={(e) => { update({ whisperApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
-                          className="input"
-                          placeholder="sk-..."
-                          style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
-                      />
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                      Для локального сервера API-ключ не нужен. Укажите endpoint и модель ниже, затем запустите распознавание через ваш `localhost`.
+                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>
+                    2. Установите модель через Talkis или вручную:{" "}
+                    <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", color: "var(--text-hi)" }}>
+                      curl {(localSttEndpoint || LOCAL_STT_PRESET_ENDPOINT).replace(/\/$/, "")}/v1/models/{localSttTargetModel} -X POST
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => { void handleInstallLocalSttModel(); }}
+                      disabled={isInstallLocalModelDisabled}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(0,0,0,0.12)",
+                        background: isInstallLocalModelDisabled ? "rgba(0,0,0,0.04)" : "#000",
+                        color: isInstallLocalModelDisabled ? "var(--text-mid)" : "#fff",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        fontFamily: "var(--font-main)",
+                        cursor: installStatus === "installing" ? "wait" : isInstallLocalModelDisabled ? "not-allowed" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      {installStatus === "installing" ? (
+                        <>
+                          <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "var(--text-hi)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                          Устанавливаем...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={14} strokeWidth={2.2} />
+                          Установить модель
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => { void handleOpenLocalSttDocs(); }}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text-hi)",
+                        padding: 0,
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textDecoration: "underline",
+                        textUnderlineOffset: 3,
+                      }}
+                    >
+                      Документация Speaches
+                    </button>
+                  </div>
+                  {installMessage && (
+                    <div style={{
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      padding: "10px 12px",
+                      borderRadius: 8,
+                      background: installStatus === "success" ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
+                      color: installStatus === "success" ? "#16a34a" : "#dc2626",
+                      border: `1px solid ${installStatus === "success" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"}`,
+                    }}>
+                      {installMessage}
                     </div>
                   )}
-
-                  {sttAccessMode === "local" && (
-                    <details style={{ borderRadius: 12, background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.06)", overflow: "hidden" }}>
-                      <summary style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "12px 14px", cursor: "pointer", listStyle: "none",
-                        fontSize: 13, fontWeight: 700, color: "var(--text-hi)",
-                        userSelect: "none",
-                      }}>
-                        <span>Как запустить локальную модель</span>
-                        <ChevronDown size={14} strokeWidth={2.2} style={{ flexShrink: 0, transition: "transform 0.2s" }} />
-                      </summary>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "0 14px 14px" }}>
-                        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>1. Установите Docker Desktop.</div>
-                        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>2. Скачайте конфигурацию Speaches:</div>
-                        <div style={{ fontSize: 11, color: "var(--text-hi)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", lineHeight: 1.7, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.72)", border: "1px solid rgba(0,0,0,0.06)" }}>
-                          curl -O https://raw.githubusercontent.com/speaches-ai/speaches/master/compose.yaml<br />
-                          curl -O https://raw.githubusercontent.com/speaches-ai/speaches/master/compose.cpu.yaml
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>3. Запустите локальный сервер:</div>
-                        <div style={{ fontSize: 11, color: "var(--text-hi)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", lineHeight: 1.7, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.72)", border: "1px solid rgba(0,0,0,0.06)" }}>
-                          docker compose -f compose.cpu.yaml up -d
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>4. Установите модель:</div>
-                        <div style={{ fontSize: 11, color: "var(--text-hi)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", lineHeight: 1.7, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.72)", border: "1px solid rgba(0,0,0,0.06)" }}>
-                          curl {LOCAL_STT_PRESET_ENDPOINT}/v1/models/{localSttTargetModel} -X POST
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>5. Вернитесь сюда и нажмите «Тестировать соединение».</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
-                          <button
-                            onClick={() => { void handleOpenLocalSttDocs(); }}
-                            style={{
-                              border: "none", background: "transparent",
-                              color: "var(--text-hi)", padding: 0, cursor: "pointer",
-                              fontSize: 12, fontWeight: 600,
-                              textDecoration: "underline", textUnderlineOffset: 3,
-                            }}
-                          >
-                            Документация Speaches
-                          </button>
-                          <span style={{ color: "var(--text-low)", fontSize: 11 }}>·</span>
-                          <button
-                            onClick={() => { void openUrl("https://github.com/SerTimBerrners-Lee/talkis"); }}
-                            style={{
-                              border: "none", background: "transparent",
-                              color: "var(--text-hi)", padding: 0, cursor: "pointer",
-                              fontSize: 12, fontWeight: 600,
-                              textDecoration: "underline", textUnderlineOffset: 3,
-                            }}
-                          >
-                            README на GitHub
-                          </button>
-                        </div>
-                      </div>
-                    </details>
-                  )}
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div className="label">Endpoint</div>
-                      <input type="text" value={settings.whisperEndpoint} onChange={(e) => { update({ whisperEndpoint: e.target.value }); setTestStatus("idle"); setTestMessage(null); }} className="input" placeholder={sttAccessMode === "local" ? LOCAL_STT_PRESET_ENDPOINT : "https://api.openai.com"} style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div className="label">Модель</div>
-                      <input type="text" value={settings.whisperModel} onChange={(e) => { update({ whisperModel: e.target.value }); setTestStatus("idle"); setTestMessage(null); }} className="input" placeholder={sttAccessMode === "local" ? LOCAL_STT_PRESET_MODEL : "whisper-1"} style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                    {sttAccessMode === "local"
-                      ? "Используйте этот режим, если вы подняли локальный сервер распознавания речи и хотите работать через него без облака и без внешнего API-ключа."
-                      : "Используйте этот режим, если ваш сервер транскрибации требует авторизацию через API-ключ или токен."}
-                  </div>
                 </div>
 
                 <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
-                {/* ── LLM section ── */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Обработка текста (LLM)</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <div className="label">API ключ</div>
+                    <div className="label">API-ключ LLM</div>
                     <input
                       type="password"
                       value={settings.llmApiKey || ""}
-                      onChange={(e) => { update({ llmApiKey: e.target.value }); setTestStatus("idle"); setTestMessage(null); }}
+                      onChange={(e) => { update({ llmApiKey: e.target.value }); resetTestState(); }}
                       className="input"
                       placeholder="Оставьте пустым, чтобы отключить обработку"
                       style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
@@ -1001,14 +1403,14 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     Обработку текста вы подключаете сами: например, Ollama, LM Studio или любой OpenAI-совместимый сервер на `localhost`.
                   </div>
                   {(settings.llmApiKey || "").trim() && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        <div className="label">Endpoint</div>
-                        <input type="text" value={settings.llmEndpoint} onChange={(e) => { update({ llmEndpoint: e.target.value }); setTestStatus("idle"); setTestMessage(null); }} className="input" placeholder="https://api.openai.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                        <div className="label">Endpoint LLM</div>
+                        <input type="text" value={settings.llmEndpoint} onChange={(e) => { update({ llmEndpoint: e.target.value }); resetTestState(); }} className="input" placeholder="https://api.openai.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        <div className="label">Модель</div>
-                        <input type="text" value={settings.llmModel} onChange={(e) => { update({ llmModel: e.target.value }); setTestStatus("idle"); setTestMessage(null); }} className="input" placeholder="gpt-4o-mini" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
+                        <div className="label">LLM модель</div>
+                        <input type="text" value={settings.llmModel} onChange={(e) => { update({ llmModel: e.target.value }); resetTestState(); }} className="input" placeholder="gpt-4o-mini" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
                       </div>
                     </div>
                   )}
@@ -1020,54 +1422,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     : "Обработка текста отключена. Текст вставляется сразу после транскрипции."
                   }
                 </div>
-              </div>
-            )}
-
-            {/* ── Test connection ── */}
-          {settings.useOwnKey && (
-              <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <button
-                    onClick={handleTestConnection}
-                    disabled={testStatus === "testing"}
-                    style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(0,0,0,0.12)", background: testStatus === "testing" ? "rgba(0,0,0,0.04)" : "rgba(0,0,0,0.02)", color: "var(--text-hi)", fontSize: 13, fontWeight: 600, fontFamily: "var(--font-main)", cursor: testStatus === "testing" ? "wait" : "pointer", transition: "all 0.15s ease", display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    {testStatus === "testing" ? (
-                      <>
-                        <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "var(--text-hi)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
-                        Проверяем...
-                      </>
-                    ) : (
-                      <>
-                        <Zap size={14} strokeWidth={2.2} />
-                        Тестировать соединение
-                      </>
-                    )}
-                  </button>
-                  {testStatus === "success" && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#16a34a", fontSize: 13, fontWeight: 600 }}>
-                      <Check size={16} strokeWidth={2.5} />
-                      Работает
-                    </div>
-                  )}
-                </div>
-                {testMessage && (
-                  <div style={{
-                    fontSize: 12, lineHeight: 1.6, padding: "10px 14px", borderRadius: 8,
-                    background: testStatus === "success" ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
-                    color: testStatus === "success" ? "#16a34a" : "#dc2626",
-                    border: `1px solid ${testStatus === "success" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"}`,
-                  }}>
-                    {testMessage}
-                  </div>
-                )}
-                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {isLocalSttMode
-                    ? "Проверяем локальный STT endpoint и, если включена обработка текста, отдельно LLM endpoint."
-                    : isCustom
-                      ? "Проверяем текущую кастомную конфигурацию STT и LLM по указанным endpoint'ам."
-                      : "Проверяем доступ к OpenAI по вашему API-ключу."}
-                </div>
+                <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
+                {renderTestConnectionBlock("Проверяем локальный STT endpoint и, если включена обработка текста, отдельно LLM endpoint.")}
               </div>
             )}
         </>

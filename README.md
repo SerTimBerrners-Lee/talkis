@@ -12,7 +12,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - A second press during recording locks the recording mode
 - The floating widget can start/stop recording with a mouse click, copy the latest result, and show a low microphone signal notice
 - Autostart can be enabled from settings
-- The settings window lets you choose language, microphone, API key, text cleanup style, and transcribe audio/video files
+- The settings window lets you choose language, microphone, model source, API adapter, text cleanup style, and transcribe audio/video files
 - Recent voice recordings and file transcriptions are saved in local history with processing time
 - The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
 
@@ -20,19 +20,23 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 
 Talkis supports three modes of operation:
 
-### Subscription (Talkis Cloud)
+### Cloud subscription (Talkis Cloud)
 
 Sign in to [Talkis Cloud](https://talkis.ru) and use the service without managing your own API keys. All requests go through `proxy.talkis.ru`.
 
-### Custom provider — own API key
+### API adapters — own API key
 
-Bring your own OpenAI-compatible API key. Configure separate keys and endpoints for STT (transcription) and LLM (text cleanup) independently.
+Bring your own API key. In the `Модели` tab, choose API mode and expand an adapter card to enter the API key and model name. Talkis currently shows adapter entries for OpenAI, Deepgram, Cartesia, Mistral AI, ElevenLabs, Fireworks AI, Groq, AssemblyAI, Volcengine, and xAI.
+
+OpenAI can be tested from the app. Other adapters save the key and model now, and their saved connection state is remembered across app restarts while backend integrations are added.
+
+You can still configure separate custom endpoints and keys for STT (transcription) and LLM (text cleanup) independently in local/custom mode.
 
 Supported STT models:
 - `whisper-1` — classic OpenAI Whisper
 - `gpt-4o-transcribe` / `gpt-4o-mini-transcribe` — newer transcribe models
 
-### Custom provider — local model
+### Local model
 
 Run a local [Speaches](https://speaches.ai) (faster-whisper) server via Docker. No API key needed.
 
@@ -47,7 +51,7 @@ docker compose -f compose.cpu.yaml up -d
 # 3. Install a model
 curl http://127.0.0.1:8000/v1/models/Systran%2Ffaster-whisper-large-v3 -X POST
 
-# 4. In Talkis settings, set STT endpoint to http://127.0.0.1:8000
+# 4. In Talkis settings, open Модели → Локально and set STT endpoint to http://127.0.0.1:8000
 ```
 
 LLM cleanup can be skipped entirely ("Без обработки") or pointed at a local LLM.
@@ -88,10 +92,11 @@ Without accessibility permission, speech can still be processed, but automatic p
 
 ### 3. Configure your access mode
 
-Open the `Subscription` tab and choose between:
+Open the `Модели` tab and choose between:
 
-- **Подписка** — sign in to Talkis Cloud
-- **Своя конфигурация** — enter your own API key or set up a local model
+- **Облако** — sign in to Talkis Cloud
+- **API** — expand an adapter, enter your API key and model name, then test/save the connection
+- **Локально** — connect a local Speaches server and install or select a local model
 
 ## How to use
 
@@ -128,7 +133,8 @@ The copy shortcut is cleared when history is cleared, and it refreshes after ent
 - Recognition language (`ru`, `en`, or auto)
 - Input microphone
 - Text cleanup style
-- STT / LLM endpoints and API keys (custom mode)
+- API adapters and saved API keys/model names
+- STT / LLM endpoints and API keys (custom/local mode)
 - STT / LLM model names
 - Global hotkey
 - Autostart at system login
@@ -253,7 +259,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.13` to build and publish a GitHub Release
+- Push a tag like `v0.1.14` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS release artifacts and updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -280,4 +286,4 @@ Without these secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.11**.
+Talkis is an active work in progress. Current version: **0.1.14**.
