@@ -35,6 +35,8 @@
   - Moved embedded Python engine scripts to `src-tauri/src/runtime_engines` and updated `include_str!` paths.
   - Re-ran `bun run check:release` after the packaging fix: passed.
   - Re-ran `TAURI_SIGNING_PRIVATE_KEY_PATH=~/.tauri/talkis-updater.key bun run build:release:macos` after the packaging fix: reached updater signing, then failed only on the missing local key password.
+  - First GitHub Actions run for tag `v0.1.15` failed in `Build macOS bundles` while compiling `whisper-rs` because `std::filesystem` requires a macOS deployment target of at least 10.15.
+  - Set the release/app deployment target to macOS 11.0 in the workflow, local release script, and Tauri bundle config.
   - `git diff --check`: passed.
 
 ## Manual review
@@ -52,6 +54,7 @@
 - Non-blocking issues:
   - Local updater signing still requires `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` when using the password-protected local key.
   - The GitHub repository currently lists `TAURI_SIGNING_PRIVATE_KEY`; `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is not listed.
+  - Release artifact support remains macOS-only.
 - Follow-ups after release:
   - Add/verify the GitHub updater signing password secret if the release workflow fails at `.sig` generation.
   - Validate Qwen and NVIDIA runtime dependency downloads on a clean machine.
