@@ -14,11 +14,30 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release-macos:
-    runs-on: macos-latest
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-latest
+            release_script: build:release:macos
+            updater_platform: darwin-aarch64
+          - platform: windows
+            runner: windows-latest
+            release_script: build:release:windows
+            updater_platform: windows-x86_64
+          - platform: linux
+            runner: ubuntu-22.04
+            release_script: build:release:linux
+            updater_platform: linux-x86_64
+
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
       MACOSX_DEPLOYMENT_TARGET: "11.0"
+      TALKIS_STT_RELEASE: "1"
+      TALKIS_UPDATER_PLATFORM: ${{ matrix.updater_platform }}
 
     steps:
       - name: Checkout repository
@@ -31,6 +50,16 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Tauri dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
       - name: Cache Bun dependencies
         uses: actions/cache@v4
@@ -61,29 +90,46 @@ jobs:
           cargo check --manifest-path src-tauri/Cargo.toml
           bun run smoke:hotkey
 
-      - name: Build macOS bundles
-        run: |
-          bun run prepare:sidecars
-          bun run build
-          bun run tauri build
+      - name: Build bundles
+        run: bun run ${{ matrix.release_script }}
         env:
-          TALKIS_STT_RELEASE: "1"
-          TALKIS_SKIP_BEFORE_BUILD: "1"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Archive macOS app bundle
+        if: matrix.platform == 'macos'
+        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Talkis.app" "Talkis-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}-macos.zip"
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: talkis-${{ matrix.platform }}-release
+          path: |
+            src-tauri/target/release/bundle/**/*
+            Talkis-*-macos.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download release bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
 
       - name: Create updater metadata
         run: bash scripts/create-updater-latest-json.sh "${RELEASE_TAG#v}" "${RELEASE_TAG}"
         env:
-          BUILD_ROOT: src-tauri/target/release/bundle
-
-      - name: Post-process macOS release artifacts
-        run: bash scripts/postprocess-macos-release.sh "${RELEASE_TAG#v}"
-        env:
-          BUILD_ROOT: src-tauri/target/release/bundle
-
-      - name: Archive macOS app bundle
-        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Talkis.app" "Talkis-${{ env.RELEASE_TAG }}-macos.zip"
+          BUILD_ROOT: release-artifacts
+          TALKIS_REQUIRED_UPDATER_PLATFORMS: darwin-aarch64,windows-x86_64,linux-x86_64
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
@@ -93,31 +139,20 @@ jobs:
           body: |
             Automated release for ${{ env.RELEASE_TAG }}.
 
-            Current workflow publishes all currently supported release artifacts and updater metadata, which is macOS only right now.
-            Windows and Linux are intentionally disabled until platform-specific support is implemented.
+            This release publishes native Tauri bundles built on macOS, Windows, and Linux runners.
+            Windows/Linux builds are unsigned in this workflow.
           draft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            src-tauri/target/release/bundle/latest.json
-            Talkis-${{ env.RELEASE_TAG }}-macos.zip
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.app.tar.gz
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.rpm
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.sig
+            release-artifacts/**/latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  disabled-platform-placeholders:
-    if: ${{ false }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            target: windows
-          - runner: ubuntu-22.04
-            target: linux
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Placeholder
-        run: |
-          echo "${{ matrix.target }} releases are intentionally disabled until platform support is implemented."

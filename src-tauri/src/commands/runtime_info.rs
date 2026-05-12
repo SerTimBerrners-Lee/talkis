@@ -3,11 +3,24 @@ use serde::Serialize;
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppRuntimeInfo {
+    platform: String,
     executable_path: String,
     bundle_path: String,
     launched_via_translocation: bool,
     launched_from_mounted_volume: bool,
     should_move_to_applications: bool,
+}
+
+fn platform_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "unknown"
+    }
 }
 
 fn build_runtime_info() -> Result<AppRuntimeInfo, String> {
@@ -24,13 +37,14 @@ fn build_runtime_info() -> Result<AppRuntimeInfo, String> {
 
     // In dev builds, never warn about Applications — the binary is
     // expected to live wherever target-dir points.
-    let should_move = if cfg!(dev) {
+    let should_move = if cfg!(dev) || !cfg!(target_os = "macos") {
         false
     } else {
         launched_via_translocation || launched_from_mounted_volume
     };
 
     Ok(AppRuntimeInfo {
+        platform: platform_name().to_string(),
         executable_path: executable_path_str,
         bundle_path: bundle_path_str,
         launched_via_translocation,

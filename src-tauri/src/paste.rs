@@ -109,6 +109,21 @@ fn simulate_cmd_v() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn paste_shortcut_label() -> &'static str {
+    "Cmd+V via CGEvent"
+}
+
+#[cfg(target_os = "windows")]
+fn paste_shortcut_label() -> &'static str {
+    "Ctrl+V via input simulation"
+}
+
+#[cfg(target_os = "linux")]
+fn paste_shortcut_label() -> &'static str {
+    "Ctrl+V via best-effort input simulation"
+}
+
 /// Paste text by writing to clipboard and simulating Cmd+V
 #[tauri::command]
 pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
@@ -140,7 +155,7 @@ pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), Strin
 
             std::thread::sleep(Duration::from_millis(100));
 
-            logger::log_info("PASTE", "Simulating Cmd+V via CGEvent");
+            logger::log_info("PASTE", &format!("Simulating {}", paste_shortcut_label()));
             simulate_cmd_v()?;
 
             std::thread::sleep(Duration::from_millis(350));

@@ -20,6 +20,8 @@ Copy this file to `docs/release/review-vX.Y.Z.md` for each release.
 
 - `bun run check:release`
 - `bun run build:release:macos`
+- Native/GitHub Windows build:
+- Native/GitHub Linux build:
 - Additional manual checks:
 
 ## Manual review

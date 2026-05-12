@@ -1,7 +1,7 @@
 {
   "name": "talkis",
   "private": true,
-  "version": "0.1.15",
+  "version": "0.1.16",
   "type": "module",
   "packageManager": "bun@1.2.13",
   "scripts": {
@@ -16,7 +16,10 @@
     "check:versions": "bash scripts/check-version-sync.sh",
     "check:release": "bun run check:versions && bun run check && bun run smoke:hotkey && bun run build",
     "postprocess:macos-release": "VERSION=$(python3 -c \"import json; print(json.load(open('package.json'))['version'])\") && BUILD_ROOT=src-tauri/target/release/bundle bash scripts/postprocess-macos-release.sh \"$VERSION\"",
-    "build:release:macos": "bash scripts/build-release-macos.sh",
+    "build:release": "bun scripts/build-release.mjs",
+    "build:release:macos": "bun scripts/build-release.mjs macos",
+    "build:release:windows": "bun scripts/build-release.mjs windows",
+    "build:release:linux": "bun scripts/build-release.mjs linux",
     "preview": "vite preview",
     "tauri": "tauri",
     "logs": "tail -f ~/.talkis/talkis.log",

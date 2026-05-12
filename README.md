@@ -1,6 +1,6 @@
 # Talkis
 
-Talkis is a lightweight macOS voice-to-text app built with Tauri.
+Talkis is a lightweight desktop voice-to-text app built with Tauri.
 
 It sits in a small floating widget, listens while you hold a hotkey, sends audio for transcription, cleans up the text with an LLM, and pastes the result into the active app.
 
@@ -59,24 +59,29 @@ Supported managed local models include:
 
 Local STT is transcription-only. Talkis does not run LLM/style cleanup for local STT mode unless a separate LLM endpoint is configured in custom mode.
 
-## macOS only
+## Supported platforms
 
-Talkis is currently designed for macOS.
+Talkis release automation builds native bundles for:
+
+- macOS
+- Windows
+- Linux
 
 The app relies on:
 
 - microphone access
-- accessibility permission for automatic text pasting (via CGEvent)
+- accessibility permission on macOS for automatic text pasting (via CGEvent)
+- best-effort paste simulation on Windows/Linux
 - a global hotkey
 
 ## Setup
 
 Before first use, make sure you have:
 
-1. macOS
+1. macOS, Windows, or Linux
 2. One of the access modes configured (subscription, own key, or local model)
 3. Microphone access enabled
-4. Accessibility access enabled for Talkis
+4. Accessibility access enabled for Talkis on macOS
 
 ### 1. Open the settings window
 
@@ -259,7 +264,10 @@ bunx tsc --noEmit
 cargo check --manifest-path src-tauri/Cargo.toml
 bun run check:release
 bun run tauri build
+bun run build:release
 bun run build:release:macos
+bun run build:release:windows
+bun run build:release:linux
 bun run logs
 bun run logs:clear
 ```
@@ -270,9 +278,9 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.15` to build and publish a GitHub Release
+- Push a tag like `v0.1.16` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
-- The current workflow publishes macOS release artifacts and updater metadata
+- The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
 
 Optional macOS signing/notarization secrets:
@@ -284,7 +292,7 @@ Optional macOS signing/notarization secrets:
 - `APPLE_PASSWORD`
 - `APPLE_TEAM_ID`
 
-Without these secrets, the workflow can still produce unsigned macOS release artifacts.
+Without Apple secrets, the workflow can still produce unsigned macOS release artifacts. Windows and Linux builds are currently unsigned.
 
 ## Tech stack
 
@@ -298,4 +306,4 @@ Without these secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.15**.
+Talkis is an active work in progress. Current version: **0.1.16**.

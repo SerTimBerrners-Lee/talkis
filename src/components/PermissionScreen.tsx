@@ -103,11 +103,44 @@ interface PermissionScreenProps {
 }
 
 interface AppRuntimeInfo {
+  platform: "macos" | "windows" | "linux" | "unknown";
   executablePath: string;
   bundlePath: string;
   launchedViaTranslocation: boolean;
   launchedFromMountedVolume: boolean;
   shouldMoveToApplications: boolean;
+}
+
+type DesktopPlatform = AppRuntimeInfo["platform"];
+
+function detectDesktopPlatform(): DesktopPlatform {
+  if (typeof navigator === "undefined") {
+    return "unknown";
+  }
+
+  const value = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+
+  if (value.includes("mac")) return "macos";
+  if (value.includes("win")) return "windows";
+  if (value.includes("linux") || value.includes("x11")) return "linux";
+
+  return "unknown";
+}
+
+function microphoneHelpText(platform: DesktopPlatform): string {
+  if (platform === "macos") {
+    return "Если микрофон был отклонен, откройте Системные настройки -> Конфиденциальность -> Микрофон и включите Talkis.";
+  }
+
+  if (platform === "windows") {
+    return "Если микрофон был отклонен, откройте Параметры -> Конфиденциальность и безопасность -> Микрофон и разрешите доступ для Talkis.";
+  }
+
+  if (platform === "linux") {
+    return "Если микрофон недоступен, проверьте системные настройки звука и разрешения браузерного WebView для записи.";
+  }
+
+  return "Если микрофон был отклонен, откройте системные настройки приватности и разрешите доступ для Talkis.";
 }
 
 export function PermissionScreen({ onComplete }: PermissionScreenProps) {
@@ -190,6 +223,11 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
       return;
     }
 
+    if (!requiresAccessibility) {
+      setAccStatus("granted");
+      return;
+    }
+
     try {
       await invoke("reset_accessibility_permission");
     } catch (e) {
@@ -213,7 +251,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
 
     const { nextMicStatus, nextAccStatus } = await refreshAllPermissions();
 
-    if (nextMicStatus !== "granted" || nextAccStatus !== "granted") {
+    if (nextMicStatus !== "granted" || (requiresAccessibility && nextAccStatus !== "granted")) {
       return;
     }
 
@@ -221,12 +259,25 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
     onComplete();
   };
 
-  const canContinue = micStatus === "granted" && accStatus === "granted";
+  const platform = runtimeInfo?.platform ?? detectDesktopPlatform();
+  const requiresAccessibility = platform === "macos";
   // In dev mode the binary lives in the build target dir (e.g. /Volumes/...),
-  // which is not /Applications — but that's expected, so skip the warning.
+  // which is not /Applications - but that's expected, so skip the warning.
   const shouldShowInstallWarning = import.meta.env.DEV
     ? false
     : Boolean(runtimeInfo?.shouldMoveToApplications);
+  const pastePermissionTitle = requiresAccessibility ? "Универсальный доступ" : "Вставка текста";
+  const pastePermissionDescription = requiresAccessibility
+    ? "Нужен для глобальной горячей клавиши и вставки текста."
+    : platform === "linux"
+      ? "Talkis использует буфер обмена и Ctrl+V. В некоторых Wayland/X11 окружениях автоматическая вставка может быть ограничена."
+      : "Talkis использует буфер обмена и Ctrl+V. Отдельное системное разрешение обычно не требуется.";
+  const pastePermissionHelpText = shouldShowInstallWarning
+    ? `Приложение запущено не из Applications: ${runtimeInfo?.bundlePath ?? "-"}`
+    : platform === "linux"
+      ? "Если вставка не сработает, скопированный текст останется в буфере обмена и его можно вставить вручную."
+      : undefined;
+  const canContinue = micStatus === "granted" && (!requiresAccessibility || accStatus === "granted");
   const canCompleteOnboarding = canContinue && !shouldShowInstallWarning;
 
   return (
@@ -328,9 +379,9 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
 
             <PermissionRow
               icon={<Keyboard size={16} strokeWidth={1.8} />}
-              title="Универсальный доступ"
-              description="Нужен для глобальной горячей клавиши и вставки текста."
-              status={shouldShowInstallWarning ? "denied" : accStatus}
+              title={pastePermissionTitle}
+              description={pastePermissionDescription}
+              status={requiresAccessibility && shouldShowInstallWarning ? "denied" : requiresAccessibility ? accStatus : "granted"}
               onAction={() => {
                 if (shouldShowInstallWarning) {
                   void openPath("/Applications");
@@ -339,9 +390,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
 
                 void handleAccessibilityRequest();
               }}
-              helpText={shouldShowInstallWarning
-                ? `Приложение запущено не из Applications: ${runtimeInfo?.bundlePath ?? "—"}`
-                : undefined}
+              helpText={pastePermissionHelpText}
             />
           </div>
 
@@ -361,7 +410,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
               <AlertCircle size={14} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
               {micStatus === "denied"
-                  ? "Если микрофон был отклонен, откройте Системные настройки → Конфиденциальность → Микрофон и включите Talkis."
+                  ? microphoneHelpText(platform)
                   : shouldShowInstallWarning
                     ? "После перемещения приложения в Applications откройте его заново."
                     : "macOS применяет доступ не мгновенно. После изменения настройки вернитесь в приложение."}
@@ -376,7 +425,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                 ? "Сначала запустите из Applications."
                 : canContinue
                   ? "Все доступы выданы."
-                  : "Выдайте оба разрешения для продолжения."}
+                  : requiresAccessibility ? "Выдайте оба разрешения для продолжения." : "Разрешите микрофон для продолжения."}
             </div>
             <button
               onClick={handleContinue}

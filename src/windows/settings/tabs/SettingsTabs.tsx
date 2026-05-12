@@ -44,6 +44,21 @@ import xAiAvatar from "../../../assets/adapters/xai.png";
 
 const IS_DEV = import.meta.env.DEV;
 type LocalRuntimeKind = "whisper" | "nvidia" | "qwen";
+type DesktopPlatform = "macos" | "windows" | "linux" | "unknown";
+
+function detectDesktopPlatform(): DesktopPlatform {
+  if (typeof navigator === "undefined") {
+    return "unknown";
+  }
+
+  const value = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+
+  if (value.includes("mac")) return "macos";
+  if (value.includes("win")) return "windows";
+  if (value.includes("linux") || value.includes("x11")) return "linux";
+
+  return "unknown";
+}
 
 const LOCAL_RUNTIME_ENDPOINTS: Record<LocalRuntimeKind, string> = {
   whisper: "http://127.0.0.1:8000",
@@ -942,6 +957,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const hasActiveSubscription = cloudProfile?.subscription.active === true;
     const isCloudMode = !settings.useOwnKey;
     const isCustom = settings.provider === "custom";
+    const desktopPlatform = detectDesktopPlatform();
     const activeModelMode: "cloud" | "api" | "local" = isCloudMode ? "cloud" : isCustom ? "local" : "api";
     const isApiMode = activeModelMode === "api";
     const isLocalMode = activeModelMode === "local";
@@ -1328,7 +1344,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const getLocalModelStatus = (model: LocalModelOption) => {
       const actionState = localModelActionStates[model.id];
       const cachedState = settings.localModels?.[model.id];
-      const isRuntimeReady = model.runtimeReady === true;
+      const isPlatformSupported = model.runtimeKind === "whisper" || desktopPlatform === "macos";
+      const isRuntimeReady = model.runtimeReady === true && isPlatformSupported;
       const isInstalled = isRuntimeReady && (localInstalledModelSet.has(model.model) || cachedState?.status === "downloaded");
       const isSelected = localSttTargetModel === model.model && isInstalled;
 
@@ -1342,7 +1359,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             : `${runtimeName} runtime-слот подготовлен, но движок еще не встроен в сборку.`,
           status: "unsupported" as const,
           color: "var(--text-low)",
-          message: model.unavailableReason || `${runtimeName} sidecar запускается отдельно от Whisper, но скачивание и распознавание для этой линейки будут включены после подключения локального engine.`,
+          message: !isPlatformSupported
+            ? "Эта локальная модель пока доступна только на macOS. Для Windows и Linux оставлен Whisper runtime."
+            : model.unavailableReason || `${runtimeName} sidecar запускается отдельно от Whisper, но скачивание и распознавание для этой линейки будут включены после подключения локального engine.`,
           isInstalled: false,
           isSelected: false,
         };
@@ -1913,7 +1932,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                   const isExpanded = expandedLocalModel === model.id;
                   const modelStatus = getLocalModelStatus(model);
                   const modelActionState = localModelActionStates[model.id];
-                  const isRuntimeReady = model.runtimeReady === true;
+                  const isRuntimeReady = getLocalModelStatus(model).status !== "unsupported" && model.runtimeReady === true;
                   const isDownloaded = modelStatus.isInstalled;
                   const isModelBusy = modelStatus.status === "installing" || modelStatus.status === "deleting";
                   const isInstallDisabled = isModelBusy || !isRuntimeReady;

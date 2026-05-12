@@ -19,6 +19,7 @@ This file defines the mandatory release workflow for Talkis. Follow it for every
 4. Run the release checks locally:
    - `bun run check:release`
    - `TAURI_SIGNING_PRIVATE_KEY_PATH=~/.tauri/talkis-updater.key bun run build:release:macos`
+   - On native Windows/Linux runners, run `bun run build:release:windows` and `bun run build:release:linux` before claiming those artifacts are ready.
    - If the updater private key is password-protected, also set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 5. Perform a detailed self-review of the full release diff.
 6. Write the review results to `docs/release/review-vX.Y.Z.md` using the review template.
@@ -35,11 +36,11 @@ This file defines the mandatory release workflow for Talkis. Follow it for every
 - Widget position, notices, and onboarding permissions behave correctly.
 - Short or noisy recordings do not paste obvious hallucinated text.
 - `bun run check:release` passes.
-- Local production build passes via `bun run build:release:macos`.
+- Local production build passes via `bun run build:release:macos`; Windows/Linux production builds pass on their native runners or in GitHub Actions.
 - Version numbers and release tag match.
 - The GitHub Actions release workflow still matches the documented process.
 - GitHub repository secrets include `TAURI_SIGNING_PRIVATE_KEY` and, if the key is password-protected, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
-- GitHub Release includes `latest.json`, the macOS updater `.app.tar.gz`, and its `.sig` file.
+- GitHub Release includes `latest.json`, macOS `.app.tar.gz`, Windows `.exe`, Linux `.AppImage`, and matching `.sig` files.
 
 ## GitHub Actions release source of truth
 
