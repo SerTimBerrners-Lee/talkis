@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "bun run prepare:sidecars && bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run prepare:sidecars && bun run build",
+    "beforeBuildCommand": "bun scripts/before-tauri-build.mjs",
     "frontendDist": "../dist"
   },
   "app": {

@@ -32,15 +32,43 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Cache Rust build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
       - name: Run release checks
-        run: bun run check:release
+        run: |
+          bun run check:versions
+          bunx tsc --noEmit
+          cargo check --manifest-path src-tauri/Cargo.toml
+          bun run smoke:hotkey
 
       - name: Build macOS bundles
-        run: bun run tauri build
+        run: |
+          bun run prepare:sidecars
+          bun run build
+          bun run tauri build
         env:
+          TALKIS_STT_RELEASE: "1"
+          TALKIS_SKIP_BEFORE_BUILD: "1"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
