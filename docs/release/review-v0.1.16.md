@@ -33,6 +33,7 @@
 - Additional manual checks:
   - `scripts/create-updater-latest-json.sh` tested against synthetic macOS/Windows/Linux updater artifacts and signatures.
   - `.github/workflows/release.yml` parsed as valid YAML.
+  - First `v0.1.16` Actions run failed before publish: macOS/Linux release checks needed prepared external binaries, and Windows exposed a missing non-macOS widget fallback helper. Both were fixed before republishing the tag.
 
 ## Manual review
 

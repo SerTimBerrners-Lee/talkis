@@ -86,6 +86,7 @@ jobs:
       - name: Run release checks
         run: |
           bun run check:versions
+          bun run prepare:sidecars
           bunx tsc --noEmit
           cargo check --manifest-path src-tauri/Cargo.toml
           bun run smoke:hotkey

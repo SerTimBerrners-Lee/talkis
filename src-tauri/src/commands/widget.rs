@@ -116,6 +116,26 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
 }
 
 #[cfg(not(target_os = "macos"))]
+fn calculate_default_widget_position(
+    monitor: &tauri::Monitor,
+    width: f64,
+    height: f64,
+) -> tauri::PhysicalPosition<i32> {
+    let scale_factor = monitor.scale_factor();
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let target_width = width * scale_factor;
+    let target_height = height * scale_factor;
+    let x = monitor_position.x as f64 + (monitor_size.width as f64 - target_width) / 2.0;
+    let y = monitor_position.y as f64 + monitor_size.height as f64 - target_height;
+
+    tauri::PhysicalPosition {
+        x: x.round() as i32,
+        y: y.round() as i32,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
     use crate::logger;
 
