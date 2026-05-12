@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
-import { AppSettings } from "../../../lib/store";
+import { AppSettings, getSettings } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
 import { formatErrorMessage } from "../../../lib/utils";
 import {
@@ -48,7 +48,7 @@ function getAudioConstraints(micId: string): MediaTrackConstraints | true {
   };
 
   if (micId) {
-    constraints.deviceId = { ideal: micId };
+    constraints.deviceId = { exact: micId };
   }
 
   return constraints;
@@ -89,6 +89,7 @@ export function useWidgetRecording({
 }: UseWidgetRecordingParams): UseWidgetRecordingResult {
   const runtimeRef = useRef(createRecordingRuntimeController());
   const lowMicMonitorCleanupRef = useRef<(() => void) | null>(null);
+  const recordingSettingsRef = useRef<AppSettings | null>(null);
 
   // NOTE: Microphone pre-warm was removed because on macOS, calling
   // getUserMedia activates an audio session that ducks other app volumes.
@@ -172,24 +173,31 @@ export function useWidgetRecording({
     logInfo("RECORDING", "startRecording called");
     hideNotice();
 
-    if (!settings) {
+    let activeSettings = settings;
+    try {
+      activeSettings = await getSettings({ reload: true });
+    } catch (error) {
+      logError("SETTINGS", `Failed to refresh settings before recording: ${formatErrorMessage(error)}`);
+    }
+
+    if (!activeSettings) {
       logError("RECORDING", "Settings not loaded");
       showError("Настройки не загружены. Перезапустите приложение.");
       return;
     }
 
     // Cloud mode must have a device token. Do not silently fall back to direct OpenAI.
-    const isCloudMode = !settings.useOwnKey;
-    const isSubscriptionMode = isCloudMode && (settings.deviceToken || "").trim().length > 0;
-    const hasKey = settings.apiKey.trim().length > 0 || settings.whisperApiKey.trim().length > 0 || (settings.llmApiKey || "").trim().length > 0;
+    const isCloudMode = !activeSettings.useOwnKey;
+    const isSubscriptionMode = isCloudMode && (activeSettings.deviceToken || "").trim().length > 0;
+    const hasKey = activeSettings.apiKey.trim().length > 0 || activeSettings.whisperApiKey.trim().length > 0 || (activeSettings.llmApiKey || "").trim().length > 0;
 
     // In local STT mode the whisper server runs on localhost and requires no API key.
     // Detect this case: custom provider + local-looking endpoint + no whisperApiKey.
     const isLocalSttMode =
-      settings.useOwnKey &&
-      settings.provider === "custom" &&
-      (settings.whisperEndpoint || "").match(/127\.0\.0\.1|localhost/i) !== null &&
-      (settings.whisperApiKey || "").trim().length === 0;
+      activeSettings.useOwnKey &&
+      activeSettings.provider === "custom" &&
+      (activeSettings.whisperEndpoint || "").match(/127\.0\.0\.1|localhost/i) !== null &&
+      (activeSettings.whisperApiKey || "").trim().length === 0;
 
     if (isCloudMode && !isSubscriptionMode) {
       logError("RECORDING", "Cloud mode selected but device token is missing");
@@ -208,9 +216,12 @@ export function useWidgetRecording({
       machineRef.current = { ...machineRef.current, widgetState: "recording" };
       void resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
 
-      const audioConstraints = getAudioConstraints(settings.micId);
-      if (settings.micId) {
-        logInfo("RECORDING", `Using preferred mic: ${settings.micId}`);
+      recordingSettingsRef.current = activeSettings;
+      const audioConstraints = getAudioConstraints(activeSettings.micId);
+      if (activeSettings.micId) {
+        logInfo("RECORDING", `Using preferred mic: ${activeSettings.micId}`);
+      } else {
+        logInfo("RECORDING", "Using system default mic");
       }
 
       let recordingStream: MediaStream;
@@ -236,6 +247,14 @@ export function useWidgetRecording({
       }
 
       await waitForTrackReady(recordingStream, 250);
+      const [audioTrack] = recordingStream.getAudioTracks();
+      if (audioTrack) {
+        const trackSettings = audioTrack.getSettings();
+        logInfo(
+          "RECORDING",
+          `Active mic track: label=${audioTrack.label || "[unknown]"}, device=${trackSettings.deviceId || "[unknown]"}`,
+        );
+      }
       setStream(recordingStream);
       startLowMicMonitor(recordingStream);
       const codec = runtimeRef.current.start(recordingStream);
@@ -250,6 +269,7 @@ export function useWidgetRecording({
     } catch (error) {
       stopLowMicMonitor();
       runtimeRef.current.dispose();
+      recordingSettingsRef.current = null;
       setStream(null);
       logError("RECORDING", `Start error: ${error instanceof Error ? error.message : "unknown"}`);
       showError(
@@ -263,7 +283,8 @@ export function useWidgetRecording({
     logInfo("RECORDING", "stopAndProcess called");
 
     const machine = machineRef.current;
-    if (!runtimeRef.current.hasRecorder() || !settings || !machine.recordingActive) {
+    const activeSettings = recordingSettingsRef.current ?? settings;
+    if (!runtimeRef.current.hasRecorder() || !activeSettings || !machine.recordingActive) {
       logError("RECORDING", "No active recording");
       return;
     }
@@ -298,6 +319,7 @@ export function useWidgetRecording({
           "RECORDING",
           `Recording too short, skipping API request. duration_ms=${durationMs}, blob_size=${blob.size}`,
         );
+        recordingSettingsRef.current = null;
         runtimeRef.current.reset();
         dispatch({ type: "PROCESSING_COMPLETE" });
         await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
@@ -306,17 +328,19 @@ export function useWidgetRecording({
 
       const pipelineResult = await processRecordingBlob({
         blob,
-        settings,
+        settings: activeSettings,
         recordingStartTimestamp: machine.recordingStartTimestamp,
       });
 
       if (!pipelineResult.hasTranscription) {
+        recordingSettingsRef.current = null;
         runtimeRef.current.reset();
         dispatch({ type: "PROCESSING_COMPLETE" });
         await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
         return;
       }
 
+      recordingSettingsRef.current = null;
       runtimeRef.current.reset();
       dispatch({ type: "PROCESSING_COMPLETE" });
       await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
@@ -326,6 +350,7 @@ export function useWidgetRecording({
 
       const message = errorMessage && errorMessage !== "{}" ? errorMessage : "Ошибка обработки";
 
+      recordingSettingsRef.current = null;
       runtimeRef.current.reset();
       showError(message);
     }

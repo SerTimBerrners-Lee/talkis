@@ -11,15 +11,19 @@ import {
   Code,
   Crown,
   Download,
+  Gauge,
+  HardDrive,
   LogOut,
   LucideIcon,
   MessageSquare,
   Server,
+  Target,
+  Trash2,
   User,
   Zap,
 } from "lucide-react";
 
-import { AppSettings, getSettings, saveSettings } from "../../../lib/store";
+import { AppSettings, getSettings, LocalModelSettings, saveSettings } from "../../../lib/store";
 import { CloudProfile, fetchCloudProfile, getAuthLoginUrl, cloudLogout, handleAuthToken, generateExchangeCode, getAuthLoginUrlWithCode, pollForToken, getCachedCloudProfile, subscribeCloudProfile } from "../../../lib/cloudAuth";
 import { logInfo } from "../../../lib/logger";
 
@@ -32,14 +36,23 @@ import elevenLabsAvatar from "../../../assets/adapters/elevenlabs.png";
 import fireworksAvatar from "../../../assets/adapters/fireworks.png";
 import groqAvatar from "../../../assets/adapters/groq.png";
 import mistralAvatar from "../../../assets/adapters/mistral.png";
+import nvidiaAvatar from "../../../assets/adapters/nvidia.webp";
 import openAiAvatar from "../../../assets/adapters/openai.svg";
+import qwenAvatar from "../../../assets/adapters/qwen.png";
 import volcengineAvatar from "../../../assets/adapters/volcengine.webp";
 import xAiAvatar from "../../../assets/adapters/xai.png";
 
 const IS_DEV = import.meta.env.DEV;
-const LOCAL_STT_PRESET_ENDPOINT = "http://127.0.0.1:8000";
-const LOCAL_STT_PRESET_MODEL = "whisper-1";
-const LOCAL_STT_HELP_URL = "https://speaches.ai/installation/";
+type LocalRuntimeKind = "whisper" | "nvidia" | "qwen";
+
+const LOCAL_RUNTIME_ENDPOINTS: Record<LocalRuntimeKind, string> = {
+  whisper: "http://127.0.0.1:8000",
+  nvidia: "http://127.0.0.1:8001",
+  qwen: "http://127.0.0.1:8002",
+};
+const LOCAL_STT_PRESET_ENDPOINT = LOCAL_RUNTIME_ENDPOINTS.whisper;
+const LOCAL_STT_PRESET_MODEL = "whisper-large-v3-turbo";
+const LOCAL_STT_MODEL_DOWNLOAD_PROGRESS_EVENT = "local-stt-model-download-progress";
 
 interface SettingsTabsProps { type: "model" | "style"; }
 
@@ -48,6 +61,23 @@ interface PromptPreview {
   layers: string[];
   profileKey: string;
   version: number;
+}
+
+interface LocalModelActionState {
+  status: "idle" | "installing" | "deleting" | "success" | "error";
+  message: string;
+  progress?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+}
+
+interface LocalModelDownloadProgressEvent {
+  model: string;
+  status: "starting" | "preparing" | "downloading" | "downloaded";
+  downloaded_bytes: number;
+  total_bytes?: number | null;
+  percent?: number | null;
+  message?: string | null;
 }
 
 type ApiAdapterId =
@@ -175,6 +205,209 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     accent: "#000000",
     avatar: xAiAvatar,
     testable: false,
+  },
+];
+
+interface LocalModelOption {
+  id: string;
+  name: string;
+  description: string;
+  model: string;
+  engineLabel: string;
+  runtime: string;
+  runtimeKind: LocalRuntimeKind;
+  size: string;
+  speed: string;
+  accuracy: string;
+  initials: string;
+  accent: string;
+  avatar?: string;
+  recommended?: boolean;
+  runtimeReady?: boolean;
+  unavailableReason?: string;
+  downloadBytes?: number;
+}
+
+const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
+  {
+    id: "parakeet-tdt-06b-v3",
+    name: "NVIDIA Parakeet TDT 0.6B v3",
+    description: "Быстрая локальная ASR-модель Parakeet через MLX runtime для Apple Silicon.",
+    model: "mlx-community/parakeet-tdt-0.6b-v3",
+    engineLabel: "Parakeet",
+    runtime: "OpenAI-compatible / Parakeet MLX runtime",
+    runtimeKind: "nvidia",
+    size: "0.6B",
+    speed: "быстро",
+    accuracy: "высокая",
+    initials: "P3",
+    accent: "#76b900",
+    avatar: nvidiaAvatar,
+    recommended: true,
+    runtimeReady: true,
+    downloadBytes: 2_509_044_141,
+  },
+  {
+    id: "parakeet-tdt-06b-v2",
+    name: "NVIDIA Parakeet TDT 0.6B v2",
+    description: "Стабильная английская Parakeet TDT-модель через MLX runtime для Apple Silicon.",
+    model: "mlx-community/parakeet-tdt-0.6b-v2",
+    engineLabel: "Parakeet",
+    runtime: "OpenAI-compatible / Parakeet MLX runtime",
+    runtimeKind: "nvidia",
+    size: "0.6B",
+    speed: "быстро",
+    accuracy: "высокая",
+    initials: "P2",
+    accent: "#5f9f00",
+    avatar: nvidiaAvatar,
+    runtimeReady: true,
+    downloadBytes: 2_470_305_134,
+  },
+  {
+    id: "qwen3-asr-06b",
+    name: "Qwen3-ASR 0.6B",
+    description: "Компактная ASR-модель Qwen для локального распознавания через совместимый runtime.",
+    model: "Qwen/Qwen3-ASR-0.6B",
+    engineLabel: "Qwen",
+    runtime: "OpenAI-compatible / Qwen runtime",
+    runtimeKind: "qwen",
+    size: "0.6B",
+    speed: "средне",
+    accuracy: "высокая",
+    initials: "Q3",
+    accent: "#2563eb",
+    avatar: qwenAvatar,
+    runtimeReady: true,
+    downloadBytes: 1_880_619_678,
+  },
+  {
+    id: "whisper-large-v3-turbo-quantized",
+    name: "Whisper Large V3 Turbo Quantized",
+    description: "Более легкий вариант Turbo для локальной работы с меньшим расходом памяти.",
+    model: "whisper-large-v3-turbo",
+    engineLabel: "Whisper",
+    runtime: "OpenAI-compatible / MLX runtime",
+    runtimeKind: "whisper",
+    size: "4-bit",
+    speed: "быстро",
+    accuracy: "высокая",
+    initials: "WQ",
+    accent: "#111827",
+    runtimeReady: false,
+  },
+  {
+    id: "whisper-small",
+    name: "Whisper Small",
+    description: "Баланс скорости и качества для слабых машин и быстрых коротких диктовок.",
+    model: "whisper-small",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "small",
+    speed: "быстро",
+    accuracy: "средняя",
+    initials: "WS",
+    accent: "#334155",
+    runtimeReady: true,
+    downloadBytes: 487_601_967,
+  },
+  {
+    id: "whisper-large-v3-turbo",
+    name: "Whisper Large V3 Turbo",
+    description: "Рекомендуемый Whisper-вариант: быстрый, качественный и хорошо подходит для диктовки.",
+    model: "whisper-large-v3-turbo",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "large",
+    speed: "быстро",
+    accuracy: "высокая",
+    initials: "WT",
+    accent: "#0f172a",
+    recommended: true,
+    runtimeReady: true,
+    downloadBytes: 1_624_555_275,
+  },
+  {
+    id: "whisper-large-v3",
+    name: "Whisper Large V3",
+    description: "Максимальное качество Whisper, но выше требования к памяти и времени обработки.",
+    model: "whisper-large-v3",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "large",
+    speed: "средне",
+    accuracy: "максимальная",
+    initials: "W3",
+    accent: "#1e293b",
+    runtimeReady: true,
+    downloadBytes: 3_095_033_483,
+  },
+  {
+    id: "whisper-large-v2",
+    name: "Whisper Large V2",
+    description: "Предыдущая large-версия Whisper для совместимости с существующими локальными установками.",
+    model: "whisper-large-v2",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "large",
+    speed: "средне",
+    accuracy: "высокая",
+    initials: "W2",
+    accent: "#475569",
+    runtimeReady: true,
+    downloadBytes: 3_094_623_691,
+  },
+  {
+    id: "whisper-medium",
+    name: "Whisper Medium",
+    description: "Промежуточный вариант между Small и Large: заметно качественнее Small, но тяжелее.",
+    model: "whisper-medium",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "medium",
+    speed: "средне",
+    accuracy: "высокая",
+    initials: "WM",
+    accent: "#475569",
+    runtimeReady: true,
+    downloadBytes: 1_533_763_059,
+  },
+  {
+    id: "whisper-base",
+    name: "Whisper Base",
+    description: "Быстрая и легкая модель для простых сценариев и слабых машин.",
+    model: "whisper-base",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "base",
+    speed: "очень быстро",
+    accuracy: "базовая",
+    initials: "WB",
+    accent: "#64748b",
+    runtimeReady: true,
+    downloadBytes: 147_951_465,
+  },
+  {
+    id: "whisper-tiny",
+    name: "Whisper Tiny",
+    description: "Минимальный размер и максимальная скорость, качество ниже остальных Whisper-моделей.",
+    model: "whisper-tiny",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "tiny",
+    speed: "очень быстро",
+    accuracy: "низкая+",
+    initials: "WT",
+    accent: "#94a3b8",
+    runtimeReady: true,
+    downloadBytes: 77_691_713,
   },
 ];
 
@@ -353,7 +586,7 @@ function CloudSubscriptionAccountCard({
         }}
       >
         <Crown size={13} strokeWidth={2} color="#fff" />
-        <span style={{ display: "flex", alignItems: "center", lineHeight: 1, whiteSpace: "nowrap" }}>Активировать подписку</span>
+        <span style={{ display: "flex", alignItems: "center", lineHeight: 1, whiteSpace: "nowrap" }}>Перейти на PRO</span>
       </button>
     </div>
   );
@@ -371,13 +604,8 @@ function SubscriptionGuestCard({ onActivate }: { onActivate: () => void }) {
         <li>• Без VPN и Прокси</li>
         <li>• Синхронизация со всеми устройствами</li>
       </ul>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
-        <span style={{ textDecoration: "line-through", opacity: 0.45, fontSize: 12 }}>1 500 ₽</span>
-        <span style={{ fontWeight: 800, fontSize: 22 }}>390 ₽</span>
-        <span style={{ opacity: 0.5, fontSize: 11 }}>/ мес</span>
-      </div>
       <button onClick={onActivate} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#fff", color: "#000", border: "none", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s", fontFamily: "var(--font-main)" }}>
-        Активировать
+        Перейти на PRO
       </button>
     </div>
   );
@@ -399,17 +627,20 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const [cloudProfile, setCloudProfile] = useState<CloudProfile | null | undefined>(() => getCachedCloudProfile());
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState<string | null>(null);
-  const [installStatus, setInstallStatus] = useState<"idle" | "installing" | "success" | "error">("idle");
-  const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const [waitingForSubscriptionRefresh, setWaitingForSubscriptionRefresh] = useState(false);
   const [expandedApiAdapter, setExpandedApiAdapter] = useState<ApiAdapterId | null>(null);
+  const [expandedLocalModel, setExpandedLocalModel] = useState<string | null>(null);
+  const [pendingDeleteModel, setPendingDeleteModel] = useState<LocalModelOption | null>(null);
+  const [localInstalledModels, setLocalInstalledModels] = useState<string[]>([]);
   const [apiAdapterTestStates, setApiAdapterTestStates] = useState<Partial<Record<ApiAdapterId, { status: AdapterTestStatus; message: string }>>>({});
+  const [localModelActionStates, setLocalModelActionStates] = useState<Partial<Record<string, LocalModelActionState>>>({});
   const authPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const exchangeCodeRef = useRef<string | null>(null);
+  const settingsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const syncSettings = useCallback(async () => {
-    const nextSettings = await getSettings();
+    const nextSettings = await getSettings({ reload: true });
     setSettings(nextSettings);
     return nextSettings;
   }, []);
@@ -429,7 +660,73 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     return profile;
   }, [loadCloudProfile, syncSettings]);
 
-  useEffect(() => { void syncSettings(); }, [syncSettings]);
+  const refreshLocalInstalledModels = useCallback(async () => {
+    if (!settings || type !== "model" || !settings.useOwnKey || settings.provider !== "custom") {
+      return;
+    }
+
+    try {
+      const result = await invoke<{ success: boolean; models: string[]; message: string }>("list_stt_models", {
+        req: {
+          api_key: settings.apiKey || "",
+          whisper_api_key: settings.whisperApiKey || null,
+          whisper_endpoint: settings.whisperEndpoint || LOCAL_STT_PRESET_ENDPOINT,
+          local_models_dir: settings.localModelsDir || null,
+        },
+      });
+
+      const installedModels = result.models || [];
+      setLocalInstalledModels(installedModels);
+
+      const installedModelSet = new Set(installedModels);
+      const installedLocalOptions = LOCAL_MODEL_OPTIONS.filter((model) => installedModelSet.has(model.model));
+      if (installedLocalOptions.length > 0) {
+        const now = new Date().toISOString();
+        const nextLocalModels = { ...(settings.localModels || {}) };
+        let changed = false;
+
+        for (const model of installedLocalOptions) {
+          const current = nextLocalModels[model.id] || { status: "not_downloaded" as const };
+          if (current.status !== "downloaded" || current.message) {
+            nextLocalModels[model.id] = {
+              ...current,
+              status: "downloaded",
+              message: undefined,
+              downloadedAt: current.downloadedAt || now,
+              lastCheckedAt: now,
+            };
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          update({ localModels: nextLocalModels });
+          setLocalModelActionStates((prev) => {
+            const next = { ...prev };
+            for (const model of installedLocalOptions) {
+              delete next[model.id];
+            }
+            return next;
+          });
+        }
+      }
+    } catch (err) {
+      setLocalInstalledModels([]);
+    }
+  }, [
+    settings?.apiKey,
+    settings?.provider,
+    settings?.useOwnKey,
+    settings?.whisperApiKey,
+    settings?.whisperEndpoint,
+    settings?.localModelsDir,
+    settings?.localModels,
+    type,
+  ]);
+
+  useEffect(() => {
+    void syncSettings().catch(() => {});
+  }, [syncSettings]);
 
   // Cloud profile — always fetch (regardless of tab) so hooks are stable
   useEffect(() => {
@@ -518,7 +815,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       if (!code) return;
 
       const token = await pollForToken(code);
-      if (!token) return;
+      if (!token || exchangeCodeRef.current !== code) return;
 
       logInfo("SETTINGS", "Auth polling returned device token");
       await applyCloudToken(token);
@@ -585,14 +882,57 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     };
   }, [settings?.language, settings?.style, type]);
 
+  useEffect(() => {
+    void refreshLocalInstalledModels();
+  }, [refreshLocalInstalledModels]);
+
+  useEffect(() => {
+    const unlistenPromise = listen<LocalModelDownloadProgressEvent>(LOCAL_STT_MODEL_DOWNLOAD_PROGRESS_EVENT, (event) => {
+      const modelOptions = LOCAL_MODEL_OPTIONS.filter((model) => model.model === event.payload.model);
+      if (modelOptions.length === 0) return;
+
+      const progress = typeof event.payload.percent === "number"
+        ? Math.max(0, Math.min(100, event.payload.percent))
+        : undefined;
+      const message = event.payload.message || (progress !== undefined
+        ? `Скачиваем модель: ${progress}%`
+        : "Скачиваем модель.");
+
+      setLocalModelActionStates((prev) => {
+        const modelOption = modelOptions.find((model) => prev[model.id]?.status === "installing")
+          || modelOptions.find((model) => model.runtimeReady === true)
+          || modelOptions[0];
+
+        return {
+          ...prev,
+          [modelOption.id]: {
+            ...(prev[modelOption.id] || { status: "installing", message }),
+            status: event.payload.status === "downloaded" ? "success" : "installing",
+            message: event.payload.status === "downloaded" ? (event.payload.message || "Модель скачана.") : message,
+            progress: event.payload.status === "downloaded" ? 100 : progress,
+            downloadedBytes: event.payload.downloaded_bytes,
+            totalBytes: event.payload.total_bytes ?? undefined,
+          },
+        };
+      });
+    });
+
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
   if (!settings) return null;
 
   const update = (patch: Partial<AppSettings>) => {
     setSettings((prev) => {
       const next = { ...(prev ?? settings), ...patch };
-      void saveSettings(next).then(() => {
-        emit(SETTINGS_UPDATED_EVENT).catch(() => {});
-      });
+      settingsSaveQueueRef.current = settingsSaveQueueRef.current
+        .catch(() => {})
+        .then(() => saveSettings(next))
+        .then(() => {
+          emit(SETTINGS_UPDATED_EVENT).catch(() => {});
+        });
       return next;
     });
   };
@@ -605,9 +945,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const activeModelMode: "cloud" | "api" | "local" = isCloudMode ? "cloud" : isCustom ? "local" : "api";
     const isApiMode = activeModelMode === "api";
     const isLocalMode = activeModelMode === "local";
-    const localSttEndpoint = (settings.whisperEndpoint || "").trim();
-    const isInstallLocalModelDisabled = installStatus === "installing" || !localSttEndpoint;
     const localSttTargetModel = (settings.whisperModel || LOCAL_STT_PRESET_MODEL).trim() || LOCAL_STT_PRESET_MODEL;
+    const localInstalledModelSet = new Set(localInstalledModels);
+    const localModelsDir = (settings.localModelsDir || "").trim();
     const apiKeyValue = (settings.apiKey || "").trim();
     const apiModelValue = (settings.whisperModel || "").trim();
     const isApiTestDisabled = testStatus === "testing" || !apiKeyValue || !apiModelValue;
@@ -639,8 +979,54 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     };
 
     const resetInstallState = () => {
-      setInstallStatus("idle");
-      setInstallMessage(null);
+      setLocalModelActionStates({});
+    };
+
+    const getRuntimeKindFromEndpoint = (endpoint: string): LocalModelOption["runtimeKind"] | null => {
+      try {
+        const parsed = new URL(endpoint);
+        const port = Number(parsed.port);
+        if ((parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost") || !Number.isFinite(port)) {
+          return null;
+        }
+
+        if (port === 8000 || (port >= 18000 && port <= 18049)) return "whisper";
+        if (port === 8001 || (port >= 18050 && port <= 18099)) return "nvidia";
+        if (port === 8002 || (port >= 18100 && port <= 18149)) return "qwen";
+      } catch {
+        return null;
+      }
+
+      return null;
+    };
+
+    const getLocalModelEndpoint = (model: LocalModelOption) => {
+      const currentEndpoint = settings.whisperEndpoint.trim();
+      if (currentEndpoint && getRuntimeKindFromEndpoint(currentEndpoint) === model.runtimeKind) {
+        return currentEndpoint;
+      }
+
+      return LOCAL_RUNTIME_ENDPOINTS[model.runtimeKind];
+    };
+
+    const getPreferredLocalModel = (): LocalModelOption => {
+      const currentModel = (settings.whisperModel || "").trim();
+      const isDownloaded = (model: LocalModelOption) =>
+        localInstalledModelSet.has(model.model) || settings.localModels?.[model.id]?.status === "downloaded";
+
+      const currentLocalModel = LOCAL_MODEL_OPTIONS.find(
+        (model) => model.runtimeReady === true && model.model === currentModel && isDownloaded(model),
+      );
+      if (currentLocalModel) {
+        return currentLocalModel;
+      }
+
+      return (
+        LOCAL_MODEL_OPTIONS.find((model) => model.runtimeReady === true && isDownloaded(model)) ||
+        LOCAL_MODEL_OPTIONS.find((model) => model.model === LOCAL_STT_PRESET_MODEL) ||
+        LOCAL_MODEL_OPTIONS.find((model) => model.runtimeReady === true) ||
+        LOCAL_MODEL_OPTIONS[0]
+      );
     };
 
     const getApiAdapterValues = (adapter: ApiAdapterOption) => {
@@ -823,12 +1209,16 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     };
 
     const handleCloudLogout = async () => {
+      if (authPollingRef.current) {
+        clearInterval(authPollingRef.current);
+        authPollingRef.current = null;
+      }
+      exchangeCodeRef.current = null;
+      setWaitingForAuth(false);
+      setWaitingForSubscriptionRefresh(false);
       await cloudLogout();
       setCloudProfile(null);
       await syncSettings();
-      setWaitingForAuth(false);
-      setWaitingForSubscriptionRefresh(false);
-      exchangeCodeRef.current = null;
     };
 
     const handleModeChange = (mode: typeof modeOptions[number]["id"]) => {
@@ -844,22 +1234,26 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         return;
       }
 
+      const localModel = getPreferredLocalModel();
       update({
         useOwnKey: true,
         ...(mode === "api"
           ? {
               provider: "openai" as const,
               whisperEndpoint: "",
+              llmApiKey: "",
               llmEndpoint: "",
               whisperModel: "whisper-1",
-              llmModel: "gpt-4o-mini",
+              llmModel: "none",
             }
           : {
               provider: "custom" as const,
               whisperApiKey: "",
-              whisperEndpoint: LOCAL_STT_PRESET_ENDPOINT,
-              whisperModel: LOCAL_STT_PRESET_MODEL,
-              llmModel: settings.llmModel || "gpt-4o-mini",
+              whisperEndpoint: getLocalModelEndpoint(localModel),
+              whisperModel: localModel.model,
+              llmApiKey: "",
+              llmEndpoint: "",
+              llmModel: "none",
             }),
       });
     };
@@ -869,9 +1263,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       setTestMessage(null);
 
       const testStt = isCustom || settings.provider === "openai";
-      const testLlm = isCustom
-        ? Boolean((settings.llmApiKey || "").trim()) && (settings.llmModel || "gpt-4o-mini") !== "none"
-        : Boolean((settings.apiKey || "").trim());
+      const testLlm = false;
 
       try {
         if (!testStt && !testLlm) {
@@ -885,10 +1277,11 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             api_key: settings.apiKey || "",
             whisper_api_key: isCustom ? (settings.whisperApiKey || null) : null,
             whisper_endpoint: isCustom ? (settings.whisperEndpoint || null) : null,
+            local_models_dir: isCustom ? (localModelsDir || null) : null,
             whisper_model: isCustom ? (settings.whisperModel || null) : (settings.whisperModel || "whisper-1"),
-            llm_api_key: isCustom ? (settings.llmApiKey || null) : null,
-            llm_endpoint: isCustom ? (settings.llmEndpoint || null) : null,
-            llm_model: isCustom ? (settings.llmModel || null) : (settings.llmModel || "gpt-4o-mini"),
+            llm_api_key: null,
+            llm_endpoint: null,
+            llm_model: "none",
             test_stt: testStt,
             test_llm: testLlm,
           },
@@ -919,89 +1312,318 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       }
     };
 
-    const handleOpenLocalSttDocs = async () => {
-      await openUrl(LOCAL_STT_HELP_URL);
+    const updateLocalModelCache = (modelId: string, patch: Partial<LocalModelSettings>) => {
+      const current = settings.localModels?.[modelId] || { status: "not_downloaded" as const };
+      update({
+        localModels: {
+          ...(settings.localModels || {}),
+          [modelId]: {
+            ...current,
+            ...patch,
+          },
+        },
+      });
     };
 
-    const handleInstallLocalSttModel = async () => {
-      setInstallStatus("installing");
-      setInstallMessage(null);
+    const getLocalModelStatus = (model: LocalModelOption) => {
+      const actionState = localModelActionStates[model.id];
+      const cachedState = settings.localModels?.[model.id];
+      const isRuntimeReady = model.runtimeReady === true;
+      const isInstalled = isRuntimeReady && (localInstalledModelSet.has(model.model) || cachedState?.status === "downloaded");
+      const isSelected = localSttTargetModel === model.model && isInstalled;
 
-      try {
-        const result = await invoke<{ success: boolean; message: string }>("install_stt_model", {
-          req: {
-            api_key: settings.apiKey || "",
-            whisper_api_key: settings.whisperApiKey || null,
-            whisper_endpoint: localSttEndpoint || LOCAL_STT_PRESET_ENDPOINT,
-            whisper_model: localSttTargetModel,
-          },
+      if (!isRuntimeReady) {
+        const runtimeName = model.runtimeKind === "nvidia" ? "NVIDIA" : model.runtimeKind === "qwen" ? "Qwen" : "MLX";
+        const isRuntimeSlotReady = model.runtimeKind === "qwen" || model.runtimeKind === "nvidia";
+        return {
+          label: isRuntimeSlotReady ? "Модель не подключена" : "Движок не подключен",
+          connectionLabel: isRuntimeSlotReady
+            ? `${runtimeName} runtime работает, но эта модель ещё не включена.`
+            : `${runtimeName} runtime-слот подготовлен, но движок еще не встроен в сборку.`,
+          status: "unsupported" as const,
+          color: "var(--text-low)",
+          message: model.unavailableReason || `${runtimeName} sidecar запускается отдельно от Whisper, но скачивание и распознавание для этой линейки будут включены после подключения локального engine.`,
+          isInstalled: false,
+          isSelected: false,
+        };
+      }
+
+      if (actionState?.status === "deleting") {
+        return {
+          label: "Удаляется",
+          connectionLabel: "",
+          status: "deleting" as const,
+          color: "var(--text-hi)",
+          message: actionState.message || cachedState?.message || null,
+          isInstalled,
+          isSelected,
+        };
+      }
+
+      if (!isInstalled && (actionState?.status === "installing" || cachedState?.status === "downloading")) {
+        return {
+          label: "Скачивается",
+          connectionLabel: "",
+          status: "installing" as const,
+          color: "var(--text-hi)",
+          message: actionState?.message || cachedState?.message || null,
+          isInstalled,
+          isSelected,
+        };
+      }
+
+      if (isSelected) {
+        return {
+          label: "Выбрана",
+          connectionLabel: "",
+          status: "selected" as const,
+          color: "#16a34a",
+          message: actionState?.message || cachedState?.message || null,
+          isInstalled,
+          isSelected,
+        };
+      }
+
+      if (isInstalled) {
+        return {
+          label: "Готова",
+          connectionLabel: "",
+          status: "installed" as const,
+          color: "#16a34a",
+          message: actionState?.message || cachedState?.message || null,
+          isInstalled,
+          isSelected,
+        };
+      }
+
+      if (actionState?.status === "error" || cachedState?.status === "error") {
+        return {
+          label: "Ошибка",
+          connectionLabel: "Не удалось подготовить модель",
+          status: "error" as const,
+          color: "#dc2626",
+          message: actionState?.message || cachedState?.message || null,
+          isInstalled,
+          isSelected,
+        };
+      }
+
+      return {
+        label: "Не скачана",
+        connectionLabel: "",
+        status: "idle" as const,
+        color: "var(--text-low)",
+        message: actionState?.message || cachedState?.message || null,
+        isInstalled,
+        isSelected,
+      };
+    };
+
+    const getLocalModelLevel = (kind: "speed" | "accuracy", value: string) => {
+      if (kind === "speed") {
+        if (value === "очень быстро") return 5;
+        if (value === "быстро") return 4;
+        if (value === "средне") return 3;
+        return 2;
+      }
+
+      if (value === "максимальная") return 5;
+      if (value === "высокая") return 4;
+      if (value === "средняя+" || value === "средняя") return 3;
+      if (value === "служебная") return 2;
+      return 1;
+    };
+
+    const formatLocalDownloadBytes = (bytes?: number, options: { showZero?: boolean } = {}) => {
+      if (!bytes || bytes <= 0) return options.showZero ? "0 Б" : "";
+      const mb = bytes / (1024 * 1024);
+      if (mb >= 1024) {
+        const gb = mb / 1024;
+        return `${gb.toFixed(gb >= 10 ? 0 : 1).replace(".", ",")} ГБ`;
+      }
+
+      return `${mb.toFixed(mb >= 10 ? 0 : 1).replace(".", ",")} МБ`;
+    };
+
+    const getLocalModelStorageLabel = (model: LocalModelOption) => {
+      return formatLocalDownloadBytes(model.downloadBytes) || (model.runtimeReady ? "Неизвестно" : "Не подключено");
+    };
+
+    const renderDotRating = (level: number) => (
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <span
+            key={index}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: 999,
+              background: index < level ? "#000" : "rgba(0,0,0,0.18)",
+              display: "block",
+            }}
+          />
+        ))}
+      </div>
+    );
+
+    const renderLocalModelStats = (model: LocalModelOption) => {
+      const stats: { key: string; title: string; label: string; Icon: LucideIcon; level: number }[] = [
+        { key: "speed", title: `Скорость: ${model.speed}`, label: "Скорость", Icon: Gauge, level: getLocalModelLevel("speed", model.speed) },
+        { key: "accuracy", title: `Точность: ${model.accuracy}`, label: "Точность", Icon: Target, level: getLocalModelLevel("accuracy", model.accuracy) },
+      ];
+      const storageLabel = getLocalModelStorageLabel(model);
+
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 9, flexWrap: "wrap" }}>
+          <div
+            title={`Размер загрузки: ${storageLabel}`}
+            aria-label={`Размер загрузки: ${storageLabel}`}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <HardDrive size={14} strokeWidth={1.9} color="#000" />
+            <span style={{ fontSize: 12, fontWeight: 650, color: "var(--text-hi)", lineHeight: 1 }}>
+              {storageLabel}
+            </span>
+          </div>
+
+          {stats.map(({ key, title, label, Icon, level }) => (
+            <div
+              key={key}
+              title={title}
+              aria-label={title}
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <Icon size={14} strokeWidth={1.9} color="#000" />
+              <span style={{ fontSize: 12, fontWeight: 650, color: "var(--text-hi)", lineHeight: 1 }}>
+                {label}
+              </span>
+              {renderDotRating(level)}
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    const handleSelectLocalModel = (model: LocalModelOption, endpointOverride?: string) => {
+      update({
+        useOwnKey: true,
+        provider: "custom",
+        whisperApiKey: "",
+        whisperEndpoint: endpointOverride || getLocalModelEndpoint(model),
+        whisperModel: model.model,
+        llmApiKey: "",
+        llmEndpoint: "",
+        llmModel: "none",
+      });
+      resetTestState();
+      resetInstallState();
+
+      if (localInstalledModelSet.has(model.model)) {
+        updateLocalModelCache(model.id, {
+          status: "downloaded",
+          downloadedAt: settings.localModels?.[model.id]?.downloadedAt || new Date().toISOString(),
+          lastCheckedAt: new Date().toISOString(),
+          message: undefined,
         });
-
-        setInstallStatus(result.success ? "success" : "error");
-        setInstallMessage(result.message);
-      } catch (err) {
-        setInstallStatus("error");
-        setInstallMessage(err instanceof Error ? err.message : String(err));
       }
     };
 
-    const renderTestConnectionBlock = (description: string) => (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <button
-            onClick={handleTestConnection}
-            disabled={testStatus === "testing"}
-            style={{
-              padding: "10px 20px",
-              borderRadius: 10,
-              border: "1px solid rgba(0,0,0,0.12)",
-              background: testStatus === "testing" ? "rgba(0,0,0,0.04)" : "rgba(0,0,0,0.02)",
-              color: "var(--text-hi)",
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: "var(--font-main)",
-              cursor: testStatus === "testing" ? "wait" : "pointer",
-              transition: "all 0.15s ease",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            {testStatus === "testing" ? (
-              <>
-                <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "var(--text-hi)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
-                Проверяем...
-              </>
-            ) : (
-              <>
-                <Zap size={14} strokeWidth={2.2} />
-                Тестировать соединение
-              </>
-            )}
-          </button>
-          {testStatus === "success" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#16a34a", fontSize: 13, fontWeight: 600 }}>
-              <Check size={16} strokeWidth={2.5} />
-              Работает
-            </div>
-          )}
-        </div>
-        {testMessage && (
-          <div style={{
-            fontSize: 12,
-            lineHeight: 1.6,
-            padding: "10px 14px",
-            borderRadius: 8,
-            background: testStatus === "success" ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
-            color: testStatus === "success" ? "#16a34a" : "#dc2626",
-            border: `1px solid ${testStatus === "success" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"}`,
-          }}>
-            {testMessage}
-          </div>
-        )}
-        <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>{description}</div>
-      </div>
-    );
+    const handleInstallLocalSttModel = async (model: LocalModelOption) => {
+      setLocalModelActionStates((prev) => ({
+        ...prev,
+        [model.id]: { status: "installing", message: "Готовим локальный STT runtime.", progress: 0 },
+      }));
+      updateLocalModelCache(model.id, {
+        status: "downloading",
+        message: "Готовим локальный STT runtime.",
+      });
+
+      try {
+        const result = await invoke<{ success: boolean; message: string; whisper_endpoint?: string | null }>("install_stt_model", {
+          req: {
+            api_key: settings.apiKey || "",
+            whisper_api_key: settings.whisperApiKey || null,
+            whisper_endpoint: getLocalModelEndpoint(model),
+            local_models_dir: localModelsDir || null,
+            whisper_model: model.model,
+          },
+        });
+
+        setLocalModelActionStates((prev) => ({
+          ...prev,
+          [model.id]: { status: result.success ? "success" : "error", message: result.success ? "" : result.message },
+        }));
+        updateLocalModelCache(model.id, {
+          status: result.success ? "downloaded" : "error",
+          message: result.success ? undefined : result.message,
+          downloadedAt: result.success ? new Date().toISOString() : undefined,
+          lastCheckedAt: new Date().toISOString(),
+        });
+
+        if (result.success) {
+          handleSelectLocalModel(model, result.whisper_endpoint || undefined);
+          await refreshLocalInstalledModels();
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setLocalModelActionStates((prev) => ({
+          ...prev,
+          [model.id]: { status: "error", message },
+        }));
+        updateLocalModelCache(model.id, {
+          status: "error",
+          message,
+          lastCheckedAt: new Date().toISOString(),
+        });
+      }
+    };
+
+    const handleDeleteLocalSttModel = async (model: LocalModelOption) => {
+      setPendingDeleteModel(null);
+      setLocalModelActionStates((prev) => ({
+        ...prev,
+        [model.id]: { status: "deleting", message: "Удаляем локальный файл модели." },
+      }));
+
+      try {
+        const result = await invoke<{ success: boolean; message: string }>("delete_stt_model", {
+          req: {
+            api_key: settings.apiKey || "",
+            whisper_api_key: settings.whisperApiKey || null,
+            whisper_endpoint: getLocalModelEndpoint(model),
+            local_models_dir: localModelsDir || null,
+            whisper_model: model.model,
+          },
+        });
+
+        setLocalModelActionStates((prev) => ({
+          ...prev,
+          [model.id]: { status: result.success ? "success" : "error", message: result.success ? "" : result.message },
+        }));
+        updateLocalModelCache(model.id, {
+          status: result.success ? "not_downloaded" : "error",
+          message: result.success ? undefined : result.message,
+          downloadedAt: undefined,
+          lastCheckedAt: new Date().toISOString(),
+        });
+
+        if (result.success) {
+          setLocalInstalledModels((prev) => prev.filter((id) => id !== model.model));
+          await refreshLocalInstalledModels();
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setLocalModelActionStates((prev) => ({
+          ...prev,
+          [model.id]: { status: "error", message },
+        }));
+        updateLocalModelCache(model.id, {
+          status: "error",
+          message,
+          lastCheckedAt: new Date().toISOString(),
+        });
+      }
+    };
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -1276,154 +1898,277 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           )}
 
           {isLocalMode && (
-            <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>Локально</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>
+                  Локальные модели
+                </div>
                 <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                  Режим для локального OpenAI-compatible STT сервера. По умолчанию используется Speaches на localhost.
+                  Выберите модель, скачайте ее через локальный STT runtime и используйте без облака.
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <div className="label">Endpoint локального сервера</div>
-                  <input
-                    type="text"
-                    value={settings.whisperEndpoint}
-                    onChange={(e) => { update({ whisperEndpoint: e.target.value }); resetTestState(); resetInstallState(); }}
-                    className="input"
-                    placeholder={LOCAL_STT_PRESET_ENDPOINT}
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
-                  />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <div className="label">Локальная модель</div>
-                  <input
-                    type="text"
-                    value={settings.whisperModel}
-                    onChange={(e) => { update({ whisperModel: e.target.value }); resetTestState(); resetInstallState(); }}
-                    className="input"
-                    placeholder={LOCAL_STT_PRESET_MODEL}
-                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
-                  />
-                </div>
-              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {LOCAL_MODEL_OPTIONS.map((model) => {
+                  const isExpanded = expandedLocalModel === model.id;
+                  const modelStatus = getLocalModelStatus(model);
+                  const modelActionState = localModelActionStates[model.id];
+                  const isRuntimeReady = model.runtimeReady === true;
+                  const isDownloaded = modelStatus.isInstalled;
+                  const isModelBusy = modelStatus.status === "installing" || modelStatus.status === "deleting";
+                  const isInstallDisabled = isModelBusy || !isRuntimeReady;
+                  const canSelect = isRuntimeReady && modelStatus.isInstalled;
+                  const downloadProgress = modelStatus.status === "installing" ? modelActionState?.progress : undefined;
+                  const downloadedLabel = formatLocalDownloadBytes(modelActionState?.downloadedBytes, { showZero: Boolean(modelActionState?.totalBytes) });
+                  const totalLabel = formatLocalDownloadBytes(modelActionState?.totalBytes);
 
-                <div style={{ borderRadius: 10, background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.06)", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-hi)" }}>Подготовка</div>
-                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>1. Установите Docker Desktop и запустите Speaches.</div>
-                  <div style={{ fontSize: 11, color: "var(--text-hi)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", lineHeight: 1.7, padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.72)", border: "1px solid rgba(0,0,0,0.06)", overflowX: "auto" }}>
-                    docker compose -f compose.cpu.yaml up -d
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.65 }}>
-                    2. Установите модель через Talkis или вручную:{" "}
-                    <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", color: "var(--text-hi)" }}>
-                      curl {(localSttEndpoint || LOCAL_STT_PRESET_ENDPOINT).replace(/\/$/, "")}/v1/models/{localSttTargetModel} -X POST
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                    <button
-                      onClick={() => { void handleInstallLocalSttModel(); }}
-                      disabled={isInstallLocalModelDisabled}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 10,
-                        border: "1px solid rgba(0,0,0,0.12)",
-                        background: isInstallLocalModelDisabled ? "rgba(0,0,0,0.04)" : "#000",
-                        color: isInstallLocalModelDisabled ? "var(--text-mid)" : "#fff",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        fontFamily: "var(--font-main)",
-                        cursor: installStatus === "installing" ? "wait" : isInstallLocalModelDisabled ? "not-allowed" : "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      {installStatus === "installing" ? (
-                        <>
-                          <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "var(--text-hi)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
-                          Устанавливаем...
-                        </>
-                      ) : (
-                        <>
-                          <Download size={14} strokeWidth={2.2} />
-                          Установить модель
-                        </>
+                  return (
+                    <div key={model.id} className="card" style={{ padding: 0, overflow: "hidden", background: "rgba(255,255,255,0.72)" }}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedLocalModel(isExpanded ? null : model.id)}
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          background: "transparent",
+                          padding: "12px 14px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          fontFamily: "var(--font-main)",
+                        }}
+                      >
+                        <div style={{ width: 36, height: 36, borderRadius: 999, background: (model.avatar || model.engineLabel === "Whisper") ? "rgba(0,0,0,0.04)" : model.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff", fontSize: 11, fontWeight: 800, overflow: "hidden" }}>
+                          {model.avatar || model.engineLabel === "Whisper" ? (
+                            <img
+                              src={model.avatar || openAiAvatar}
+                              alt=""
+                              aria-hidden="true"
+                              style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+                            />
+                          ) : (
+                            model.initials
+                          )}
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 3 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{model.name}</div>
+                              {model.recommended && (
+                                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-hi)", padding: "3px 7px", borderRadius: 999, background: "rgba(0,0,0,0.06)", flexShrink: 0 }}>
+                                  Рекомендуем
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: modelStatus.color, padding: "5px 9px", borderRadius: 999, background: "rgba(0,0,0,0.04)", whiteSpace: "nowrap" }}>
+                              {modelStatus.label}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 12, lineHeight: 1.45, color: "var(--text-mid)" }}>
+                            {model.description} Runtime: {model.runtime}.
+                          </div>
+                          {renderLocalModelStats(model)}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div style={{ borderTop: "1px solid rgba(0,0,0,0.07)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                          {modelStatus.message && modelStatus.status !== "installing" && modelStatus.status !== "installed" && modelStatus.status !== "selected" && (
+                            <div style={{
+                              fontSize: 12,
+                              lineHeight: 1.6,
+                              padding: "8px 10px",
+                              borderRadius: 8,
+                              background: modelStatus.status === "error" ? "rgba(220,38,38,0.06)" : "rgba(0,0,0,0.04)",
+                              color: modelStatus.status === "error" ? "#dc2626" : "var(--text-mid)",
+                              border: `1px solid ${modelStatus.status === "error" ? "rgba(220,38,38,0.15)" : "rgba(0,0,0,0.07)"}`,
+                            }}>
+                              {modelStatus.message}
+                            </div>
+                          )}
+
+                          {modelStatus.status === "installing" && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 12, color: "var(--text-mid)", fontWeight: 650 }}>
+                                <span>{modelActionState?.message || "Загрузка модели"}</span>
+                                <span style={{ color: "var(--text-hi)" }}>
+                                  {downloadProgress !== undefined ? `${downloadProgress}%` : downloadedLabel || "Подготовка"}
+                                </span>
+                              </div>
+                              <div style={{ width: "100%", height: 8, borderRadius: 999, background: "rgba(0,0,0,0.10)", overflow: "hidden" }}>
+                                <div
+                                  style={{
+                                    width: `${downloadProgress ?? 2}%`,
+                                    minWidth: downloadProgress === undefined ? 18 : 0,
+                                    height: "100%",
+                                    borderRadius: 999,
+                                    background: "#000",
+                                    transition: "width 0.2s ease",
+                                  }}
+                                />
+                              </div>
+                              {(downloadedLabel || totalLabel) && (
+                                <div style={{ fontSize: 11, color: "var(--text-low)", lineHeight: 1.4 }}>
+                                  {downloadedLabel}{totalLabel ? ` из ${totalLabel}` : ""}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            {modelStatus.connectionLabel && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, color: modelStatus.color, fontSize: 12, fontWeight: 600 }}>
+                                {(modelStatus.status === "installed" || modelStatus.status === "selected") && <Check size={15} strokeWidth={2.5} />}
+                                {modelStatus.connectionLabel}
+                              </div>
+                            )}
+
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginLeft: "auto" }}>
+                              {canSelect && !modelStatus.isSelected && (
+                                <button
+                                  onClick={() => handleSelectLocalModel(model)}
+                                  style={{
+                                    padding: "9px 12px",
+                                    borderRadius: 10,
+                                    border: "1px solid rgba(0,0,0,0.12)",
+                                    background: "rgba(0,0,0,0.02)",
+                                    color: "var(--text-hi)",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    fontFamily: "var(--font-main)",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <Check size={14} strokeWidth={2.5} />
+                                  Выбрать
+                                </button>
+                              )}
+
+                              {!isModelBusy && (
+                                <button
+                                  onClick={() => {
+                                    if (isDownloaded) {
+                                      setPendingDeleteModel(model);
+                                      return;
+                                    }
+
+                                    void handleInstallLocalSttModel(model);
+                                  }}
+                                  disabled={isInstallDisabled}
+                                  style={{
+                                    padding: "9px 12px",
+                                    borderRadius: 10,
+                                    border: "1px solid rgba(0,0,0,0.12)",
+                                    background: isInstallDisabled ? "rgba(0,0,0,0.04)" : isDownloaded ? "rgba(0,0,0,0.02)" : "#000",
+                                    color: isInstallDisabled ? "var(--text-mid)" : isDownloaded ? "var(--text-hi)" : "#fff",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    fontFamily: "var(--font-main)",
+                                    cursor: isInstallDisabled ? "not-allowed" : "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                  }}
+                                >
+                                  {isDownloaded ? (
+                                    <>
+                                      <Trash2 size={14} strokeWidth={2.2} />
+                                      Удалить
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Download size={14} strokeWidth={2.2} />
+                                      {isRuntimeReady ? "Скачать" : "Недоступно"}
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </button>
-                    <button
-                      onClick={() => { void handleOpenLocalSttDocs(); }}
-                      style={{
-                        border: "none",
-                        background: "transparent",
-                        color: "var(--text-hi)",
-                        padding: 0,
-                        cursor: "pointer",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        textDecoration: "underline",
-                        textUnderlineOffset: 3,
-                      }}
-                    >
-                      Документация Speaches
-                    </button>
-                  </div>
-                  {installMessage && (
-                    <div style={{
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      padding: "10px 12px",
-                      borderRadius: 8,
-                      background: installStatus === "success" ? "rgba(22,163,74,0.06)" : "rgba(220,38,38,0.06)",
-                      color: installStatus === "success" ? "#16a34a" : "#dc2626",
-                      border: `1px solid ${installStatus === "success" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)"}`,
-                    }}>
-                      {installMessage}
                     </div>
-                  )}
-                </div>
-
-                <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-hi)" }}>Обработка текста (LLM)</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <div className="label">API-ключ LLM</div>
-                    <input
-                      type="password"
-                      value={settings.llmApiKey || ""}
-                      onChange={(e) => { update({ llmApiKey: e.target.value }); resetTestState(); }}
-                      className="input"
-                      placeholder="Оставьте пустым, чтобы отключить обработку"
-                      style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
-                    />
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                    Обработку текста вы подключаете сами: например, Ollama, LM Studio или любой OpenAI-совместимый сервер на `localhost`.
-                  </div>
-                  {(settings.llmApiKey || "").trim() && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        <div className="label">Endpoint LLM</div>
-                        <input type="text" value={settings.llmEndpoint} onChange={(e) => { update({ llmEndpoint: e.target.value }); resetTestState(); }} className="input" placeholder="https://api.openai.com" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        <div className="label">LLM модель</div>
-                        <input type="text" value={settings.llmModel} onChange={(e) => { update({ llmModel: e.target.value }); resetTestState(); }} className="input" placeholder="gpt-4o-mini" style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }} />
-                      </div>
+                  );
+                })}
+              </div>
+              {pendingDeleteModel && (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="delete-local-model-title"
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 1000,
+                    background: "rgba(0,0,0,0.22)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 20,
+                  }}
+                  onClick={() => setPendingDeleteModel(null)}
+                >
+                  <div
+                    className="card"
+                    style={{
+                      width: "min(420px, 100%)",
+                      background: "var(--bg)",
+                      padding: 18,
+                      boxShadow: "0 18px 50px rgba(0,0,0,0.18)",
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div id="delete-local-model-title" style={{ fontSize: 17, fontWeight: 750, color: "var(--text-hi)", marginBottom: 8 }}>
+                      Вы действительно хотите удалить?
                     </div>
-                  )}
+                    <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--text-mid)", marginBottom: 16 }}>
+                      {pendingDeleteModel.name} будет удалена с диска. При необходимости модель можно скачать заново.
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setPendingDeleteModel(null)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(0,0,0,0.12)",
+                          background: "rgba(0,0,0,0.02)",
+                          color: "var(--text-hi)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          fontFamily: "var(--font-main)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteLocalSttModel(pendingDeleteModel)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 10,
+                          border: "1px solid rgba(0,0,0,0.12)",
+                          background: "#000",
+                          color: "#fff",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          fontFamily: "var(--font-main)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
                 </div>
-
-                <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.6 }}>
-                  {(settings.llmApiKey || "").trim()
-                    ? "Endpoint'ы должны быть совместимы с форматом OpenAI API. Пустое поле — OpenAI по умолчанию."
-                    : "Обработка текста отключена. Текст вставляется сразу после транскрипции."
-                  }
-                </div>
-                <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
-                {renderTestConnectionBlock("Проверяем локальный STT endpoint и, если включена обработка текста, отдельно LLM endpoint.")}
+              )}
               </div>
             )}
         </>

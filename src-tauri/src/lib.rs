@@ -1,6 +1,7 @@
 mod ai;
 mod commands;
 mod hotkey_capture;
+mod local_stt;
 mod logger;
 mod media;
 mod paste;
@@ -17,6 +18,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
@@ -105,9 +107,13 @@ pub fn run() {
             paste::paste_text,
             ai::transcribe_and_clean,
             ai::transcribe_only,
+            ai::transcribe_file_path,
             media::prepare_media_for_transcription,
             ai::test_api_connection,
+            ai::list_stt_models,
             ai::install_stt_model,
+            ai::delete_stt_model,
+            local_stt::get_local_stt_default_models_dir,
             logger::log_event,
             logger::get_log_path_cmd,
             logger::clear_logs,

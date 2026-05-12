@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_plugin_shell::ShellExt;
 
 const MAX_TRANSCRIPTION_BYTES: u64 = 25 * 1024 * 1024;
+pub const MAX_FILE_TRANSCRIPTION_INPUT_BYTES: u64 = 1024 * 1024 * 1024;
+const FILE_TRANSCRIPTION_SEGMENT_SECONDS: u32 = 600;
 
 #[derive(Deserialize)]
 pub struct PrepareMediaRequest {
@@ -23,6 +25,18 @@ pub struct PrepareMediaResponse {
     pub file_name: String,
     pub mime_type: String,
     pub size_bytes: u64,
+}
+
+pub struct PreparedMediaChunk {
+    pub path: PathBuf,
+    pub file_name: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+}
+
+pub struct PreparedMediaChunks {
+    pub temp_dir: PathBuf,
+    pub chunks: Vec<PreparedMediaChunk>,
 }
 
 fn file_extension(file_name: &str) -> &str {
@@ -97,14 +111,20 @@ async fn run_ffmpeg(app: &tauri::AppHandle, args: Vec<String>) -> Result<Vec<u8>
             return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
         }
         Err(err) => {
-            logger::log_error("MEDIA", &format!("Bundled ffmpeg sidecar unavailable: {}", err));
+            logger::log_error(
+                "MEDIA",
+                &format!("Bundled ffmpeg sidecar unavailable: {}", err),
+            );
         }
     }
 
     #[cfg(debug_assertions)]
     {
         let ffmpeg = resolve_ffmpeg()?;
-        logger::log_info("MEDIA", &format!("Running system ffmpeg fallback: {:?}", ffmpeg));
+        logger::log_info(
+            "MEDIA",
+            &format!("Running system ffmpeg fallback: {:?}", ffmpeg),
+        );
         let output = Command::new(&ffmpeg)
             .args(&args)
             .output()
@@ -121,6 +141,166 @@ async fn run_ffmpeg(app: &tauri::AppHandle, args: Vec<String>) -> Result<Vec<u8>
     {
         Err("Встроенный медиаконвертер недоступен. Переустановите приложение или обратитесь в поддержку Talkis.".to_string())
     }
+}
+
+pub async fn convert_audio_to_local_stt_wav(
+    app: &tauri::AppHandle,
+    input_bytes: &[u8],
+    file_name: &str,
+) -> Result<Vec<u8>, String> {
+    let input_ext = file_extension(file_name);
+    let input_path = unique_temp_path("local-stt-input", input_ext);
+    let output_path = unique_temp_path("local-stt-output", "wav");
+
+    fs::write(&input_path, input_bytes)
+        .map_err(|err| format!("Не удалось подготовить аудио для локального STT: {}", err))?;
+
+    let ffmpeg_args = vec![
+        "-hide_banner".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input_path.to_string_lossy().to_string(),
+        "-vn".to_string(),
+        "-ac".to_string(),
+        "1".to_string(),
+        "-ar".to_string(),
+        "16000".to_string(),
+        "-acodec".to_string(),
+        "pcm_s16le".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+
+    let ffmpeg_result = run_ffmpeg(app, ffmpeg_args).await;
+    let _ = fs::remove_file(&input_path);
+
+    if let Err(message) = ffmpeg_result {
+        let _ = fs::remove_file(&output_path);
+        return Err(if message.is_empty() {
+            "Не удалось подготовить аудио для локального STT.".to_string()
+        } else {
+            format!(
+                "Не удалось подготовить аудио для локального STT: {}",
+                message
+            )
+        });
+    }
+
+    let output_bytes = fs::read(&output_path).map_err(|err| {
+        let _ = fs::remove_file(&output_path);
+        format!("Не удалось прочитать WAV для локального STT: {}", err)
+    })?;
+    let _ = fs::remove_file(&output_path);
+
+    Ok(output_bytes)
+}
+
+pub async fn prepare_media_file_chunks_for_transcription(
+    app: &tauri::AppHandle,
+    input_path: &Path,
+) -> Result<PreparedMediaChunks, String> {
+    let metadata =
+        fs::metadata(input_path).map_err(|err| format!("Не удалось прочитать файл: {}", err))?;
+
+    if !metadata.is_file() {
+        return Err("Выбранный путь не является файлом.".to_string());
+    }
+
+    if metadata.len() == 0 {
+        return Err("Пустой файл нельзя транскрибировать.".to_string());
+    }
+
+    if metadata.len() > MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
+        return Err(
+            "Файл слишком большой. Максимальный размер для локальной подготовки: 1 ГБ.".to_string(),
+        );
+    }
+
+    let chunks_dir = unique_temp_path("file-transcription-chunks", "dir");
+    fs::create_dir_all(&chunks_dir)
+        .map_err(|err| format!("Не удалось подготовить временную папку: {}", err))?;
+
+    let output_pattern = chunks_dir.join("chunk-%05d.mp3");
+    let ffmpeg_args = vec![
+        "-hide_banner".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input_path.to_string_lossy().to_string(),
+        "-vn".to_string(),
+        "-ac".to_string(),
+        "1".to_string(),
+        "-ar".to_string(),
+        "16000".to_string(),
+        "-b:a".to_string(),
+        "32k".to_string(),
+        "-f".to_string(),
+        "segment".to_string(),
+        "-segment_time".to_string(),
+        FILE_TRANSCRIPTION_SEGMENT_SECONDS.to_string(),
+        "-reset_timestamps".to_string(),
+        "1".to_string(),
+        output_pattern.to_string_lossy().to_string(),
+    ];
+
+    if let Err(message) = run_ffmpeg(app, ffmpeg_args).await {
+        let _ = fs::remove_dir_all(&chunks_dir);
+        return Err(if message.is_empty() {
+            "Не удалось извлечь аудио из файла.".to_string()
+        } else {
+            format!("Не удалось извлечь аудио из файла: {}", message)
+        });
+    }
+
+    let mut chunk_paths = fs::read_dir(&chunks_dir)
+        .map_err(|err| {
+            let _ = fs::remove_dir_all(&chunks_dir);
+            format!("Не удалось прочитать подготовленные фрагменты: {}", err)
+        })?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("mp3"))
+        .collect::<Vec<_>>();
+    chunk_paths.sort();
+
+    if chunk_paths.is_empty() {
+        let _ = fs::remove_dir_all(&chunks_dir);
+        return Err("Не удалось извлечь аудио из файла.".to_string());
+    }
+
+    let mut chunks = Vec::with_capacity(chunk_paths.len());
+    for path in chunk_paths {
+        let metadata = fs::metadata(&path).map_err(|err| {
+            let _ = fs::remove_dir_all(&chunks_dir);
+            format!("Не удалось прочитать фрагмент аудио: {}", err)
+        })?;
+
+        if metadata.len() > MAX_TRANSCRIPTION_BYTES {
+            let _ = fs::remove_dir_all(&chunks_dir);
+            return Err(
+                "Подготовленный фрагмент больше 25 МБ. Попробуйте более короткий файл.".to_string(),
+            );
+        }
+
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("talkis-transcription-chunk.mp3")
+            .to_string();
+
+        chunks.push(PreparedMediaChunk {
+            path,
+            file_name,
+            mime_type: "audio/mpeg".to_string(),
+            size_bytes: metadata.len(),
+        });
+    }
+
+    Ok(PreparedMediaChunks {
+        temp_dir: chunks_dir,
+        chunks,
+    })
 }
 
 #[tauri::command]

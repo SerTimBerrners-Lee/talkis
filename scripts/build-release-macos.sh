@@ -12,6 +12,6 @@ if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -n "${TAURI_SIGNING_PRIVATE_KEY_PAT
   TAURI_SIGNING_PRIVATE_KEY="$(cat "${TAURI_SIGNING_PRIVATE_KEY_PATH}")"
 fi
 
-bun run prepare:ffmpeg-sidecar
+TALKIS_STT_RELEASE=1 bun run prepare:sidecars
 bun run tauri build
 bun run postprocess:macos-release

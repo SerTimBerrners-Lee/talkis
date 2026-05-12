@@ -114,7 +114,10 @@ pub fn prompt_accessibility_if_needed() {
         return;
     }
 
-    crate::logger::log_info("ACCESSIBILITY", "Process is NOT trusted — showing native prompt");
+    crate::logger::log_info(
+        "ACCESSIBILITY",
+        "Process is NOT trusted — showing native prompt",
+    );
     unsafe {
         let keys = [kAXTrustedCheckOptionPrompt];
         let values = [kCFBooleanTrue];

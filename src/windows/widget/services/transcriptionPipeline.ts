@@ -42,8 +42,7 @@ function toUserFacingErrorMessage(error: unknown): string {
   const missingModelMatch = raw.match(/Model ['"]([^'"]+)['"] is not installed locally/i);
   if (missingModelMatch) {
     const model = missingModelMatch[1];
-    const encodedModel = encodeURIComponent(model);
-    return `Локальный сервер запущен, но модель ${model} ещё не скачана. Установите её командой: curl http://127.0.0.1:8000/v1/models/${encodedModel} -X POST`;
+    return `Локальный runtime запущен, но модель ${model} ещё не скачана. Откройте Настройки -> Модели -> Локально и нажмите «Скачать».`;
   }
 
   if (
@@ -54,7 +53,7 @@ function toUserFacingErrorMessage(error: unknown): string {
     normalized.includes("os error 61") ||
     normalized.includes("os error 111")
   ) {
-    return "Не удалось подключиться к локальному серверу распознавания. Если Docker не установлен, откройте инструкцию Speaches и выберите установку без Docker, либо укажите другой локальный endpoint.";
+    return "Не удалось запустить локальный runtime распознавания. Откройте Настройки -> Модели -> Локально и нажмите «Скачать» для нужной Whisper-модели.";
   }
 
   if (normalized.includes("unsupported_country_region_territory") || normalized.includes("country, region, or territory not supported")) {
@@ -173,12 +172,13 @@ async function transcribeViaBackend({
       language: settings.language,
       api_key: settings.apiKey,
       whisper_api_key: settings.whisperApiKey || null,
-      llm_api_key: settings.llmApiKey || null,
+      llm_api_key: null,
       style: settings.style || "classic",
       whisper_endpoint: settings.whisperEndpoint || null,
-      llm_endpoint: settings.llmEndpoint || null,
+      local_models_dir: settings.localModelsDir || null,
+      llm_endpoint: null,
       whisper_model: settings.whisperModel || null,
-      llm_model: settings.llmModel || null,
+      llm_model: "none",
     },
   });
 

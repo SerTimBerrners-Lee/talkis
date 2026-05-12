@@ -152,7 +152,10 @@ pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), Strin
                     .write_text(previous_text)
                     .map_err(|e| format!("Clipboard restore failed: {}", e))?;
             } else {
-                logger::log_info("PASTE", "Previous clipboard text unavailable, clearing clipboard");
+                logger::log_info(
+                    "PASTE",
+                    "Previous clipboard text unavailable, clearing clipboard",
+                );
                 handle
                     .clipboard()
                     .clear()

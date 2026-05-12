@@ -314,10 +314,8 @@ pub fn build_whisper_hint(language: &str, style: &str) -> Result<Option<String>,
     let language_profile = registry.language_profiles.get(&resolved_language);
     let style_profile = registry.style_profiles.get(&resolved_style);
 
-    let base_hint = language_profile
-        .and_then(|p| p.config.whisper_hint.as_deref());
-    let style_suffix = style_profile
-        .and_then(|p| p.config.whisper_hint_suffix.as_deref());
+    let base_hint = language_profile.and_then(|p| p.config.whisper_hint.as_deref());
+    let style_suffix = style_profile.and_then(|p| p.config.whisper_hint_suffix.as_deref());
 
     match (base_hint, style_suffix) {
         (Some(base), Some(suffix)) => Ok(Some(format!("{} {}", base, suffix))),

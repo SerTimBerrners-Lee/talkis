@@ -125,7 +125,7 @@ export function UserPanel() {
       if (!code) return;
 
       const token = await pollForToken(code);
-      if (token) {
+      if (token && exchangeCodeRef.current === code) {
         logInfo("USER_PANEL", "Auth polling: token received!");
         const data = await handleAuthToken(token);
         if (data) {
@@ -166,6 +166,13 @@ export function UserPanel() {
   };
 
   const handleLogout = async () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    exchangeCodeRef.current = null;
+    setWaitingForAuth(false);
+    setProfile(null);
     await cloudLogout();
     logInfo("USER_PANEL", "User logged out");
   };
@@ -251,14 +258,8 @@ function SubscriptionCTA({ onActivate }: { onActivate: () => void }) {
         <li>Синхронизация устройств</li>
       </ul>
 
-      <div style={styles.ctaPrice}>
-        <span style={{ textDecoration: "line-through", opacity: 0.4, fontSize: 11, color: "var(--text-low)" }}>1 500 ₽</span>
-        <span style={{ fontWeight: 800, fontSize: 16, color: "var(--text-hi)" }}>390 ₽</span>
-        <span style={{ opacity: 0.5, fontSize: 10, color: "var(--text-low)" }}>/ мес</span>
-      </div>
-
       <button onClick={onActivate} style={styles.ctaButton}>
-        Активировать
+        Перейти на PRO
       </button>
     </div>
   );
@@ -385,12 +386,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     lineHeight: 1.8,
     color: "var(--text-mid)",
-  },
-  ctaPrice: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: 8,
-    marginBottom: 12,
   },
   ctaButton: {
     width: "100%",

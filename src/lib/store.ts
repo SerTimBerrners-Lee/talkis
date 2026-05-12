@@ -29,10 +29,21 @@ export interface ApiAdapterSettings {
   lastTestedModel?: string;
 }
 
+export interface LocalModelSettings {
+  status: "not_downloaded" | "downloading" | "downloaded" | "error";
+  message?: string;
+  downloadedAt?: string;
+  lastCheckedAt?: string;
+}
+
 export interface AppSettings {
   apiKey: string;
   /** Saved API adapter credentials keyed by adapter id */
   apiAdapters: Record<string, ApiAdapterSettings>;
+  /** Cached local model states keyed by local catalog id */
+  localModels: Record<string, LocalModelSettings>;
+  /** Optional custom directory for downloaded local STT models; empty means default app data path */
+  localModelsDir: string;
   /** Separate API key for Whisper/STT endpoint (used in custom mode) */
   whisperApiKey: string;
   /** Separate API key for LLM endpoint (used in custom mode; empty = skip LLM) */
@@ -260,6 +271,8 @@ export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
   apiAdapters: {},
+  localModels: {},
+  localModelsDir: "",
   whisperApiKey: "",
   llmApiKey: "",
   provider: "openai",
@@ -316,9 +329,29 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
       }, {})
     : undefined;
 
+  const rawLocalModels = raw.localModels && typeof raw.localModels === "object"
+    ? Object.entries(raw.localModels as Record<string, unknown>).reduce<Record<string, LocalModelSettings>>((acc, [key, value]) => {
+        if (!value || typeof value !== "object") return acc;
+
+        const model = value as Record<string, unknown>;
+        const status = model.status === "downloading" || model.status === "downloaded" || model.status === "error"
+          ? model.status
+          : "not_downloaded";
+        acc[key] = {
+          status,
+          message: typeof model.message === "string" ? model.message : undefined,
+          downloadedAt: typeof model.downloadedAt === "string" ? model.downloadedAt : undefined,
+          lastCheckedAt: typeof model.lastCheckedAt === "string" ? model.lastCheckedAt : undefined,
+        };
+        return acc;
+      }, {})
+    : undefined;
+
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
     apiAdapters: rawApiAdapters,
+    localModels: rawLocalModels,
+    localModelsDir: typeof raw.localModelsDir === "string" ? raw.localModelsDir : undefined,
     whisperApiKey: typeof raw.whisperApiKey === "string" ? raw.whisperApiKey : undefined,
     llmApiKey: typeof raw.llmApiKey === "string" ? raw.llmApiKey : undefined,
     provider: parseProvider(raw.provider),
@@ -391,8 +424,19 @@ function pruneHistory(history: HistoryEntry[]): HistoryEntry[] {
   return limitedByType;
 }
 
-export async function getSettings(): Promise<AppSettings> {
+interface GetSettingsOptions {
+  reload?: boolean;
+}
+
+export async function getSettings(options: GetSettingsOptions = {}): Promise<AppSettings> {
   const store = await getStore();
+  if (options.reload) {
+    try {
+      await store.reload();
+    } catch (error) {
+      console.warn("Failed to reload settings store, using in-memory store", error);
+    }
+  }
   const saved = await store.get<unknown>("settings");
   const normalized = normalizeSavedSettings(saved);
   // Remove undefined keys so they don't overwrite defaults
@@ -405,7 +449,7 @@ export async function getSettings(): Promise<AppSettings> {
 
 export async function saveSettings(settings: Partial<AppSettings>): Promise<void> {
   const store = await getStore();
-  const current = await getSettings();
+  const current = await getSettings({ reload: true });
   const nextSettings = { ...current, ...settings };
 
   if (typeof settings.hotkey === "string") {

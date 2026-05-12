@@ -1,0 +1,33 @@
+{
+  "version": "0.1.0",
+  "engine": "qwen-asr",
+  "models": [
+    {
+      "id": "Qwen/Qwen3-ASR-0.6B",
+      "directory": "qwen3-asr-06b",
+      "source": "huggingface",
+      "url": "https://huggingface.co/Qwen/Qwen3-ASR-0.6B"
+    }
+  ],
+  "python": {
+    "runtime": {
+      "provider": "astral-sh/python-build-standalone",
+      "version": "3.12.13",
+      "release": "20260510",
+      "assets": {
+        "aarch64-apple-darwin": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13%2B20260510-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17"
+        },
+        "x86_64-apple-darwin": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13%2B20260510-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"
+        }
+      }
+    },
+    "packages": [
+      "qwen-asr",
+      "huggingface_hub"
+    ]
+  }
+}

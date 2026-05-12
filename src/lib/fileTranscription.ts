@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { AppSettings } from "./store";
 import { logError, logInfo } from "./logger";
@@ -7,6 +8,7 @@ import { formatErrorMessage } from "./utils";
 const PROXY_BASE_URL = "https://proxy.talkis.ru";
 const TRANSCRIPTION_MAX_BYTES = 25 * 1024 * 1024;
 const INPUT_MAX_BYTES = 200 * 1024 * 1024;
+const FILE_TRANSCRIPTION_PROGRESS_EVENT = "file-transcription-progress";
 
 const DIRECT_EXTENSIONS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -21,7 +23,14 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   webm: "audio/webm",
 };
 
-export type FileTranscriptionStatus = "reading" | "converting" | "uploading";
+export type FileTranscriptionStatus = "reading" | "converting" | "uploading" | "preparing" | "transcribing" | "done";
+
+export interface FileTranscriptionProgress {
+  status: FileTranscriptionStatus;
+  currentChunk: number;
+  totalChunks: number;
+  message: string;
+}
 
 export interface FileTranscriptionResult {
   text: string;
@@ -45,9 +54,23 @@ interface PreparedTranscriptionFile {
   converted: boolean;
 }
 
+interface FileTranscriptionProgressPayload {
+  request_id: string;
+  status: FileTranscriptionStatus;
+  current_chunk: number;
+  total_chunks: number;
+  message: string;
+}
+
 function fileExtension(fileName: string): string {
   const match = fileName.toLowerCase().match(/\.([a-z0-9]+)$/);
   return match ? match[1] : "";
+}
+
+export function fileNameFromPath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const name = normalized.split("/").filter(Boolean).pop();
+  return name || "Файл";
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -91,6 +114,10 @@ function shouldConvert(file: File): boolean {
 }
 
 export function formatFileSize(bytes: number): string {
+  if (bytes <= 0) {
+    return "0 Б";
+  }
+
   if (bytes >= 1024 * 1024) {
     return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
   }
@@ -112,6 +139,10 @@ export function toFileTranscriptionErrorMessage(error: unknown): string {
 
   if (normalized.includes("больше 25") || normalized.includes("too large")) {
     return "Файл слишком большой для транскрибации. Попробуйте более короткий фрагмент.";
+  }
+
+  if (normalized.includes("1 гб") || normalized.includes("1 gb")) {
+    return "Файл слишком большой для транскрибации. Максимальный размер: 1 ГБ.";
   }
 
   if (normalized.includes("unsupported") || normalized.includes("не удалось извлечь аудио")) {
@@ -230,12 +261,13 @@ async function transcribeViaBackend(
       language: settings.language,
       api_key: settings.apiKey,
       whisper_api_key: settings.whisperApiKey || null,
-      llm_api_key: settings.llmApiKey || null,
+      llm_api_key: null,
       style: settings.style || "classic",
       whisper_endpoint: settings.whisperEndpoint || null,
-      llm_endpoint: settings.llmEndpoint || null,
+      local_models_dir: settings.localModelsDir || null,
+      llm_endpoint: null,
       whisper_model: settings.whisperModel || null,
-      llm_model: settings.llmModel || null,
+      llm_model: "none",
       file_name: prepared.fileName,
       mime_type: prepared.mimeType,
       mode: "transcribe_only",
@@ -288,4 +320,80 @@ export async function transcribeFileOnly({
     uploadedFileName: prepared.fileName,
     uploadedSizeBytes: prepared.sizeBytes,
   };
+}
+
+export async function transcribeFilePathOnly({
+  filePath,
+  settings,
+  onStatus,
+  onProgress,
+}: {
+  filePath: string;
+  settings: AppSettings;
+  onStatus?: (status: FileTranscriptionStatus) => void;
+  onProgress?: (progress: FileTranscriptionProgress) => void;
+}): Promise<FileTranscriptionResult> {
+  const requestId = crypto.randomUUID();
+  const fileName = fileNameFromPath(filePath);
+
+  const unlisten = await listen<FileTranscriptionProgressPayload>(
+    FILE_TRANSCRIPTION_PROGRESS_EVENT,
+    (event) => {
+      if (event.payload.request_id !== requestId) return;
+
+      const progress: FileTranscriptionProgress = {
+        status: event.payload.status,
+        currentChunk: event.payload.current_chunk || 0,
+        totalChunks: event.payload.total_chunks || 0,
+        message: event.payload.message || "",
+      };
+
+      onStatus?.(progress.status);
+      onProgress?.(progress);
+    },
+  );
+
+  try {
+    onStatus?.("preparing");
+    onProgress?.({
+      status: "preparing",
+      currentChunk: 0,
+      totalChunks: 0,
+      message: "Готовим файл",
+    });
+
+    logInfo("FILE_TRANSCRIPTION", `Sending file path ${fileName} through native pipeline`);
+
+    const result = await invoke<{ raw: string; cleaned: string }>("transcribe_file_path", {
+      req: {
+        request_id: requestId,
+        file_path: filePath,
+        file_name: fileName,
+        file_size: null,
+        language: settings.language,
+        api_key: settings.apiKey,
+        whisper_api_key: settings.whisperApiKey || null,
+        style: settings.style || "classic",
+        whisper_endpoint: settings.whisperEndpoint || null,
+        local_models_dir: settings.localModelsDir || null,
+        whisper_model: settings.whisperModel || null,
+        use_own_key: settings.useOwnKey,
+        device_token: settings.deviceToken || null,
+      },
+    });
+    const text = (result.raw || result.cleaned).trim();
+
+    if (!text) {
+      throw new Error("В файле не удалось распознать речь.");
+    }
+
+    return {
+      text,
+      converted: true,
+      uploadedFileName: fileName,
+      uploadedSizeBytes: 0,
+    };
+  } finally {
+    unlisten();
+  }
 }

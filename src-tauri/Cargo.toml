@@ -1,9 +1,10 @@
 [package]
 name = "talkis"
-version = "0.1.14"
+version = "0.1.15"
 description = "Talkis - Voice to Text macOS Widget"
 authors = ["trixter"]
 edition = "2021"
+default-run = "talkis"
 
 [lib]
 name = "talkis_lib"
@@ -22,7 +23,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 enigo = "0.2"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "blocking"] }
+sha2 = "0.10"
+hex = "0.4"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 window-vibrancy = "0.7.1"
@@ -33,6 +36,9 @@ url = "2.5.8"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-shell = "2.3.2"
+whisper-rs = "0.16.0"
+hound = "3.5.1"
+tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"

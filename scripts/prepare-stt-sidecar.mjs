@@ -1,0 +1,76 @@
+import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
+const tauriDir = join(rootDir, "src-tauri");
+const binariesDir = join(tauriDir, "binaries");
+
+function readTargetTriple() {
+  if (process.env.TAURI_STT_TARGET_TRIPLE) {
+    return process.env.TAURI_STT_TARGET_TRIPLE.trim();
+  }
+
+  try {
+    return execFileSync("rustc", ["--print", "host-tuple"], { encoding: "utf8" }).trim();
+  } catch {
+    const versionOutput = execFileSync("rustc", ["-Vv"], { encoding: "utf8" });
+    const hostLine = versionOutput.split("\n").find((line) => line.startsWith("host:"));
+
+    if (!hostLine) {
+      throw new Error("Failed to determine Rust target triple");
+    }
+
+    return hostLine.replace("host:", "").trim();
+  }
+}
+
+const targetTriple = readTargetTriple();
+const extension = targetTriple.includes("windows") ? ".exe" : "";
+const profile = process.env.TALKIS_STT_RELEASE === "1" ? "release" : "debug";
+const sidecars = ["talkis-stt", "talkis-stt-nvidia", "talkis-stt-qwen"];
+const cargoArgs = ["build", "--manifest-path", join(tauriDir, "Cargo.toml")];
+
+for (const sidecar of sidecars) {
+  cargoArgs.push("--bin", sidecar);
+}
+
+if (profile === "release") {
+  cargoArgs.push("--release");
+}
+
+mkdirSync(binariesDir, { recursive: true });
+
+for (const sidecar of sidecars) {
+  const destinationBinary = join(binariesDir, `${sidecar}-${targetTriple}${extension}`);
+  if (!existsSync(destinationBinary)) {
+    writeFileSync(destinationBinary, "#!/usr/bin/env sh\nexit 1\n");
+    if (!targetTriple.includes("windows")) {
+      chmodSync(destinationBinary, 0o755);
+    }
+  }
+}
+
+execFileSync("cargo", cargoArgs, { stdio: "inherit" });
+
+for (const sidecar of sidecars) {
+  const sourceBinary = join(tauriDir, "target", profile, `${sidecar}${extension}`);
+  const destinationBinary = join(binariesDir, `${sidecar}-${targetTriple}${extension}`);
+
+  if (!existsSync(sourceBinary)) {
+    throw new Error(`${sidecar} binary was not built: ${sourceBinary}`);
+  }
+
+  if (!statSync(sourceBinary).isFile()) {
+    throw new Error(`${sidecar} path is not a file: ${sourceBinary}`);
+  }
+
+  copyFileSync(sourceBinary, destinationBinary);
+
+  if (!targetTriple.includes("windows")) {
+    chmodSync(destinationBinary, 0o755);
+  }
+
+  console.log(`Prepared ${sidecar} sidecar: ${destinationBinary}`);
+}

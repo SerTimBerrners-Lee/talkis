@@ -1,24 +1,41 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, JSX } from "react";
 import { emit } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { open } from "@tauri-apps/plugin-dialog";
 import { AlertCircle, Check, Clipboard, FileAudio, Loader2, X } from "lucide-react";
 
 import { addHistoryEntry, getSettings, HistoryEntry } from "../../../lib/store";
 import { HISTORY_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 import {
+  fileNameFromPath,
+  FileTranscriptionProgress,
   FileTranscriptionStatus,
   formatFileSize,
   toFileTranscriptionErrorMessage,
+  transcribeFilePathOnly,
   transcribeFileOnly,
 } from "../../../lib/fileTranscription";
 
-type ProcessingState = "idle" | FileTranscriptionStatus | "done" | "error";
+type ProcessingState = "idle" | FileTranscriptionStatus | "error";
+interface SelectedTranscriptionFile {
+  name: string;
+  size: number | null;
+}
 const RESULT_PREVIEW_LIMIT = 250;
 
-function statusLabel(status: ProcessingState): string {
+function statusLabel(status: ProcessingState, progress: FileTranscriptionProgress | null): string {
   if (status === "reading") return "Читаем файл";
   if (status === "converting") return "Извлекаем и сжимаем аудио";
   if (status === "uploading") return "Отправляем на транскрибацию";
+  if (status === "preparing") return progress?.message || "Готовим файл";
+  if (status === "transcribing") {
+    if (progress && progress.totalChunks > 0) {
+      return `Распознаём фрагмент ${progress.currentChunk} из ${progress.totalChunks}`;
+    }
+
+    return "Распознаём фрагменты";
+  }
   if (status === "done") return "Готово";
   if (status === "error") return "Ошибка";
   return "Ожидаем файл";
@@ -26,8 +43,12 @@ function statusLabel(status: ProcessingState): string {
 
 export function FileTranscriptionTab(): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const isProcessingRef = useRef(false);
+  const nativeDropAtRef = useRef(0);
+  const processFilePathRef = useRef<(filePath: string) => Promise<void>>(async () => {});
+  const [selectedFile, setSelectedFile] = useState<SelectedTranscriptionFile | null>(null);
   const [status, setStatus] = useState<ProcessingState>("idle");
+  const [progress, setProgress] = useState<FileTranscriptionProgress | null>(null);
   const [resultEntry, setResultEntry] = useState<HistoryEntry | null>(null);
   const [error, setError] = useState("");
   const [convertedInfo, setConvertedInfo] = useState("");
@@ -35,18 +56,27 @@ export function FileTranscriptionTab(): JSX.Element {
   const [copied, setCopied] = useState(false);
   const [resultExpanded, setResultExpanded] = useState(false);
 
-  const isProcessing = status === "reading" || status === "converting" || status === "uploading";
+  const isProcessing = status === "reading"
+    || status === "converting"
+    || status === "uploading"
+    || status === "preparing"
+    || status === "transcribing";
+
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   const resetResult = (): void => {
     setResultEntry(null);
     setError("");
     setConvertedInfo("");
+    setProgress(null);
     setCopied(false);
     setResultExpanded(false);
   };
 
   const processFile = async (file: File): Promise<void> => {
-    setSelectedFile(file);
+    setSelectedFile({ name: file.name, size: file.size });
     resetResult();
     setStatus("reading");
 
@@ -86,6 +116,100 @@ export function FileTranscriptionTab(): JSX.Element {
     }
   };
 
+  const processFilePath = async (filePath: string): Promise<void> => {
+    const fileName = fileNameFromPath(filePath);
+    setSelectedFile({ name: fileName, size: null });
+    resetResult();
+    setStatus("preparing");
+
+    try {
+      const settings = await getSettings();
+      const startedAt = Date.now();
+      const transcription = await transcribeFilePathOnly({
+        filePath,
+        settings,
+        onStatus: setStatus,
+        onProgress: setProgress,
+      });
+      const entry: HistoryEntry = {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        duration: 0,
+        raw: transcription.text,
+        cleaned: transcription.text,
+        source: "file",
+        fileName,
+        status: "completed",
+        processingTime: Date.now() - startedAt,
+      };
+
+      await addHistoryEntry(entry);
+      await emit(HISTORY_UPDATED_EVENT, entry);
+      setResultEntry(entry);
+      setConvertedInfo("");
+      setStatus("done");
+    } catch (caughtError) {
+      setError(toFileTranscriptionErrorMessage(caughtError));
+      setStatus("error");
+    }
+  };
+
+  processFilePathRef.current = processFilePath;
+
+  useEffect(() => {
+    const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        if (!isProcessingRef.current) {
+          setIsDragOver(true);
+        }
+        return;
+      }
+
+      if (event.payload.type === "leave") {
+        setIsDragOver(false);
+        return;
+      }
+
+      setIsDragOver(false);
+      nativeDropAtRef.current = Date.now();
+
+      const filePath = event.payload.paths[0];
+      if (!filePath || isProcessingRef.current) {
+        return;
+      }
+
+      void processFilePathRef.current(filePath);
+    });
+
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  const openFileDialog = async (): Promise<void> => {
+    if (isProcessing) return;
+
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: "Аудио и видео",
+            extensions: ["mp3", "wav", "m4a", "mp4", "mov", "webm", "ogg", "flac", "mpeg", "mpga", "avi", "mkv"],
+          },
+        ],
+      });
+
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      if (typeof filePath === "string" && filePath.trim()) {
+        void processFilePath(filePath);
+      }
+    } catch (caughtError) {
+      setError(toFileTranscriptionErrorMessage(caughtError));
+      setStatus("error");
+    }
+  };
+
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -98,6 +222,10 @@ export function FileTranscriptionTab(): JSX.Element {
   const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
     setIsDragOver(false);
+
+    if (Date.now() - nativeDropAtRef.current < 1000) {
+      return;
+    }
 
     const file = event.dataTransfer.files?.[0];
     if (file) {
@@ -145,7 +273,7 @@ export function FileTranscriptionTab(): JSX.Element {
         tabIndex={isProcessing ? -1 : 0}
         onClick={() => {
           if (!isProcessing) {
-            inputRef.current?.click();
+            void openFileDialog();
           }
         }}
         onKeyDown={(event) => {
@@ -154,7 +282,7 @@ export function FileTranscriptionTab(): JSX.Element {
           }
 
           event.preventDefault();
-          inputRef.current?.click();
+          void openFileDialog();
         }}
         onDragOver={(event) => {
           event.preventDefault();
@@ -197,7 +325,9 @@ export function FileTranscriptionTab(): JSX.Element {
               {selectedFile ? selectedFile.name : "Перетащите аудио или видео"}
             </div>
             <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
-              {selectedFile ? `${formatFileSize(selectedFile.size)} · ${statusLabel(status)}` : "Нажмите на область или перетащите файл. MP3, WAV, M4A, MP4, MOV, WEBM и другие форматы"}
+              {selectedFile
+                ? `${selectedFile.size !== null ? `${formatFileSize(selectedFile.size)} · ` : ""}${statusLabel(status, progress)}`
+                : "Нажмите на область или перетащите файл. MP3, WAV, M4A, MP4, MOV, WEBM и другие форматы"}
             </div>
             {convertedInfo && (
               <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.5 }}>
@@ -208,7 +338,7 @@ export function FileTranscriptionTab(): JSX.Element {
 
           {isProcessing && (
             <div style={{ width: "min(320px, 100%)", height: 4, borderRadius: 999, overflow: "hidden", background: "rgba(0,0,0,0.08)" }}>
-              <div style={{ width: status === "reading" ? "30%" : status === "converting" ? "64%" : "88%", height: "100%", borderRadius: 999, background: "#000", transition: "width 0.24s ease" }} />
+              <div style={{ width: status === "reading" ? "30%" : status === "converting" || status === "preparing" ? "64%" : "88%", height: "100%", borderRadius: 999, background: "#000", transition: "width 0.24s ease" }} />
             </div>
           )}
 

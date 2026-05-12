@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { Check, ChevronDown, Search } from "lucide-react";
 
 import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
@@ -49,6 +50,7 @@ export function SettingsTab() {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [autostartLoaded, setAutostartLoaded] = useState(false);
   const [autostartPending, setAutostartPending] = useState(false);
+  const [defaultLocalModelsDir, setDefaultLocalModelsDir] = useState("");
 
   type MicAvailabilityState = "ready" | "missing-selected" | "permission-needed" | "empty";
 
@@ -62,10 +64,18 @@ export function SettingsTab() {
   };
 
   useEffect(() => {
-    getSettings().then(s => {
+    getSettings({ reload: true }).then(s => {
       setSettings(s);
       settingsRef.current = s;
     });
+  }, []);
+
+  useEffect(() => {
+    invoke<string>("get_local_stt_default_models_dir")
+      .then(setDefaultLocalModelsDir)
+      .catch((error) => {
+        void logError("SETTINGS", `Failed to load default local models directory: ${error instanceof Error ? error.message : String(error)}`);
+      });
   }, []);
 
   useEffect(() => {
@@ -109,7 +119,7 @@ export function SettingsTab() {
           return;
         }
 
-        const latestSettings = await getSettings();
+        const latestSettings = await getSettings({ reload: true });
         settingsRef.current = latestSettings;
         setSettings(latestSettings);
         setHotkeyFeedbackTone("success");
@@ -422,6 +432,8 @@ export function SettingsTab() {
       ? "#027a48"
       : "var(--text-mid)";
   const autostartDisabled = !autostartLoaded || autostartPending;
+  const localModelsDir = (settings.localModelsDir || "").trim();
+  const effectiveLocalModelsDir = localModelsDir || defaultLocalModelsDir;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -638,6 +650,47 @@ export function SettingsTab() {
         </div>
         <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65 }}>
           Запускать Talkis автоматически при входе в систему.
+        </div>
+      </div>
+
+      <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Директория моделей</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "end", width: "100%" }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (effectiveLocalModelsDir) void openPath(effectiveLocalModelsDir);
+              }}
+              disabled={!effectiveLocalModelsDir}
+              className="btn"
+              style={{ minHeight: 38, flex: 1, justifyContent: "center", opacity: effectiveLocalModelsDir ? 1 : 0.7, cursor: effectiveLocalModelsDir ? "pointer" : "not-allowed" }}
+            >
+              Открыть
+            </button>
+            <button
+              type="button"
+              onClick={() => { void update({ localModelsDir: "" }); }}
+              disabled={!localModelsDir}
+              className="btn"
+              style={{ minHeight: 38, flex: 1, justifyContent: "center", opacity: localModelsDir ? 1 : 0.7, cursor: localModelsDir ? "pointer" : "not-allowed" }}
+            >
+              По умолчанию
+            </button>
+          </div>
+        </div>
+        <input
+          type="text"
+          value={settings.localModelsDir}
+          onChange={(event) => { void update({ localModelsDir: event.target.value }); }}
+          className="input"
+          placeholder={defaultLocalModelsDir || "Директория по умолчанию"}
+          style={{ height: 40, padding: "8px 10px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+        />
+        <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65 }}>
+          Папка для скачанных локальных моделей. Оставьте поле пустым, чтобы использовать директорию по умолчанию.
         </div>
       </div>
     </div>

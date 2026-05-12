@@ -152,9 +152,13 @@ export function useWidgetHotkey({
 
   useEffect(() => {
     const unlistenSettings = listen(SETTINGS_UPDATED_EVENT, async () => {
-      const latestSettings = await getSettings();
+      const latestSettings = await getSettings({ reload: true });
       setSettings(latestSettings);
       settingsRef.current = latestSettings;
+      logInfo(
+        "SETTINGS",
+        `Applied settings update: mic=${latestSettings.micId || "[default]"}, hotkey=${latestSettings.hotkey}`,
+      );
     });
 
     const unlistenCaptureState = listen<HotkeyCaptureStatePayload>(HOTKEY_CAPTURE_STATE_EVENT, ({ payload }) => {

@@ -102,8 +102,8 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    const syncHotkeyLabel = async () => {
-      const settings = await getSettings();
+    const syncHotkeyLabel = async (reload = false) => {
+      const settings = await getSettings({ reload });
       setHotkeyLabel(formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY));
     };
 
@@ -115,7 +115,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
     });
 
     const unlistenSettings = listen(SETTINGS_UPDATED_EVENT, () => {
-      void syncHotkeyLabel();
+      void syncHotkeyLabel(true);
     });
 
     return () => {

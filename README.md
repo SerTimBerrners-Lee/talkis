@@ -15,6 +15,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - The settings window lets you choose language, microphone, model source, API adapter, text cleanup style, and transcribe audio/video files
 - Recent voice recordings and file transcriptions are saved in local history with processing time
 - The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
+- Local STT can install and run Talkis-managed Whisper, Qwen, and NVIDIA Parakeet runtimes without requiring the user to install Python or Docker manually
 
 ## Access modes
 
@@ -38,23 +39,25 @@ Supported STT models:
 
 ### Local model
 
-Run a local [Speaches](https://speaches.ai) (faster-whisper) server via Docker. No API key needed.
+Open `Модели` → `Локально`, choose a supported local STT model, and click `Скачать`. Talkis starts the matching OpenAI-compatible local runtime and downloads the selected model into the configured local models directory.
 
-```bash
-# 1. Download the Docker config
-curl -O https://raw.githubusercontent.com/speaches-ai/speaches/master/compose.yaml
-curl -O https://raw.githubusercontent.com/speaches-ai/speaches/master/compose.cpu.yaml
+Managed local runtimes:
 
-# 2. Start the local server
-docker compose -f compose.cpu.yaml up -d
+- Whisper runtime, default endpoint `http://127.0.0.1:8000`
+- NVIDIA Parakeet MLX runtime, default endpoint `http://127.0.0.1:8001`
+- Qwen ASR runtime, default endpoint `http://127.0.0.1:8002`
 
-# 3. Install a model
-curl http://127.0.0.1:8000/v1/models/Systran%2Ffaster-whisper-large-v3 -X POST
+If one of these ports is already occupied by another app, Talkis automatically starts the managed runtime on a free fallback port and saves the actual endpoint in settings. Fallback ranges are `18000-18049` for Whisper, `18050-18099` for NVIDIA, and `18100-18149` for Qwen.
 
-# 4. In Talkis settings, open Модели → Локально and set STT endpoint to http://127.0.0.1:8000
-```
+Supported managed local models include:
 
-LLM cleanup can be skipped entirely ("Без обработки") or pointed at a local LLM.
+- `whisper-large-v3-turbo`
+- `whisper-small`, `whisper-medium`, `whisper-large-v2`, `whisper-large-v3`, `whisper-base`, `whisper-tiny`
+- `Qwen/Qwen3-ASR-0.6B`
+- `mlx-community/parakeet-tdt-0.6b-v3`
+- `mlx-community/parakeet-tdt-0.6b-v2`
+
+Local STT is transcription-only. Talkis does not run LLM/style cleanup for local STT mode unless a separate LLM endpoint is configured in custom mode.
 
 ## macOS only
 
@@ -96,7 +99,7 @@ Open the `Модели` tab and choose between:
 
 - **Облако** — sign in to Talkis Cloud
 - **API** — expand an adapter, enter your API key and model name, then test/save the connection
-- **Локально** — connect a local Speaches server and install or select a local model
+- **Локально** — install or select a Talkis-managed local STT model
 
 ## How to use
 
@@ -145,12 +148,15 @@ Talkis checks for a new app version in the background after startup and then per
 
 ### File transcription
 
-The `Файлы` tab can transcribe audio or video files without LLM cleanup. Supported audio files under 25 MB are sent directly. Larger files, video files, and less common formats are converted inside the app with a bundled ffmpeg sidecar before upload.
+The `Файлы` tab can transcribe audio or video files without LLM cleanup. File selection and drag-and-drop use a native path-based pipeline, so large files do not need to be loaded into the webview memory.
+
+Talkis supports file transcription up to 1 GB. Video files, long recordings, and less common formats are converted inside the app with the bundled ffmpeg sidecar, split into safe audio chunks, and transcribed sequentially. The UI shows chunk progress while processing.
 
 File transcription uses the same access mode as voice recording:
 
 - Talkis Cloud sends files to `proxy.talkis.ru/api/transcribe-only`
 - Custom provider mode sends files to the configured OpenAI-compatible STT endpoint
+- Local mode sends chunks to the active managed local STT runtime
 
 ## Text styles
 
@@ -208,11 +214,12 @@ If LLM model is set to "Без обработки", the raw transcription is pas
 - Make sure a specific language is selected in settings (e.g. `ru`) instead of `auto`
 - The `language` parameter constrains the STT model to the selected language
 
-### Local Speaches model returns errors
+### Local STT model returns errors
 
-- Verify the Docker container is running: `curl http://127.0.0.1:8000/health`
-- Reinstall the model if you get 500 errors: delete and re-POST the model
-- Speaches does not support `verbose_json` — Talkis handles this automatically for local endpoints
+- Open `Модели` → `Локально` and make sure the model shows `Выбрать` or is currently selected
+- If a default port is busy, Talkis will try a fallback managed port automatically and save it in settings
+- Delete and reinstall the model if the runtime reports missing model files
+- For custom localhost STT servers on non-managed ports, Talkis treats the endpoint as an external OpenAI-compatible server and does not try to start or stop it
 
 ### The microphone list is empty
 
@@ -241,6 +248,7 @@ If you want to run the project locally:
 
 ```bash
 bun install
+bun run prepare:sidecars
 bun run tauri dev
 ```
 
@@ -248,7 +256,10 @@ Useful commands:
 
 ```bash
 bunx tsc --noEmit
+cargo check --manifest-path src-tauri/Cargo.toml
+bun run check:release
 bun run tauri build
+bun run build:release:macos
 bun run logs
 bun run logs:clear
 ```
@@ -259,7 +270,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.14` to build and publish a GitHub Release
+- Push a tag like `v0.1.15` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS release artifacts and updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -282,8 +293,9 @@ Without these secrets, the workflow can still produce unsigned macOS release art
 - Rust (backend, CGEvent paste, prompt engine)
 - OpenAI Whisper / gpt-4o-transcribe
 - OpenAI GPT-4o mini (text cleanup)
-- Speaches / faster-whisper (optional local STT)
+- Talkis-managed local STT runtimes for Whisper, Qwen ASR, and NVIDIA Parakeet MLX
+- Bundled ffmpeg sidecar for media conversion and file transcription chunking
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.14**.
+Talkis is an active work in progress. Current version: **0.1.15**.

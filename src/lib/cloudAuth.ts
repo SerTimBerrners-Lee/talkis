@@ -19,6 +19,7 @@ type CloudProfileListener = (profile: CloudProfile | null | undefined) => void;
 
 let cachedCloudProfile: CloudProfile | null | undefined;
 let inflightCloudProfileRequest: Promise<CloudProfile | null> | null = null;
+let authRevision = 0;
 const cloudProfileListeners = new Set<CloudProfileListener>();
 
 function notifyCloudProfileListeners(profile: CloudProfile | null | undefined): void {
@@ -77,6 +78,7 @@ export async function fetchCloudProfile({ force = false }: { force?: boolean } =
   const request = (async () => {
     const settings = await getSettings();
     const token = settings.deviceToken;
+    const requestRevision = authRevision;
 
     if (!token) {
       setCachedCloudProfile(null);
@@ -102,6 +104,12 @@ export async function fetchCloudProfile({ force = false }: { force?: boolean } =
 
       const data = await response.json();
       const profile = data as CloudProfile;
+      const latestSettings = await getSettings();
+      if (authRevision !== requestRevision || latestSettings.deviceToken !== token) {
+        logInfo("CLOUD", "Ignoring stale cloud profile response");
+        return cachedCloudProfile ?? null;
+      }
+
       setCachedCloudProfile(profile);
       return profile;
     } catch (error) {
@@ -126,6 +134,7 @@ export async function fetchCloudProfile({ force = false }: { force?: boolean } =
  */
 export async function handleAuthToken(token: string): Promise<CloudProfile | null> {
   logInfo("CLOUD", "Received auth token from deep link");
+  authRevision += 1;
   await saveCloudSettings({ deviceToken: token, useOwnKey: false });
   return fetchCloudProfile({ force: true });
 }
@@ -135,6 +144,9 @@ export async function handleAuthToken(token: string): Promise<CloudProfile | nul
  */
 export async function cloudLogout(): Promise<void> {
   logInfo("CLOUD", "Logging out");
+  authRevision += 1;
+  inflightCloudProfileRequest = null;
+  setCachedCloudProfile(null);
   await saveCloudSettings({ deviceToken: "", useOwnKey: true });
   setCachedCloudProfile(null);
 }
