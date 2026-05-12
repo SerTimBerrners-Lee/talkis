@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Check, ChevronDown, Search } from "lucide-react";
 
 import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
@@ -402,6 +402,26 @@ export function SettingsTab() {
     }
   };
 
+  const changeLocalModelsDir = async (): Promise<void> => {
+    try {
+      const selected = await openDialog({
+        title: "Выберите директорию моделей",
+        directory: true,
+        multiple: false,
+        defaultPath: effectiveLocalModelsDir || defaultLocalModelsDir || undefined,
+      });
+
+      if (typeof selected !== "string") {
+        return;
+      }
+
+      await update({ localModelsDir: selected });
+      void logInfo("SETTINGS", `Local models directory changed: ${selected}`);
+    } catch (error) {
+      void logError("SETTINGS", `Failed to change local models directory: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   const getMicrophoneLabel = (mic: MediaDeviceInfo, index: number): string => {
     const label = mic.label?.trim();
     return label ? label : `Микрофон ${index + 1}`;
@@ -661,24 +681,22 @@ export function SettingsTab() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "end", width: "100%" }}>
             <button
               type="button"
-              onClick={() => {
-                if (effectiveLocalModelsDir) void openPath(effectiveLocalModelsDir);
-              }}
-              disabled={!effectiveLocalModelsDir}
+              onClick={() => { void changeLocalModelsDir(); }}
               className="btn"
-              style={{ minHeight: 38, flex: 1, justifyContent: "center", opacity: effectiveLocalModelsDir ? 1 : 0.7, cursor: effectiveLocalModelsDir ? "pointer" : "not-allowed" }}
+              style={{ minHeight: 38, flex: 1, justifyContent: "center" }}
             >
-              Открыть
+              Изменить
             </button>
-            <button
-              type="button"
-              onClick={() => { void update({ localModelsDir: "" }); }}
-              disabled={!localModelsDir}
-              className="btn"
-              style={{ minHeight: 38, flex: 1, justifyContent: "center", opacity: localModelsDir ? 1 : 0.7, cursor: localModelsDir ? "pointer" : "not-allowed" }}
-            >
-              По умолчанию
-            </button>
+            {localModelsDir && (
+              <button
+                type="button"
+                onClick={() => { void update({ localModelsDir: "" }); }}
+                className="btn"
+                style={{ minHeight: 38, flex: 1, justifyContent: "center" }}
+              >
+                По умолчанию
+              </button>
+            )}
           </div>
         </div>
         <input

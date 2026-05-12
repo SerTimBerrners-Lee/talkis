@@ -157,6 +157,10 @@ export function toFileTranscriptionErrorMessage(error: unknown): string {
     return "Для облачной транскрибации нужна активная подписка Talkis.";
   }
 
+  if (normalized.includes("not installed locally") || normalized.includes("ещё не скачана")) {
+    return "Локальная модель распознавания не установлена. Откройте Настройки -> Модели -> Локально и нажмите «Скачать» для выбранной модели.";
+  }
+
   if (normalized.includes("401") || normalized.includes("unauthorized") || normalized.includes("invalid api key")) {
     return "Не удалось авторизоваться в API. Проверьте ключ доступа.";
   }

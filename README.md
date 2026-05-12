@@ -13,6 +13,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - The floating widget can start/stop recording with a mouse click, copy the latest result, and show a low microphone signal notice
 - Autostart can be enabled from settings
 - The settings window lets you choose language, microphone, model source, API adapter, text cleanup style, and transcribe audio/video files
+- The settings window lets you change the local models directory and reset it to the default app data directory
 - Recent voice recordings and file transcriptions are saved in local history with processing time
 - The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
 - Local STT can install and run Talkis-managed Whisper, Qwen, and NVIDIA Parakeet runtimes without requiring the user to install Python or Docker manually
@@ -40,6 +41,8 @@ Supported STT models:
 ### Local model
 
 Open `Модели` → `Локально`, choose a supported local STT model, and click `Скачать`. Talkis starts the matching OpenAI-compatible local runtime and downloads the selected model into the configured local models directory.
+
+The local models directory is configurable in `Настройки` → `Директория моделей`. Click `Изменить` to pick a folder. The `По умолчанию` reset appears only after a custom directory has been selected.
 
 Managed local runtimes:
 
@@ -223,6 +226,7 @@ If LLM model is set to "Без обработки", the raw transcription is pas
 
 - Open `Модели` → `Локально` and make sure the model shows `Выбрать` or is currently selected
 - If a default port is busy, Talkis will try a fallback managed port automatically and save it in settings
+- If the managed runtime is still using a stale models directory, Talkis restarts it against the currently configured directory
 - Delete and reinstall the model if the runtime reports missing model files
 - For custom localhost STT servers on non-managed ports, Talkis treats the endpoint as an external OpenAI-compatible server and does not try to start or stop it
 
@@ -278,7 +282,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.16` to build and publish a GitHub Release
+- Push a tag like `v0.1.17` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -306,4 +310,4 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.16**.
+Talkis is an active work in progress. Current version: **0.1.17**.

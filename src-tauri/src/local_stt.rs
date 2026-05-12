@@ -80,6 +80,17 @@ struct HealthResponse {
     engine: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ModelsResponse {
+    #[serde(default)]
+    data: Vec<ModelResponseItem>,
+}
+
+#[derive(Deserialize)]
+struct ModelResponseItem {
+    id: String,
+}
+
 enum LocalSttProbe {
     Ready,
     StaleManagedRuntime,
@@ -629,6 +640,32 @@ pub fn installed_model_ids(
     Ok(models)
 }
 
+fn installed_model_ids_for_runtime(kind: LocalRuntimeKind, models_dir: &Path) -> Vec<String> {
+    let mut models = match kind {
+        LocalRuntimeKind::Whisper => LOCAL_WHISPER_MODELS
+            .iter()
+            .filter(|model| models_dir.join(model.file_name).is_file())
+            .map(|model| model.id.to_string())
+            .collect::<Vec<_>>(),
+        LocalRuntimeKind::Qwen => {
+            if qwen_model_is_installed_in_dir(models_dir) {
+                vec![LOCAL_QWEN_MODEL_ID.to_string()]
+            } else {
+                Vec::new()
+            }
+        }
+        LocalRuntimeKind::Nvidia => LOCAL_NVIDIA_MODELS
+            .iter()
+            .filter(|model| nvidia_model_is_installed_in_dir(models_dir, model))
+            .map(|model| model.id.to_string())
+            .collect::<Vec<_>>(),
+    };
+
+    models.sort();
+    models.dedup();
+    models
+}
+
 fn qwen_model_is_installed_in_dir(models_dir: &Path) -> bool {
     let model_dir = models_dir.join(LOCAL_QWEN_MODEL_DIR);
     LOCAL_QWEN_MODEL_FILES
@@ -979,6 +1016,64 @@ async fn local_stt_is_ready(
     )
 }
 
+async fn runtime_models_match_disk(
+    client: &reqwest::Client,
+    kind: LocalRuntimeKind,
+    models_url: &str,
+    models_dir: &Path,
+) -> bool {
+    let expected_models = installed_model_ids_for_runtime(kind, models_dir);
+    if expected_models.is_empty() {
+        return true;
+    }
+
+    let Ok(response) = client
+        .get(models_url)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+    else {
+        return true;
+    };
+
+    if !response.status().is_success() {
+        return true;
+    }
+
+    let Ok(text) = response.text().await else {
+        return true;
+    };
+
+    let Ok(parsed) = serde_json::from_str::<ModelsResponse>(&text) else {
+        return true;
+    };
+
+    let runtime_models = parsed
+        .data
+        .into_iter()
+        .map(|model| model.id)
+        .collect::<std::collections::HashSet<_>>();
+    let missing_models = expected_models
+        .iter()
+        .filter(|model| !runtime_models.contains(*model))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if missing_models.is_empty() {
+        true
+    } else {
+        logger::log_info(
+            "LOCAL_STT",
+            &format!(
+                "Detected stale managed {} runtime: installed model(s) missing from endpoint: {}",
+                kind.label(),
+                missing_models.join(", ")
+            ),
+        );
+        false
+    }
+}
+
 #[cfg(unix)]
 fn stop_stale_managed_runtime(kind: LocalRuntimeKind, port: u16) -> Result<(), String> {
     let output = StdCommand::new("ps")
@@ -1133,8 +1228,18 @@ pub async fn ensure_runtime(
 
     let base_url = resolve_stt_base_url_from_models_url(models_url);
     let preferred_port = requested_port(&base_url, kind);
+    let models_dir = resolve_models_dir(app, custom_models_dir)?;
     match probe_local_stt(client, kind, &base_url, models_url).await {
-        LocalSttProbe::Ready => return Ok(base_url),
+        LocalSttProbe::Ready => {
+            if runtime_models_match_disk(client, kind, models_url, &models_dir).await {
+                return Ok(base_url);
+            }
+
+            if let Err(err) = stop_stale_managed_runtime(kind, preferred_port) {
+                logger::log_error("LOCAL_STT", &err);
+            }
+            tokio::time::sleep(Duration::from_millis(700)).await;
+        }
         LocalSttProbe::StaleManagedRuntime => {
             if let Err(err) = stop_stale_managed_runtime(kind, preferred_port) {
                 logger::log_error("LOCAL_STT", &err);
@@ -1148,7 +1253,6 @@ pub async fn ensure_runtime(
         "LOCAL_STT",
         &format!("Starting managed local {} STT runtime", kind.label()),
     );
-    let models_dir = resolve_models_dir(app, custom_models_dir)?;
     fs::create_dir_all(&models_dir)
         .map_err(|err| format!("Не удалось подготовить папку локальных моделей: {}", err))?;
     let runtime_port = find_available_runtime_port(kind, preferred_port)?;
