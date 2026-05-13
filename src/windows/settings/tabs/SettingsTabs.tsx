@@ -444,8 +444,8 @@ function OptionCard({ active = false, icon, title, description, badge, onClick, 
         position: "relative",
         padding: 18,
         borderRadius: 10,
-        background: active ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.72)",
-        border: `1px solid ${active ? "rgba(0,0,0,0.16)" : "rgba(0,0,0,0.08)"}`,
+        background: active ? "var(--dropdown-active)" : "var(--surface)",
+        border: `1px solid ${active ? "var(--border-strong)" : "var(--border)"}`,
         color: "var(--text-hi)",
         cursor: disabled ? "not-allowed" : onClick ? "pointer" : "default",
         transition: "transform 0.16s ease, border-color 0.16s ease, background 0.16s ease",
@@ -464,7 +464,7 @@ function OptionCard({ active = false, icon, title, description, badge, onClick, 
             width: 42,
             height: 42,
             borderRadius: 999,
-            background: active ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.05)",
+            background: active ? "var(--control-muted-strong)" : "var(--avatar-bg)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -510,7 +510,7 @@ function CloudSubscriptionAccountCard({
             width: 32,
             height: 32,
             borderRadius: "50%",
-            background: "rgba(0,0,0,0.05)",
+            background: "var(--avatar-bg)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -586,8 +586,8 @@ function CloudSubscriptionAccountCard({
           margin: "8px 8px 0",
           padding: "10px",
           borderRadius: 8,
-          background: "#000",
-          color: "#fff",
+          background: "var(--accent)",
+          color: "var(--accent-contrast)",
           border: "none",
           fontSize: 10,
           fontWeight: 700,
@@ -600,7 +600,7 @@ function CloudSubscriptionAccountCard({
           fontFamily: "var(--font)",
         }}
       >
-        <Crown size={13} strokeWidth={2} color="#fff" />
+        <Crown size={13} strokeWidth={2} color="var(--accent-contrast)" />
         <span style={{ display: "flex", alignItems: "center", lineHeight: 1, whiteSpace: "nowrap" }}>Перейти на PRO</span>
       </button>
     </div>
@@ -609,7 +609,7 @@ function CloudSubscriptionAccountCard({
 
 function SubscriptionGuestCard({ onActivate }: { onActivate: () => void }) {
   return (
-    <div style={{ padding: "22px 20px", borderRadius: 14, background: "#000", color: "#fff" }}>
+    <div className="card" style={{ padding: "22px 20px", borderRadius: 10, background: "var(--control-muted)", color: "var(--text-hi)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <Crown size={16} strokeWidth={2.2} />
         <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.02em" }}>Подписка Talkis</span>
@@ -619,7 +619,7 @@ function SubscriptionGuestCard({ onActivate }: { onActivate: () => void }) {
         <li>• Без VPN и Прокси</li>
         <li>• Синхронизация со всеми устройствами</li>
       </ul>
-      <button onClick={onActivate} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#fff", color: "#000", border: "none", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s", fontFamily: "var(--font-main)" }}>
+      <button onClick={onActivate} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "var(--accent)", color: "var(--accent-contrast)", border: "none", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", transition: "opacity 0.15s", fontFamily: "var(--font-main)" }}>
         Перейти на PRO
       </button>
     </div>
@@ -1132,9 +1132,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 ? "Проверяем соединение..."
                 : "Соединение не проверено";
         const color = effectiveStatus === "success"
-          ? "#16a34a"
+          ? "var(--success-bright)"
           : effectiveStatus === "error"
-            ? "#dc2626"
+            ? "var(--error-bright)"
             : "var(--text-low)";
 
         return {
@@ -1165,7 +1165,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         label,
         message: adapterState?.message || (persistedStatus ? `${adapter.name}: ключ и модель сохранены.` : null),
         status: effectiveStatus,
-        color: effectiveStatus === "success" ? "#16a34a" : effectiveStatus === "error" ? "#dc2626" : hasCredentials ? "var(--text-hi)" : "var(--text-low)",
+        color: effectiveStatus === "success" ? "var(--success-bright)" : effectiveStatus === "error" ? "var(--error-bright)" : hasCredentials ? "var(--text-hi)" : "var(--text-low)",
         connectionLabel: effectiveStatus === "success" ? "Ключ и модель сохранены" : hasCredentials ? "Готов к сохранению" : "Заполните ключ и модель",
       };
     };
@@ -1396,7 +1396,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           label: "Выбрана",
           connectionLabel: "",
           status: "selected" as const,
-          color: "#16a34a",
+          color: "var(--success-bright)",
           message: actionState?.message || cachedState?.message || null,
           isInstalled,
           isSelected,
@@ -1408,7 +1408,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           label: "Готова",
           connectionLabel: "",
           status: "installed" as const,
-          color: "#16a34a",
+          color: "var(--success-bright)",
           message: actionState?.message || cachedState?.message || null,
           isInstalled,
           isSelected,
@@ -1420,7 +1420,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           label: "Ошибка",
           connectionLabel: "Не удалось подготовить модель",
           status: "error" as const,
-          color: "#dc2626",
+          color: "var(--error-bright)",
           message: actionState?.message || cachedState?.message || null,
           isInstalled,
           isSelected,
@@ -1477,7 +1477,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               width: 6,
               height: 6,
               borderRadius: 999,
-              background: index < level ? "#000" : "rgba(0,0,0,0.18)",
+              background: index < level ? "var(--accent)" : "var(--border-strong)",
               display: "block",
             }}
           />
@@ -1499,7 +1499,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             aria-label={`Размер загрузки: ${storageLabel}`}
             style={{ display: "flex", alignItems: "center", gap: 6 }}
           >
-            <HardDrive size={14} strokeWidth={1.9} color="#000" />
+            <HardDrive size={14} strokeWidth={1.9} color="var(--text-hi)" />
             <span style={{ fontSize: 12, fontWeight: 650, color: "var(--text-hi)", lineHeight: 1 }}>
               {storageLabel}
             </span>
@@ -1512,7 +1512,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               aria-label={title}
               style={{ display: "flex", alignItems: "center", gap: 6 }}
             >
-              <Icon size={14} strokeWidth={1.9} color="#000" />
+              <Icon size={14} strokeWidth={1.9} color="var(--text-hi)" />
               <span style={{ fontSize: 12, fontWeight: 650, color: "var(--text-hi)", lineHeight: 1 }}>
                 {label}
               </span>
@@ -1651,8 +1651,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         {hasActiveSubscription ? (
           <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 999, background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Crown size={20} strokeWidth={2.2} color="#fff" />
+              <div style={{ width: 42, height: 42, borderRadius: 999, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Crown size={20} strokeWidth={2.2} color="var(--accent-contrast)" />
               </div>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)" }}>Подписка активна</div>
@@ -1661,7 +1661,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 </div>
               </div>
             </div>
-            <div style={{ width: 10, height: 10, borderRadius: 999, background: "#000", flexShrink: 0 }} />
+            <div style={{ width: 10, height: 10, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />
           </div>
         ) : isAuthenticated ? (
           <CloudSubscriptionAccountCard
@@ -1678,9 +1678,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         {/* ── Separator ── */}
         {!hasActiveSubscription && !isCloudMode && (
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ flex: 1, height: 1, background: "rgba(0,0,0,0.08)" }} />
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
             <span className="label">или</span>
-            <div style={{ flex: 1, height: 1, background: "rgba(0,0,0,0.08)" }} />
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
           </div>
         )}
 
@@ -1693,7 +1693,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               Вы можете в любой момент переключаться между облаком, своим API-ключом и локальной моделью.
             </div>
 
-            <div style={{ display: "flex", background: "rgba(0,0,0,0.05)", borderRadius: 10, padding: 3, gap: 2 }}>
+            <div style={{ display: "flex", background: "var(--control-track)", borderRadius: 10, padding: 3, gap: 2 }}>
               {modeOptions.map(({ id, label, Icon }) => {
                 const active = activeModelMode === id;
 
@@ -1709,8 +1709,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       fontSize: 13,
                       fontWeight: active ? 700 : 500,
                       fontFamily: "var(--font-main)",
-                      background: active ? "#000" : "transparent",
-                      color: active ? "#fff" : "var(--text-mid)",
+                      background: active ? "var(--dropdown-active)" : "transparent",
+                      color: active ? "var(--text-hi)" : "var(--text-mid)",
                       cursor: "pointer",
                       transition: "all 0.18s ease",
                       display: "flex",
@@ -1767,7 +1767,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     : !adapterValues.apiKey.trim() || !adapterValues.model.trim();
 
                   return (
-                    <div key={adapter.id} className="card" style={{ padding: 0, overflow: "hidden", background: "rgba(255,255,255,0.72)" }}>
+                    <div key={adapter.id} className="card" style={{ padding: 0, overflow: "hidden", background: "var(--surface)" }}>
                       <button
                         type="button"
                         onClick={() => setExpandedApiAdapter(isExpanded ? null : adapter.id)}
@@ -1784,7 +1784,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                           fontFamily: "var(--font-main)",
                         }}
                       >
-                        <div style={{ width: 36, height: 36, borderRadius: 999, background: "rgba(0,0,0,0.04)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 999, background: "var(--icon-soft-bg)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
                           {adapter.avatar ? (
                             <img
                               src={adapter.avatar}
@@ -1802,7 +1802,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 3 }}>
                             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>{adapter.name}</div>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: adapterStatus.color, padding: "5px 9px", borderRadius: 999, background: "rgba(0,0,0,0.04)", whiteSpace: "nowrap" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: adapterStatus.color, padding: "5px 9px", borderRadius: 999, background: "var(--control-muted)", whiteSpace: "nowrap" }}>
                               {adapterStatus.label}
                             </div>
                           </div>
@@ -1813,7 +1813,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       </button>
 
                       {isExpanded && (
-                        <div style={{ borderTop: "1px solid rgba(0,0,0,0.07)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <div className="label" style={{ width: 76, flexShrink: 0 }}>API-ключ</div>
                             <input
@@ -1845,9 +1845,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                               lineHeight: 1.6,
                               padding: "8px 10px",
                               borderRadius: 8,
-                              background: adapterStatus.status === "success" ? "rgba(22,163,74,0.06)" : adapterStatus.status === "error" ? "rgba(220,38,38,0.06)" : "rgba(0,0,0,0.04)",
-                              color: adapterStatus.status === "success" ? "#16a34a" : adapterStatus.status === "error" ? "#dc2626" : "var(--text-mid)",
-                              border: `1px solid ${adapterStatus.status === "success" ? "rgba(22,163,74,0.15)" : adapterStatus.status === "error" ? "rgba(220,38,38,0.15)" : "rgba(0,0,0,0.07)"}`,
+                              background: adapterStatus.status === "success" ? "var(--success-soft)" : adapterStatus.status === "error" ? "var(--danger-soft)" : "var(--control-muted)",
+                              color: adapterStatus.status === "success" ? "var(--success-bright)" : adapterStatus.status === "error" ? "var(--error-bright)" : "var(--text-mid)",
+                              border: `1px solid ${adapterStatus.status === "success" ? "var(--success-border)" : adapterStatus.status === "error" ? "var(--danger-border)" : "var(--border-subtle)"}`,
                             }}>
                               {adapterStatus.message}
                             </div>
@@ -1862,9 +1862,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                               <div style={{
                                 padding: "9px 12px",
                                 borderRadius: 10,
-                                border: "1px solid rgba(22,163,74,0.16)",
-                                background: "rgba(22,163,74,0.06)",
-                                color: "#16a34a",
+                                border: "1px solid var(--success-border)",
+                                background: "var(--success-soft)",
+                                color: "var(--success-bright)",
                                 fontSize: 12,
                                 fontWeight: 700,
                                 display: "flex",
@@ -1881,9 +1881,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                                 style={{
                                   padding: "9px 12px",
                                   borderRadius: 10,
-                                  border: "1px solid rgba(0,0,0,0.12)",
-                                  background: isAdapterTestDisabled ? "rgba(0,0,0,0.04)" : "#000",
-                                  color: isAdapterTestDisabled ? "var(--text-mid)" : "#fff",
+                                  border: "1px solid var(--border-dashed)",
+                                  background: isAdapterTestDisabled ? "var(--control-muted)" : "var(--accent)",
+                                  color: isAdapterTestDisabled ? "var(--text-mid)" : "var(--accent-contrast)",
                                   fontSize: 12,
                                   fontWeight: 700,
                                   fontFamily: "var(--font-main)",
@@ -1895,7 +1895,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                               >
                                 {adapterStatus.status === "testing" ? (
                                   <>
-                                    <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                                    <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid color-mix(in srgb, var(--accent-contrast) 35%, transparent)", borderTopColor: "var(--accent-contrast)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
                                     Проверяем...
                                   </>
                                 ) : (
@@ -1942,7 +1942,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                   const totalLabel = formatLocalDownloadBytes(modelActionState?.totalBytes);
 
                   return (
-                    <div key={model.id} className="card" style={{ padding: 0, overflow: "hidden", background: "rgba(255,255,255,0.72)" }}>
+                    <div key={model.id} className="card" style={{ padding: 0, overflow: "hidden", background: "var(--surface)" }}>
                       <button
                         type="button"
                         onClick={() => setExpandedLocalModel(isExpanded ? null : model.id)}
@@ -1959,7 +1959,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                           fontFamily: "var(--font-main)",
                         }}
                       >
-                        <div style={{ width: 36, height: 36, borderRadius: 999, background: (model.avatar || model.engineLabel === "Whisper") ? "rgba(0,0,0,0.04)" : model.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff", fontSize: 11, fontWeight: 800, overflow: "hidden" }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 999, background: (model.avatar || model.engineLabel === "Whisper") ? "var(--icon-soft-bg)" : model.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff", fontSize: 11, fontWeight: 800, overflow: "hidden" }}>
                           {model.avatar || model.engineLabel === "Whisper" ? (
                             <img
                               src={model.avatar || openAiAvatar}
@@ -1977,12 +1977,12 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                             <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{model.name}</div>
                               {model.recommended && (
-                                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-hi)", padding: "3px 7px", borderRadius: 999, background: "rgba(0,0,0,0.06)", flexShrink: 0 }}>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--text-hi)", padding: "3px 7px", borderRadius: 999, background: "var(--control-muted)", flexShrink: 0 }}>
                                   Рекомендуем
                                 </div>
                               )}
                             </div>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: modelStatus.color, padding: "5px 9px", borderRadius: 999, background: "rgba(0,0,0,0.04)", whiteSpace: "nowrap" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: modelStatus.color, padding: "5px 9px", borderRadius: 999, background: "var(--control-muted)", whiteSpace: "nowrap" }}>
                               {modelStatus.label}
                             </div>
                           </div>
@@ -1994,16 +1994,16 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       </button>
 
                       {isExpanded && (
-                        <div style={{ borderTop: "1px solid rgba(0,0,0,0.07)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
                           {modelStatus.message && modelStatus.status !== "installing" && modelStatus.status !== "installed" && modelStatus.status !== "selected" && (
                             <div style={{
                               fontSize: 12,
                               lineHeight: 1.6,
                               padding: "8px 10px",
                               borderRadius: 8,
-                              background: modelStatus.status === "error" ? "rgba(220,38,38,0.06)" : "rgba(0,0,0,0.04)",
-                              color: modelStatus.status === "error" ? "#dc2626" : "var(--text-mid)",
-                              border: `1px solid ${modelStatus.status === "error" ? "rgba(220,38,38,0.15)" : "rgba(0,0,0,0.07)"}`,
+                              background: modelStatus.status === "error" ? "var(--danger-soft)" : "var(--control-muted)",
+                              color: modelStatus.status === "error" ? "var(--error-bright)" : "var(--text-mid)",
+                              border: `1px solid ${modelStatus.status === "error" ? "var(--danger-border)" : "var(--border-subtle)"}`,
                             }}>
                               {modelStatus.message}
                             </div>
@@ -2017,14 +2017,14 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                                   {downloadProgress !== undefined ? `${downloadProgress}%` : downloadedLabel || "Подготовка"}
                                 </span>
                               </div>
-                              <div style={{ width: "100%", height: 8, borderRadius: 999, background: "rgba(0,0,0,0.10)", overflow: "hidden" }}>
+                              <div style={{ width: "100%", height: 8, borderRadius: 999, background: "var(--progress-track)", overflow: "hidden" }}>
                                 <div
                                   style={{
                                     width: `${downloadProgress ?? 2}%`,
                                     minWidth: downloadProgress === undefined ? 18 : 0,
                                     height: "100%",
                                     borderRadius: 999,
-                                    background: "#000",
+                                    background: "var(--accent)",
                                     transition: "width 0.2s ease",
                                   }}
                                 />
@@ -2052,8 +2052,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                                   style={{
                                     padding: "9px 12px",
                                     borderRadius: 10,
-                                    border: "1px solid rgba(0,0,0,0.12)",
-                                    background: "rgba(0,0,0,0.02)",
+                                    border: "1px solid var(--border-dashed)",
+                                    background: "var(--control-muted)",
                                     color: "var(--text-hi)",
                                     fontSize: 12,
                                     fontWeight: 700,
@@ -2083,9 +2083,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                                   style={{
                                     padding: "9px 12px",
                                     borderRadius: 10,
-                                    border: "1px solid rgba(0,0,0,0.12)",
-                                    background: isInstallDisabled ? "rgba(0,0,0,0.04)" : isDownloaded ? "rgba(0,0,0,0.02)" : "#000",
-                                    color: isInstallDisabled ? "var(--text-mid)" : isDownloaded ? "var(--text-hi)" : "#fff",
+                                    border: "1px solid var(--border-dashed)",
+                                    background: isInstallDisabled ? "var(--control-muted)" : isDownloaded ? "var(--control-muted)" : "var(--accent)",
+                                    color: isInstallDisabled ? "var(--text-mid)" : isDownloaded ? "var(--text-hi)" : "var(--accent-contrast)",
                                     fontSize: 12,
                                     fontWeight: 700,
                                     fontFamily: "var(--font-main)",
@@ -2125,7 +2125,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                     position: "fixed",
                     inset: 0,
                     zIndex: 1000,
-                    background: "rgba(0,0,0,0.22)",
+                    background: "var(--modal-scrim)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -2139,7 +2139,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       width: "min(420px, 100%)",
                       background: "var(--bg)",
                       padding: 18,
-                      boxShadow: "0 18px 50px rgba(0,0,0,0.18)",
+                      boxShadow: "var(--shadow-modal)",
                     }}
                     onClick={(event) => event.stopPropagation()}
                   >
@@ -2156,8 +2156,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                         style={{
                           padding: "10px 14px",
                           borderRadius: 10,
-                          border: "1px solid rgba(0,0,0,0.12)",
-                          background: "rgba(0,0,0,0.02)",
+                          border: "1px solid var(--border-dashed)",
+                          background: "var(--control-muted)",
                           color: "var(--text-hi)",
                           fontSize: 12,
                           fontWeight: 700,
@@ -2173,9 +2173,9 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                         style={{
                           padding: "10px 14px",
                           borderRadius: 10,
-                          border: "1px solid rgba(0,0,0,0.12)",
-                          background: "#000",
-                          color: "#fff",
+                          border: "1px solid var(--border-dashed)",
+                          background: "var(--accent)",
+                          color: "var(--accent-contrast)",
                           fontSize: 12,
                           fontWeight: 700,
                           fontFamily: "var(--font-main)",
@@ -2227,7 +2227,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       </div>
 
       {IS_DEV && (
-        <details className="card" style={{ background: "rgba(255,255,255,0.68)" }}>
+        <details className="card" style={{ background: "var(--surface)" }}>
           <summary style={{ cursor: "pointer", listStyle: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>Prompt Preview</div>
@@ -2240,7 +2240,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
             {promptPreviewError ? (
-              <div style={{ fontSize: 12, color: "#b42318", lineHeight: 1.6 }}>
+              <div style={{ fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
                 Не удалось собрать preview prompt: {promptPreviewError}
               </div>
             ) : promptPreview ? (
@@ -2261,7 +2261,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                         style={{
                           padding: "6px 10px",
                           borderRadius: 999,
-                          background: "rgba(0,0,0,0.05)",
+                          background: "var(--control-track)",
                           fontSize: 11,
                           color: "var(--text-mid)",
                           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
@@ -2280,7 +2280,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                       margin: 0,
                       padding: 14,
                       borderRadius: 12,
-                      background: "rgba(0,0,0,0.04)",
+                      background: "var(--control-muted)",
                       color: "var(--text-mid)",
                       fontSize: 11,
                       lineHeight: 1.65,

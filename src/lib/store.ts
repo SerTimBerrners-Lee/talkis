@@ -19,6 +19,7 @@ export interface HistoryEntry {
 }
 
 export type ApiProvider = "openai" | "custom";
+export type ThemePreference = "system" | "light" | "dark";
 
 export interface ApiAdapterSettings {
   apiKey: string;
@@ -55,6 +56,7 @@ export interface AppSettings {
   /** Model name for LLM cleanup (e.g. "gpt-4o-mini", "deepseek-chat") */
   llmModel: string;
   hotkey: string;
+  theme: ThemePreference;
   language: string;
   doubleTapTimeout: number;
   style: "classic" | "business" | "tech";
@@ -279,6 +281,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   whisperModel: "whisper-1",
   llmModel: "gpt-4o-mini",
   hotkey: DEFAULT_HOTKEY,
+  theme: "system",
   language: "ru",
   doubleTapTimeout: 400,
   style: "classic",
@@ -291,6 +294,18 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 function parseStyle(value: unknown): AppSettings["style"] | undefined {
   if (value === "classic" || value === "business" || value === "tech") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function parseTheme(value: unknown): ThemePreference | undefined {
+  if (value === "black") {
+    return "dark";
+  }
+
+  if (value === "system" || value === "light" || value === "dark") {
     return value;
   }
 
@@ -358,6 +373,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
     whisperModel: typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
     llmModel: typeof raw.llmModel === "string" ? raw.llmModel : undefined,
     hotkey: typeof raw.hotkey === "string" ? normalizeHotkey(raw.hotkey).normalized : undefined,
+    theme: parseTheme(raw.theme),
     language: typeof raw.language === "string" ? raw.language : undefined,
     doubleTapTimeout: typeof raw.doubleTapTimeout === "number" ? raw.doubleTapTimeout : undefined,
     style: parseStyle(raw.style),

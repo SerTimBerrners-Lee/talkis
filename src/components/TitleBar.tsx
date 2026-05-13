@@ -32,8 +32,8 @@ export function TitleBar() {
         display: "flex",
         alignItems: "stretch",
         height: 48,
-        background: "rgba(250, 249, 246, 0.96)",
-        borderBottom: "1px solid rgba(0, 0, 0, 0.05)",
+        background: "var(--titlebar-bg)",
+        borderBottom: "1px solid var(--titlebar-border)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         userSelect: "none",
@@ -60,7 +60,7 @@ export function TitleBar() {
           <TrafficLight color="#28c840" title="Развернуть" onClick={() => win.toggleMaximize()} />
         </div>
 
-        <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(0,0,0,0.72)", letterSpacing: "-0.02em" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--titlebar-text)", letterSpacing: "-0.02em" }}>
           Talkis
         </div>
 

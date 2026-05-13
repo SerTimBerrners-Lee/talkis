@@ -200,7 +200,7 @@ export function UserPanel() {
       <div style={styles.container}>
         <ProfileRow profile={profile} onLogout={handleLogout} />
         <button onClick={handleActivate} style={styles.compactCta}>
-          <Crown size={13} strokeWidth={2} color="#fff" />
+          <Crown size={13} strokeWidth={2} color="var(--accent-contrast)" />
           <span style={styles.compactCtaLabel}>Активировать подписку</span>
         </button>
       </div>
@@ -269,7 +269,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     marginTop: "auto",
     padding: "12px 0 0",
-    borderTop: "1px solid rgba(0,0,0,0.06)",
+    borderTop: "1px solid var(--border-subtle)",
   },
   profileRow: {
     display: "flex",
@@ -281,7 +281,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 32,
     height: 32,
     borderRadius: "50%",
-    background: "rgba(0,0,0,0.05)",
+    background: "var(--avatar-bg)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -329,13 +329,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
     color: "var(--text-hi)",
-    background: "rgba(0,0,0,0.04)",
+    background: "var(--control-muted)",
   },
   badgeDot: {
     width: 6,
     height: 6,
     borderRadius: "50%",
-    background: "#000",
+    background: "var(--accent)",
     flexShrink: 0,
   },
   compactCta: {
@@ -347,8 +347,8 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "8px 8px 0",
     padding: "10px",
     borderRadius: 8,
-    background: "#000",
-    color: "#fff",
+    background: "var(--accent)",
+    color: "var(--accent-contrast)",
     border: "none",
     fontSize: 10,
     fontWeight: 700,
@@ -369,8 +369,8 @@ const styles: Record<string, React.CSSProperties> = {
   ctaBox: {
     padding: "14px 14px",
     borderRadius: 10,
-    background: "rgba(0,0,0,0.03)",
-    border: "1px solid rgba(0,0,0,0.06)",
+    background: "var(--control-muted)",
+    border: "1px solid var(--border-subtle)",
     margin: "0 4px",
   },
   ctaHeader: {
@@ -391,8 +391,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: "10px",
     borderRadius: 8,
-    background: "#000",
-    color: "#fff",
+    background: "var(--accent)",
+    color: "var(--accent-contrast)",
     border: "none",
     fontSize: 11,
     fontWeight: 700,

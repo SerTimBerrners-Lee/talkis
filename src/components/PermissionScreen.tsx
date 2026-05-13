@@ -33,8 +33,8 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
         alignItems: "flex-start",
         gap: 14,
         borderRadius: 10,
-        background: isGranted ? "rgba(0,0,0,0.02)" : "rgba(0,0,0,0.02)",
-        border: `1px solid ${isGranted ? "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.06)"}`,
+        background: "var(--control-muted)",
+        border: "1px solid var(--border-subtle)",
       }}
     >
       <div
@@ -45,8 +45,8 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: isGranted ? "#000" : "rgba(0,0,0,0.04)",
-          color: isGranted ? "#fff" : "var(--text-mid)",
+          background: isGranted ? "var(--accent)" : "var(--icon-soft-bg)",
+          color: isGranted ? "var(--accent-contrast)" : "var(--text-mid)",
           flexShrink: 0,
         }}
       >
@@ -80,8 +80,8 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
                 letterSpacing: "0.06em",
                 cursor: "pointer",
                 border: "none",
-                background: isPrompting ? "rgba(0,0,0,0.04)" : "#000",
-                color: isPrompting ? "var(--text-hi)" : "#fff",
+                background: isPrompting ? "var(--control-muted)" : "var(--accent)",
+                color: isPrompting ? "var(--text-hi)" : "var(--accent-contrast)",
                 fontFamily: "var(--font)",
                 transition: "opacity 0.15s",
               }}
@@ -285,7 +285,7 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(244, 241, 235, 0.72)",
+        background: "var(--overlay-bg)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         zIndex: 9999,
@@ -309,11 +309,11 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
             flexDirection: "column",
             gap: 20,
             borderRadius: 14,
-            background: "rgba(255,255,255,0.82)",
-            border: "1px solid rgba(0,0,0,0.08)",
+            background: "var(--surface-hi)",
+            border: "1px solid var(--border)",
             backdropFilter: "blur(18px)",
             WebkitBackdropFilter: "blur(18px)",
-            boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
+            boxShadow: "var(--shadow-panel)",
           }}
         >
           {/* Header */}
@@ -353,8 +353,8 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                   alignItems: "flex-start",
                   gap: 12,
                   borderRadius: 10,
-                  background: "rgba(143,45,32,0.06)",
-                  border: "1px solid rgba(143,45,32,0.14)",
+                  background: "var(--danger-soft)",
+                  border: "1px solid var(--danger-border)",
                 }}
               >
                 <AlertCircle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }} />
@@ -403,8 +403,8 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                 gap: 10,
                 padding: "12px 14px",
                 borderRadius: 10,
-                background: "rgba(0,0,0,0.02)",
-                border: "1px solid rgba(0,0,0,0.06)",
+                background: "var(--control-muted)",
+                border: "1px solid var(--border-subtle)",
               }}
             >
               <AlertCircle size={14} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
@@ -438,8 +438,8 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                 letterSpacing: "0.06em",
                 cursor: "pointer",
                 border: "none",
-                background: canCompleteOnboarding ? "#000" : "rgba(0,0,0,0.04)",
-                color: canCompleteOnboarding ? "#fff" : "var(--text-hi)",
+                background: canCompleteOnboarding ? "var(--accent)" : "var(--control-muted)",
+                color: canCompleteOnboarding ? "var(--accent-contrast)" : "var(--text-hi)",
                 fontFamily: "var(--font)",
                 transition: "opacity 0.15s",
                 minWidth: 140,

@@ -1,25 +1,61 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@600;700;800&family=Playfair+Display:ital,wght@0,700;1,700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@600;700;800&display=swap");
 @import "tailwindcss";
 
-:root {
+:root,
+:root[data-theme="light"] {
   --bg: #faf9f6;
   --bg-soft: #f4f1eb;
   --surface: rgba(255, 255, 255, 0.72);
+  --surface-hi: rgba(255, 255, 255, 0.88);
   --surface-solid: #f8f5ef;
   --surface-strong: #f1ede6;
   --surface-inverse: #000000;
   --border: rgba(0, 0, 0, 0.09);
   --border-strong: rgba(0, 0, 0, 0.16);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-dashed: rgba(0, 0, 0, 0.12);
   --text-hi: #000000;
   --text-mid: #39342d;
   --text-low: #5d564d;
   --text-faint: #847d73;
   --accent: #000000;
   --accent-contrast: #ffffff;
+  --accent-hover: #171717;
   --danger: #8f2d20;
   --danger-soft: rgba(143, 45, 32, 0.08);
+  --danger-border: rgba(143, 45, 32, 0.18);
   --success: #1f5130;
   --success-soft: rgba(31, 81, 48, 0.08);
+  --success-border: rgba(31, 81, 48, 0.16);
+  --success-bright: #16a34a;
+  --error-bright: #dc2626;
+  --app-gradient-a: rgba(255, 255, 255, 0.8);
+  --app-gradient-b: rgba(0, 0, 0, 0.035);
+  --app-gradient-start: #fcfbf8;
+  --app-gradient-end: #f5f1ea;
+  --grid-line: rgba(0, 0, 0, 0.018);
+  --sidebar-bg: #faf9f6;
+  --main-bg: #faf9f6;
+  --titlebar-bg: rgba(250, 249, 246, 0.96);
+  --titlebar-border: rgba(0, 0, 0, 0.05);
+  --titlebar-text: rgba(0, 0, 0, 0.72);
+  --control-bg: rgba(255, 255, 255, 0.78);
+  --control-bg-hover: rgba(255, 255, 255, 0.94);
+  --control-muted: rgba(0, 0, 0, 0.04);
+  --control-muted-strong: rgba(0, 0, 0, 0.08);
+  --control-track: rgba(0, 0, 0, 0.05);
+  --dropdown-bg: rgba(255, 255, 255, 0.98);
+  --dropdown-hover: rgba(0, 0, 0, 0.03);
+  --dropdown-active: rgba(0, 0, 0, 0.04);
+  --table-border: rgba(0, 0, 0, 0.05);
+  --table-row-border: rgba(0, 0, 0, 0.04);
+  --table-hover: rgba(255, 255, 255, 0.44);
+  --overlay-bg: rgba(244, 241, 235, 0.72);
+  --modal-scrim: rgba(0, 0, 0, 0.22);
+  --icon-soft-bg: rgba(0, 0, 0, 0.04);
+  --avatar-bg: rgba(0, 0, 0, 0.05);
+  --progress-track: rgba(0, 0, 0, 0.08);
+  --switch-track: rgba(0, 0, 0, 0.12);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -27,11 +63,72 @@
   --radius-pill: 999px;
   --radius-bubble: 22px 22px 0 22px;
   --font: "Inter", system-ui, sans-serif;
-  --font-accent: "Playfair Display", Georgia, serif;
+  --font-main: "Inter", system-ui, sans-serif;
+  --font-accent: "Manrope", "Inter", system-ui, sans-serif;
   --font-brand: "Manrope", "Inter", system-ui, sans-serif;
   --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.04);
   --shadow-panel: 0 16px 40px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 18px 50px rgba(0, 0, 0, 0.18);
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root[data-theme="dark"] {
+  --bg: #050505;
+  --bg-soft: #0a0a0a;
+  --surface: rgba(18, 18, 18, 0.78);
+  --surface-hi: rgba(28, 28, 28, 0.88);
+  --surface-solid: #101010;
+  --surface-strong: #1a1a1a;
+  --surface-inverse: #f5f5f5;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-dashed: rgba(255, 255, 255, 0.2);
+  --text-hi: #f7f7f7;
+  --text-mid: #c9c9c9;
+  --text-low: #8f8f8f;
+  --text-faint: #6a6a6a;
+  --accent: #f5f5f5;
+  --accent-contrast: #050505;
+  --accent-hover: #e2e2e2;
+  --danger: #ff9b9b;
+  --danger-soft: rgba(255, 107, 107, 0.11);
+  --danger-border: rgba(255, 107, 107, 0.24);
+  --success: #9be7b0;
+  --success-soft: rgba(34, 197, 94, 0.12);
+  --success-border: rgba(34, 197, 94, 0.24);
+  --success-bright: #86efac;
+  --error-bright: #fca5a5;
+  --app-gradient-a: rgba(255, 255, 255, 0.055);
+  --app-gradient-b: rgba(255, 255, 255, 0.035);
+  --app-gradient-start: #0d0d0d;
+  --app-gradient-end: #030303;
+  --grid-line: rgba(255, 255, 255, 0.025);
+  --sidebar-bg: #050505;
+  --main-bg: #050505;
+  --titlebar-bg: rgba(5, 5, 5, 0.96);
+  --titlebar-border: rgba(255, 255, 255, 0.08);
+  --titlebar-text: rgba(247, 247, 247, 0.78);
+  --control-bg: rgba(255, 255, 255, 0.065);
+  --control-bg-hover: rgba(255, 255, 255, 0.1);
+  --control-muted: rgba(255, 255, 255, 0.065);
+  --control-muted-strong: rgba(255, 255, 255, 0.12);
+  --control-track: rgba(255, 255, 255, 0.08);
+  --dropdown-bg: rgba(16, 16, 16, 0.98);
+  --dropdown-hover: rgba(255, 255, 255, 0.075);
+  --dropdown-active: rgba(255, 255, 255, 0.11);
+  --table-border: rgba(255, 255, 255, 0.075);
+  --table-row-border: rgba(255, 255, 255, 0.055);
+  --table-hover: rgba(255, 255, 255, 0.04);
+  --overlay-bg: rgba(3, 3, 3, 0.78);
+  --modal-scrim: rgba(0, 0, 0, 0.58);
+  --icon-soft-bg: rgba(255, 255, 255, 0.07);
+  --avatar-bg: rgba(255, 255, 255, 0.08);
+  --progress-track: rgba(255, 255, 255, 0.11);
+  --switch-track: rgba(255, 255, 255, 0.14);
+  --shadow-soft: 0 8px 20px rgba(0, 0, 0, 0.32);
+  --shadow-panel: 0 16px 40px rgba(0, 0, 0, 0.46);
+  --shadow-modal: 0 18px 50px rgba(0, 0, 0, 0.58);
 }
 
 *, *::before, *::after {
@@ -67,9 +164,9 @@ select {
   height: 100vh;
   color: var(--text-hi);
   background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 30%),
-    radial-gradient(circle at right 20%, rgba(0, 0, 0, 0.035), transparent 24%),
-    linear-gradient(180deg, #fcfbf8 0%, var(--bg) 42%, #f5f1ea 100%);
+    radial-gradient(circle at top left, var(--app-gradient-a), transparent 30%),
+    radial-gradient(circle at right 20%, var(--app-gradient-b), transparent 24%),
+    linear-gradient(180deg, var(--app-gradient-start) 0%, var(--bg) 42%, var(--app-gradient-end) 100%);
   border-radius: var(--radius-app);
   overflow: hidden;
   position: relative;
@@ -87,8 +184,8 @@ select {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(0, 0, 0, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.018) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(circle at center, black 30%, transparent 85%);
   pointer-events: none;
@@ -111,7 +208,7 @@ select {
 }
 
 .surface-hi {
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--surface-hi);
   border-color: var(--border-strong);
   border-radius: var(--radius-md);
 }
@@ -140,7 +237,7 @@ select {
   content: "";
   width: 28px;
   height: 1px;
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--border-strong);
 }
 
 .headline-accent {
@@ -167,14 +264,14 @@ select {
     color 0.18s ease,
     transform 0.18s var(--ease-standard),
     box-shadow 0.18s ease;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--control-bg);
   border: 1px solid var(--border);
   color: var(--text-hi);
 }
 
 .btn:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--control-bg-hover);
   border-color: var(--border-strong);
 }
 
@@ -189,13 +286,13 @@ select {
 }
 
 .btn-primary:hover {
-  background: #171717;
-  border-color: #171717;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .btn-danger {
   background: var(--danger-soft);
-  border-color: rgba(143, 45, 32, 0.18);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
@@ -212,7 +309,7 @@ select {
   font-family: var(--font);
   color: var(--text-hi);
   border: none;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  border-bottom: 1px solid var(--border-strong);
   background: transparent;
   outline: none;
   transition: border-color 0.18s ease;
@@ -245,12 +342,12 @@ select {
 }
 
 .nav-item:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--control-muted);
   color: var(--text-hi);
 }
 
 .nav-item.active {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--control-muted);
   color: var(--text-hi);
   font-weight: 600;
 }
@@ -274,19 +371,19 @@ select {
 
 .b-table td {
   padding: 11px 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--table-border);
   color: var(--text-mid);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .b-table tr:hover td {
-  background: rgba(255, 255, 255, 0.44);
+  background: var(--table-hover);
 }
 
 .bubble-black {
-  background: #000;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-contrast);
   border-radius: var(--radius-bubble);
 }
 
@@ -315,7 +412,7 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.14);
+  background: var(--border-strong);
   border-radius: 999px;
 }
 

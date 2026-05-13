@@ -13,6 +13,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - The floating widget can start/stop recording with a mouse click, copy the latest result, and show a low microphone signal notice
 - Autostart can be enabled from settings
 - The settings window lets you choose language, microphone, model source, API adapter, text cleanup style, and transcribe audio/video files
+- The settings window supports system, light, and dark appearance modes; system mode follows macOS
 - The settings window lets you change the local models directory and reset it to the default app data directory
 - Recent voice recordings and file transcriptions are saved in local history with processing time
 - The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
@@ -142,6 +143,7 @@ The copy shortcut is cleared when history is cleared, and it refreshes after ent
 ### Settings you can change
 
 - Recognition language (`ru`, `en`, or auto)
+- Appearance mode (system, light, dark)
 - Input microphone
 - Text cleanup style
 - API adapters and saved API keys/model names
@@ -282,7 +284,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.17` to build and publish a GitHub Release
+- Push a tag like `v0.1.18` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -310,4 +312,4 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.17**.
+Talkis is an active work in progress. Current version: **0.1.18**.

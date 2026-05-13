@@ -298,8 +298,8 @@ export function FileTranscriptionTab(): JSX.Element {
           padding: 24,
           borderWidth: 2,
           borderStyle: "dashed",
-          borderColor: isDragOver ? "rgba(0,0,0,0.52)" : "rgba(0,0,0,0.24)",
-          background: isDragOver ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.68)",
+          borderColor: isDragOver ? "var(--border-strong)" : "var(--border-dashed)",
+          background: isDragOver ? "var(--surface-hi)" : "var(--surface)",
           cursor: isProcessing ? "default" : "pointer",
           transition: "background 0.18s ease, border-color 0.18s ease",
         }}
@@ -313,8 +313,8 @@ export function FileTranscriptionTab(): JSX.Element {
               display: "grid",
               placeItems: "center",
               color: "var(--text-hi)",
-              background: "rgba(0,0,0,0.04)",
-              border: "1px solid rgba(0,0,0,0.06)",
+              background: "var(--icon-soft-bg)",
+              border: "1px solid var(--border-subtle)",
             }}
           >
             {isProcessing ? <Loader2 size={24} strokeWidth={1.8} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileAudio size={25} strokeWidth={1.8} />}
@@ -337,8 +337,8 @@ export function FileTranscriptionTab(): JSX.Element {
           </div>
 
           {isProcessing && (
-            <div style={{ width: "min(320px, 100%)", height: 4, borderRadius: 999, overflow: "hidden", background: "rgba(0,0,0,0.08)" }}>
-              <div style={{ width: status === "reading" ? "30%" : status === "converting" || status === "preparing" ? "64%" : "88%", height: "100%", borderRadius: 999, background: "#000", transition: "width 0.24s ease" }} />
+            <div style={{ width: "min(320px, 100%)", height: 4, borderRadius: 999, overflow: "hidden", background: "var(--progress-track)" }}>
+              <div style={{ width: status === "reading" ? "30%" : status === "converting" || status === "preparing" ? "64%" : "88%", height: "100%", borderRadius: 999, background: "var(--accent)", transition: "width 0.24s ease" }} />
             </div>
           )}
 
@@ -438,7 +438,7 @@ export function FileTranscriptionTab(): JSX.Element {
             </tbody>
           </table>
         ) : (
-          <div style={{ padding: "22px 16px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", color: "var(--text-low)", fontSize: 13 }}>
+          <div style={{ padding: "22px 16px", borderRadius: 12, border: "1px dashed var(--border-dashed)", color: "var(--text-low)", fontSize: 13 }}>
             После обработки здесь появится текст.
           </div>
         )}

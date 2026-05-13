@@ -9,11 +9,12 @@ import { FileTranscriptionTab } from "./tabs/FileTranscriptionTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { SettingsTabs } from "./tabs/SettingsTabs";
 import { PermissionScreen } from "../../components/PermissionScreen";
-import { SETTINGS_NAVIGATE_EVENT, SettingsNavigatePayload } from "../../lib/hotkeyEvents";
-import { getPermissionsPassed, setPermissionsPassed, getHistory, HistoryEntry } from "../../lib/store";
+import { SETTINGS_NAVIGATE_EVENT, SETTINGS_UPDATED_EVENT, SettingsNavigatePayload } from "../../lib/hotkeyEvents";
+import { getPermissionsPassed, setPermissionsPassed, getHistory, getSettings, HistoryEntry, type ThemePreference } from "../../lib/store";
 import { checkAllPermissions } from "../../lib/permissions";
 import { logError } from "../../lib/logger";
 import { UserPanel } from "../../components/UserPanel";
+import { watchThemePreference } from "../../lib/theme";
 import {
   checkForAppUpdateNow,
   installAvailableAppUpdate,
@@ -65,7 +66,7 @@ function SidebarLogo() {
                 width: 3,
                 height,
                 borderRadius: 999,
-                background: "#000",
+                background: "var(--accent)",
                 animation: `voice-logo-pulse 1.15s ease-in-out ${index * 0.1}s infinite`,
               }}
             />
@@ -193,10 +194,32 @@ function AppUpdateFooter(): ReactElement | null {
 
 export function SettingsApp() {
   const [activeTab, setActiveTab] = useState<Tab>(resolveInitialTab);
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
   const [navigationNonce, setNavigationNonce] = useState(0);
   const [showPermissions, setShowPermissions] = useState<boolean | null>(null);
   const [initialHistory, setInitialHistory] = useState<HistoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncTheme = async (reload = false): Promise<void> => {
+      const settings = await getSettings({ reload });
+      setThemePreference(settings.theme);
+    };
+
+    void syncTheme(true);
+
+    const unlistenPromise = listen(SETTINGS_UPDATED_EVENT, () => {
+      void syncTheme(true);
+    });
+
+    return () => {
+      unlistenPromise.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    return watchThemePreference(themePreference);
+  }, [themePreference]);
 
   useEffect(() => {
     // In dev mode, never show the permission onboarding screen.
@@ -273,7 +296,7 @@ export function SettingsApp() {
               display: "flex",
               flexDirection: "column",
               gap: 14,
-              background: "rgba(250,249,246,0.92)",
+              background: "var(--sidebar-bg)",
               overflowY: "auto",
               flexShrink: 0,
               marginTop: -1,
@@ -293,10 +316,10 @@ export function SettingsApp() {
             </div>
           </aside>
 
-          <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "rgba(250,249,246,0.72)" }}>
+          <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "var(--main-bg)" }}>
             <div style={{ maxWidth: 920, margin: "0 auto", minWidth: 0, overflowX: "hidden" }}>
               {loadError && (
-                <div className="card" style={{ marginBottom: 14, padding: "12px 14px", background: "rgba(143,45,32,0.08)", border: "1px solid rgba(143,45,32,0.18)", color: "var(--danger)" }}>
+                <div className="card" style={{ marginBottom: 14, padding: "12px 14px", background: "var(--danger-soft)", border: "1px solid var(--danger-border)", color: "var(--danger)" }}>
                   {loadError}
                 </div>
               )}

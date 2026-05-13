@@ -3,9 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Monitor, Moon, Search, Sun, type LucideIcon } from "lucide-react";
 
 import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
+import { applyThemePreference } from "../../../lib/theme";
 import {
   HOTKEY_CAPTURE_STATE_EVENT,
   HOTKEY_CHANGE_REQUEST_EVENT,
@@ -22,6 +23,21 @@ type HotkeyFeedbackTone = "idle" | "success" | "error";
 
 const SETTING_ROW_COLUMNS = "minmax(0, 1fr) 280px";
 const SETTING_ROW_GAP = 16;
+const CONTROL_HEIGHT = 38;
+const CONTROL_RADIUS = 8;
+const CONTROL_FONT_SIZE = 12;
+const SETTINGS_CARD_STYLE = {
+  display: "grid",
+  gap: 10,
+  background: "transparent",
+  backdropFilter: "none",
+  WebkitBackdropFilter: "none",
+} as const;
+const THEME_OPTIONS: Array<{ id: AppSettings["theme"]; label: string; Icon: LucideIcon }> = [
+  { id: "system", label: "Системная", Icon: Monitor },
+  { id: "light", label: "Светлая", Icon: Sun },
+  { id: "dark", label: "Темная", Icon: Moon },
+];
 
 export function SettingsTab() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -447,9 +463,9 @@ export function SettingsTab() {
       ? "Нажмите сочетание"
       : formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY);
   const hotkeyFeedbackColor = hotkeyFeedbackTone === "error"
-    ? "#b42318"
+    ? "var(--danger)"
     : hotkeyFeedbackTone === "success"
-      ? "#027a48"
+      ? "var(--success)"
       : "var(--text-mid)";
   const autostartDisabled = !autostartLoaded || autostartPending;
   const localModelsDir = (settings.localModelsDir || "").trim();
@@ -457,21 +473,67 @@ export function SettingsTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="card" style={{ display: "grid", gap: 10, zIndex: langOpen ? 20 : 1 }}>
+      <div className="card" style={SETTINGS_CARD_STYLE}>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Тема</div>
+          </div>
+          <div style={{ display: "flex", background: "var(--control-track)", borderRadius: 10, padding: 3, gap: 2, width: "100%", justifySelf: "end" }}>
+            {THEME_OPTIONS.map(({ id, label, Icon }) => {
+              const active = settings.theme === id;
+
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    applyThemePreference(id);
+                    void update({ theme: id });
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: CONTROL_HEIGHT - 6,
+                    padding: "0 4px",
+                    borderRadius: CONTROL_RADIUS,
+                    border: "none",
+                    fontSize: CONTROL_FONT_SIZE,
+                    fontWeight: active ? 700 : 500,
+                    background: active ? "var(--dropdown-active)" : "transparent",
+                    color: active ? "var(--text-hi)" : "var(--text-mid)",
+                    cursor: "pointer",
+                    transition: "background 0.15s ease, color 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Icon size={13} strokeWidth={active ? 2.2 : 1.7} style={{ flexShrink: 0 }} />
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>Системная тема следует настройке macOS.</div>
+      </div>
+
+      <div className="card" style={{ ...SETTINGS_CARD_STYLE, zIndex: langOpen ? 20 : 1 }}>
         <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Язык распознавания</div>
           </div>
         <div ref={langRef} style={{ position: "relative", width: "100%", justifySelf: "end" }}>
-          <button onClick={() => setLangOpen((o) => !o)} className="btn" style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 46 }}>
+          <button onClick={() => setLangOpen((o) => !o)} className="btn" style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: CONTROL_HEIGHT, padding: "0 10px", borderRadius: CONTROL_RADIUS, fontSize: CONTROL_FONT_SIZE }}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {currentLang ? `${currentLang.native} (${currentLang.name})` : settings.language}
             </span>
             <ChevronDown size={13} strokeWidth={2} style={{ flexShrink: 0, transform: langOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
           </button>
           {langOpen && (
-            <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 320, maxHeight: 320, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 24, boxShadow: "var(--shadow-panel)", zIndex: 100, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div style={{ padding: 12, borderBottom: "1px solid rgba(0,0,0,0.06)", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 320, maxHeight: 320, background: "var(--dropdown-bg)", border: "1px solid var(--border)", borderRadius: 24, boxShadow: "var(--shadow-panel)", zIndex: 100, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ padding: 12, borderBottom: "1px solid var(--border-subtle)", display: "flex", alignItems: "center", gap: 8 }}>
                 <Search size={13} style={{ color: "var(--text-low)", flexShrink: 0 }} />
                 <input autoFocus value={langSearch} onChange={(e) => setLangSearch(e.target.value)} placeholder="Поиск языка..." style={{ border: "none", outline: "none", background: "transparent", fontSize: 12, color: "var(--text-hi)", flex: 1 }} />
               </div>
@@ -491,13 +553,13 @@ export function SettingsTab() {
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
-                      background: settings.language === lang.code ? "rgba(0,0,0,0.04)" : "transparent",
+                      background: settings.language === lang.code ? "var(--dropdown-active)" : "transparent",
                       color: settings.language === lang.code ? "var(--text-hi)" : "var(--text-mid)",
                       fontSize: 12,
                       transition: "background 0.1s",
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = settings.language === lang.code ? "rgba(0,0,0,0.04)" : "transparent"}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--dropdown-hover)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = settings.language === lang.code ? "var(--dropdown-active)" : "transparent"}
                   >
                     <span style={{ minWidth: 28, fontSize: 10, color: "var(--text-low)", fontFamily: "monospace" }}>{lang.code}</span>
                     <span style={{ flex: 1 }}>{lang.native}</span>
@@ -513,7 +575,7 @@ export function SettingsTab() {
         <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>Язык, на котором вы говорите.</div>
       </div>
 
-      <div className="card" style={{ display: "grid", gap: 10, zIndex: micOpen ? 20 : 1 }}>
+      <div className="card" style={{ ...SETTINGS_CARD_STYLE, zIndex: micOpen ? 20 : 1 }}>
         <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Микрофон</div>
@@ -525,7 +587,7 @@ export function SettingsTab() {
               setMicOpen((o) => !o);
             }}
             className="btn"
-            style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: 46, opacity: microphones.length === 0 || micStatus === "permission-needed" ? 0.7 : 1, cursor: microphones.length === 0 || micStatus === "permission-needed" ? "not-allowed" : "pointer" }}
+            style={{ width: "100%", justifyContent: "space-between", gap: 8, minHeight: CONTROL_HEIGHT, padding: "0 10px", borderRadius: CONTROL_RADIUS, fontSize: CONTROL_FONT_SIZE, opacity: microphones.length === 0 || micStatus === "permission-needed" ? 0.7 : 1, cursor: microphones.length === 0 || micStatus === "permission-needed" ? "not-allowed" : "pointer" }}
           >
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {microphones.length === 0 ? "Системный микрофон по умолчанию" : visibleMicrophoneLabel}
@@ -534,13 +596,13 @@ export function SettingsTab() {
           </button>
 
           {micOpen && microphones.length > 0 && (
-            <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: "100%", maxHeight: 240, background: "rgba(255,255,255,0.98)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 24, boxShadow: "var(--shadow-panel)", zIndex: 100, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: "100%", maxHeight: 240, background: "var(--dropdown-bg)", border: "1px solid var(--border)", borderRadius: 24, boxShadow: "var(--shadow-panel)", zIndex: 100, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflow: "auto", flex: 1, padding: "6px 0" }}>
                 <button
                   onClick={() => { void update({ micId: "" }); setMicOpen(false); }}
-                  style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", background: settings.micId === "" ? "rgba(0,0,0,0.04)" : "transparent", color: settings.micId === "" ? "var(--text-hi)" : "var(--text-mid)", fontSize: 12, transition: "background 0.1s" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = settings.micId === "" ? "rgba(0,0,0,0.04)" : "transparent"}
+                  style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", background: settings.micId === "" ? "var(--dropdown-active)" : "transparent", color: settings.micId === "" ? "var(--text-hi)" : "var(--text-mid)", fontSize: 12, transition: "background 0.1s" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--dropdown-hover)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = settings.micId === "" ? "var(--dropdown-active)" : "transparent"}
                 >
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Системный микрофон по умолчанию</span>
                   {settings.micId === "" && <Check size={12} strokeWidth={2.5} style={{ color: "var(--text-hi)", flexShrink: 0 }} />}
@@ -549,9 +611,9 @@ export function SettingsTab() {
                   <button
                     key={m.deviceId}
                     onClick={() => { void update({ micId: m.deviceId }); setMicOpen(false); }}
-                    style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", background: settings.micId === m.deviceId ? "rgba(0,0,0,0.04)" : "transparent", color: settings.micId === m.deviceId ? "var(--text-hi)" : "var(--text-mid)", fontSize: 12, transition: "background 0.1s" }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,0,0,0.03)"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = settings.micId === m.deviceId ? "rgba(0,0,0,0.04)" : "transparent"}
+                    style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", background: settings.micId === m.deviceId ? "var(--dropdown-active)" : "transparent", color: settings.micId === m.deviceId ? "var(--text-hi)" : "var(--text-mid)", fontSize: 12, transition: "background 0.1s" }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--dropdown-hover)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = settings.micId === m.deviceId ? "var(--dropdown-active)" : "transparent"}
                   >
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{getMicrophoneLabel(m, i)}</span>
                     {settings.micId === m.deviceId && <Check size={12} strokeWidth={2.5} style={{ color: "var(--text-hi)", flexShrink: 0 }} />}
@@ -566,7 +628,7 @@ export function SettingsTab() {
         <div style={{ fontSize: 13, color: "var(--text-low)", lineHeight: 1.6 }}>{micMessage}</div>
       </div>
 
-      <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
+      <div className="card" style={SETTINGS_CARD_STYLE}>
         <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Горячая клавиша</div>
@@ -581,7 +643,9 @@ export function SettingsTab() {
             className="btn"
             style={{
               width: "100%",
-              minHeight: 46,
+              minHeight: CONTROL_HEIGHT,
+              padding: "0 10px",
+              borderRadius: CONTROL_RADIUS,
               justifyContent: "space-between",
               gap: 8,
               border: isHotkeyCaptureActive ? "1px solid rgba(15,118,110,0.28)" : undefined,
@@ -591,7 +655,7 @@ export function SettingsTab() {
               justifySelf: "end",
             }}
           >
-            <span style={{ color: "var(--text-hi)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ color: "var(--text-hi)", fontSize: CONTROL_FONT_SIZE, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {hotkeyDisplayValue}
             </span>
             <span style={{ color: "var(--text-low)", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>
@@ -610,7 +674,7 @@ export function SettingsTab() {
         </div>
       </div>
 
-      <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
+      <div className="card" style={SETTINGS_CARD_STYLE}>
         <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Автозапуск</div>
@@ -624,27 +688,29 @@ export function SettingsTab() {
             className="btn"
             style={{
               width: "100%",
-              minHeight: 46,
+              minHeight: CONTROL_HEIGHT,
+              padding: "0 10px",
+              borderRadius: CONTROL_RADIUS,
               display: "grid",
-              gridTemplateColumns: "minmax(0, 1fr) 42px",
+              gridTemplateColumns: "minmax(0, 1fr) 34px",
               alignItems: "center",
-              gap: 12,
+              gap: 10,
               opacity: autostartDisabled ? 0.72 : 1,
               cursor: autostartDisabled ? "wait" : "pointer",
               transform: "none",
               justifySelf: "end",
             }}
           >
-            <span style={{ color: "var(--text-hi)", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 74 }}>
+            <span style={{ color: "var(--text-hi)", fontSize: CONTROL_FONT_SIZE, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
               {autostartEnabled ? "Включен" : "Выключен"}
             </span>
             <span
               aria-hidden="true"
               style={{
-                width: 42,
-                height: 24,
+                width: 34,
+                height: 20,
                 borderRadius: 999,
-                background: autostartEnabled ? "#111" : "rgba(0,0,0,0.12)",
+                background: autostartEnabled ? "var(--accent)" : "var(--switch-track)",
                 padding: 3,
                 position: "relative",
                 transition: "background 0.15s ease",
@@ -656,12 +722,12 @@ export function SettingsTab() {
                   position: "absolute",
                   top: 3,
                   left: 3,
-                  width: 18,
-                  height: 18,
+                  width: 14,
+                  height: 14,
                   borderRadius: "50%",
-                  background: "#fff",
+                  background: "var(--accent-contrast)",
                   boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                  transform: autostartEnabled ? "translateX(18px)" : "translateX(0)",
+                  transform: autostartEnabled ? "translateX(14px)" : "translateX(0)",
                   transition: "transform 0.18s ease",
                 }}
               />
@@ -673,7 +739,7 @@ export function SettingsTab() {
         </div>
       </div>
 
-      <div className="card" style={{ display: "grid", gap: 10, background: "rgba(255,255,255,0.82)" }}>
+      <div className="card" style={SETTINGS_CARD_STYLE}>
         <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Директория моделей</div>
@@ -683,7 +749,7 @@ export function SettingsTab() {
               type="button"
               onClick={() => { void changeLocalModelsDir(); }}
               className="btn"
-              style={{ minHeight: 38, flex: 1, justifyContent: "center" }}
+              style={{ minHeight: CONTROL_HEIGHT, flex: 1, justifyContent: "center", padding: "0 10px", borderRadius: CONTROL_RADIUS, fontSize: CONTROL_FONT_SIZE }}
             >
               Изменить
             </button>
@@ -692,7 +758,7 @@ export function SettingsTab() {
                 type="button"
                 onClick={() => { void update({ localModelsDir: "" }); }}
                 className="btn"
-                style={{ minHeight: 38, flex: 1, justifyContent: "center" }}
+                style={{ minHeight: CONTROL_HEIGHT, flex: 1, justifyContent: "center", padding: "0 10px", borderRadius: CONTROL_RADIUS, fontSize: CONTROL_FONT_SIZE }}
               >
                 По умолчанию
               </button>

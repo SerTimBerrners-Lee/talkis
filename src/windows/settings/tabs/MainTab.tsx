@@ -230,7 +230,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
           display: "grid",
           gap: 12,
           padding: 18,
-          background: "rgba(255,255,255,0.72)",
+          background: "var(--surface)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -290,7 +290,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
 
         {history.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "inline-flex", background: "rgba(0,0,0,0.05)", borderRadius: 10, padding: 3, gap: 2 }}>
+            <div style={{ display: "inline-flex", background: "var(--control-track)", borderRadius: 10, padding: 3, gap: 2 }}>
               {HISTORY_FILTER_OPTIONS.map((option) => {
                 const active = historyFilter === option.id;
 
@@ -306,7 +306,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                       border: "none",
                       fontSize: 12,
                       fontWeight: active ? 700 : 500,
-                      background: active ? "rgba(255,255,255,0.84)" : "transparent",
+                      background: active ? "var(--dropdown-active)" : "transparent",
                       color: active ? "var(--text-hi)" : "var(--text-mid)",
                       cursor: "pointer",
                     }}
@@ -327,9 +327,9 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
           }}
         >
           {history.length === 0 ? (
-            <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center" }}>
-              <div style={{ width: 56, height: 56, borderRadius: 999, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-                <span className="headline-accent" style={{ fontSize: 24, fontStyle: "italic" }}>◎</span>
+            <div style={{ padding: "32px 20px", borderRadius: 12, border: "1px dashed var(--border-dashed)", textAlign: "center" }}>
+              <div style={{ width: 56, height: 56, borderRadius: 999, background: "var(--accent)", color: "var(--accent-contrast)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+                <span className="headline-accent" style={{ fontSize: 24 }}>◎</span>
               </div>
               <div className="label" style={{ marginBottom: 10 }}>История пуста</div>
               <p style={{ margin: 0, fontSize: 14, color: "var(--text-mid)", lineHeight: 1.7 }}>
@@ -337,7 +337,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
               </p>
             </div>
           ) : filteredHistory.length === 0 ? (
-            <div style={{ padding: "28px 20px", borderRadius: 12, border: "1px dashed rgba(0,0,0,0.12)", textAlign: "center", color: "var(--text-mid)" }}>
+            <div style={{ padding: "28px 20px", borderRadius: 12, border: "1px dashed var(--border-dashed)", textAlign: "center", color: "var(--text-mid)" }}>
               В этом фильтре записей пока нет.
             </div>
           ) : (
@@ -357,7 +357,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                         const source = getHistorySource(item);
 
                         return (
-                        <tr key={item.id} onDoubleClick={() => navigator.clipboard.writeText(item.cleaned)} style={{ borderBottom: index < group.items.length - 1 ? "1px solid rgba(0,0,0,0.04)" : "none", cursor: "default" }}>
+                        <tr key={item.id} onDoubleClick={() => navigator.clipboard.writeText(item.cleaned)} style={{ borderBottom: index < group.items.length - 1 ? "1px solid var(--table-row-border)" : "none", cursor: "default" }}>
                           <td style={{ whiteSpace: "nowrap", verticalAlign: "top", color: "var(--text-low)" }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                               <span>
@@ -385,7 +385,7 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 8 }}>
                                   {item.status === "failed" ? (
                                     <>
-                                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "rgba(143,45,32,0.08)", border: "1px solid rgba(143,45,32,0.14)", color: "var(--danger)", fontSize: 12, lineHeight: 1.4, width: "fit-content" }}>
+                                      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, background: "var(--danger-soft)", border: "1px solid var(--danger-border)", color: "var(--danger)", fontSize: 12, lineHeight: 1.4, width: "fit-content" }}>
                                         <AlertCircle size={13} strokeWidth={2} />
                                         <span>Обработка не завершилась</span>
                                       </div>
