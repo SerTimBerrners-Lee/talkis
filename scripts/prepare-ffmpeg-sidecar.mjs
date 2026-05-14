@@ -38,7 +38,7 @@ function resolveSourceBinary() {
 const targetTriple = readTargetTriple();
 const sourceBinary = resolveSourceBinary();
 const extension = targetTriple.includes("windows") ? ".exe" : "";
-const destinationBinary = join(binariesDir, `ffmpeg-${targetTriple}${extension}`);
+const destinationBinary = join(binariesDir, `talkis-ffmpeg-${targetTriple}${extension}`);
 
 if (!sourceBinary || !existsSync(sourceBinary)) {
   throw new Error(`ffmpeg binary was not found: ${sourceBinary || "(empty)"}`);

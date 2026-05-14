@@ -32,11 +32,17 @@ pub struct PreparedMediaChunk {
     pub file_name: String,
     pub mime_type: String,
     pub size_bytes: u64,
+    pub start_offset_seconds: f64,
 }
 
 pub struct PreparedMediaChunks {
     pub temp_dir: PathBuf,
     pub chunks: Vec<PreparedMediaChunk>,
+}
+
+pub struct PreparedDiarizationAudio {
+    pub temp_dir: PathBuf,
+    pub path: PathBuf,
 }
 
 fn file_extension(file_name: &str) -> &str {
@@ -95,7 +101,7 @@ fn resolve_ffmpeg() -> Result<PathBuf, String> {
 }
 
 async fn run_ffmpeg(app: &tauri::AppHandle, args: Vec<String>) -> Result<Vec<u8>, String> {
-    match app.shell().sidecar("ffmpeg") {
+    match app.shell().sidecar("talkis-ffmpeg") {
         Ok(command) => {
             logger::log_info("MEDIA", "Running bundled ffmpeg sidecar");
             let output = command
@@ -294,12 +300,73 @@ pub async fn prepare_media_file_chunks_for_transcription(
             file_name,
             mime_type: "audio/mpeg".to_string(),
             size_bytes: metadata.len(),
+            start_offset_seconds: chunks.len() as f64 * FILE_TRANSCRIPTION_SEGMENT_SECONDS as f64,
         });
     }
 
     Ok(PreparedMediaChunks {
         temp_dir: chunks_dir,
         chunks,
+    })
+}
+
+pub async fn prepare_media_file_for_diarization(
+    app: &tauri::AppHandle,
+    input_path: &Path,
+) -> Result<PreparedDiarizationAudio, String> {
+    let metadata =
+        fs::metadata(input_path).map_err(|err| format!("Не удалось прочитать файл: {}", err))?;
+
+    if !metadata.is_file() {
+        return Err("Выбранный путь не является файлом.".to_string());
+    }
+
+    if metadata.len() == 0 {
+        return Err("Пустой файл нельзя транскрибировать.".to_string());
+    }
+
+    if metadata.len() > MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
+        return Err(
+            "Файл слишком большой. Максимальный размер для локальной подготовки: 1 ГБ.".to_string(),
+        );
+    }
+
+    let temp_dir = unique_temp_path("file-diarization", "dir");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|err| format!("Не удалось подготовить временную папку: {}", err))?;
+    let output_path = temp_dir.join("talkis-diarization.wav");
+    let ffmpeg_args = vec![
+        "-hide_banner".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input_path.to_string_lossy().to_string(),
+        "-vn".to_string(),
+        "-ac".to_string(),
+        "1".to_string(),
+        "-ar".to_string(),
+        "16000".to_string(),
+        "-acodec".to_string(),
+        "pcm_s16le".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+
+    if let Err(message) = run_ffmpeg(app, ffmpeg_args).await {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(if message.is_empty() {
+            "Не удалось подготовить аудио для разделения говорящих.".to_string()
+        } else {
+            format!(
+                "Не удалось подготовить аудио для разделения говорящих: {}",
+                message
+            )
+        });
+    }
+
+    Ok(PreparedDiarizationAudio {
+        temp_dir,
+        path: output_path,
     })
 }
 

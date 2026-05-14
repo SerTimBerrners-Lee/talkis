@@ -17,7 +17,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - The settings window lets you change the local models directory and reset it to the default app data directory
 - Recent voice recordings and file transcriptions are saved in local history with processing time
 - The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
-- Local STT can install and run Talkis-managed Whisper, Qwen, and NVIDIA Parakeet runtimes without requiring the user to install Python or Docker manually
+- Local STT can install and run Talkis-managed Whisper, Qwen, NVIDIA Parakeet, and speaker-diarization runtimes without requiring the user to install Python or Docker manually
 
 ## Access modes
 
@@ -29,7 +29,7 @@ Sign in to [Talkis Cloud](https://talkis.ru) and use the service without managin
 
 ### API adapters — own API key
 
-Bring your own API key. In the `Модели` tab, choose API mode and expand an adapter card to enter the API key and model name. Talkis currently shows adapter entries for OpenAI, Deepgram, Cartesia, Mistral AI, ElevenLabs, Fireworks AI, Groq, AssemblyAI, Volcengine, and xAI.
+Bring your own API key. In the `Модели` tab, choose API mode and expand an adapter card to enter the API key, model name, and optional custom host such as `http://localhost:8000`. Save or test the adapter, then click `Выбрать` to make it the active transcription mode. Opening the API section alone does not switch away from the currently selected local model or cloud mode.
 
 OpenAI can be tested from the app. Other adapters save the key and model now, and their saved connection state is remembered across app restarts while backend integrations are added.
 
@@ -41,7 +41,7 @@ Supported STT models:
 
 ### Local model
 
-Open `Модели` → `Локально`, choose a supported local STT model, and click `Скачать`. Talkis starts the matching OpenAI-compatible local runtime and downloads the selected model into the configured local models directory.
+Open `Модели` → `Локально`, choose a supported local STT model, and click `Скачать`. Talkis starts the matching OpenAI-compatible local runtime and downloads the selected model into the configured local models directory. Downloaded local models show as ready, and the active model shows `Выбрана`; selecting a local model requires clicking `Выбрать`.
 
 The local models directory is configurable in `Настройки` → `Директория моделей`. Click `Изменить` to pick a folder. The `По умолчанию` reset appears only after a custom directory has been selected.
 
@@ -50,8 +50,9 @@ Managed local runtimes:
 - Whisper runtime, default endpoint `http://127.0.0.1:8000`
 - NVIDIA Parakeet MLX runtime, default endpoint `http://127.0.0.1:8001`
 - Qwen ASR runtime, default endpoint `http://127.0.0.1:8002`
+- Speaker diarization runtime, default endpoint `http://127.0.0.1:8003`
 
-If one of these ports is already occupied by another app, Talkis automatically starts the managed runtime on a free fallback port and saves the actual endpoint in settings. Fallback ranges are `18000-18049` for Whisper, `18050-18099` for NVIDIA, and `18100-18149` for Qwen.
+If one of these ports is already occupied by another app, Talkis automatically starts the managed runtime on a free fallback port and saves the actual endpoint in settings. Fallback ranges are `18000-18049` for Whisper, `18050-18099` for NVIDIA, `18100-18149` for Qwen, and `18150-18199` for speaker diarization.
 
 Supported managed local models include:
 
@@ -106,9 +107,9 @@ Without accessibility permission, speech can still be processed, but automatic p
 
 Open the `Модели` tab and choose between:
 
-- **Облако** — sign in to Talkis Cloud
-- **API** — expand an adapter, enter your API key and model name, then test/save the connection
-- **Локально** — install or select a Talkis-managed local STT model
+- **Облако** — sign in to Talkis Cloud, then click `Выбрать` when PRO is active
+- **API** — expand an adapter, enter your API key, model name, and optional host, then test/save and click `Выбрать`
+- **Локально** — install or select a Talkis-managed local STT model with `Выбрать`
 
 ## How to use
 
@@ -147,6 +148,7 @@ The copy shortcut is cleared when history is cleared, and it refreshes after ent
 - Input microphone
 - Text cleanup style
 - API adapters and saved API keys/model names
+- Optional custom API adapter hosts
 - STT / LLM endpoints and API keys (custom/local mode)
 - STT / LLM model names
 - Global hotkey
@@ -162,11 +164,14 @@ The `Файлы` tab can transcribe audio or video files without LLM cleanup. Fi
 
 Talkis supports file transcription up to 1 GB. Video files, long recordings, and less common formats are converted inside the app with the bundled ffmpeg sidecar, split into safe audio chunks, and transcribed sequentially. The UI shows chunk progress while processing.
 
+File transcription can optionally split the transcript by speakers. When `Разделить по говорящим` is enabled, Talkis uses a local Whisper model with timestamps plus the speaker-diarization components for that file job. The global API or local model selection is not overwritten by this background diarization flow.
+
 File transcription uses the same access mode as voice recording:
 
 - Talkis Cloud sends files to `proxy.talkis.ru/api/transcribe-only`
 - Custom provider mode sends files to the configured OpenAI-compatible STT endpoint
 - Local mode sends chunks to the active managed local STT runtime
+- Speaker diarization mode uses local Whisper and the local diarization runtime even when the normal active mode is API or cloud
 
 ## Text styles
 
@@ -207,6 +212,7 @@ Talkis supports custom OpenAI-compatible endpoints for:
 
 - STT (Whisper transcription) — separate endpoint, API key, and model
 - LLM (text cleanup) — separate endpoint, API key, and model
+- API adapters — optional host field inside each adapter card
 
 If STT fields are left empty, the app uses the standard OpenAI API.
 If LLM model is set to "Без обработки", the raw transcription is pasted without cleanup.
@@ -284,7 +290,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.18` to build and publish a GitHub Release
+- Push a tag like `v0.1.19` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -307,9 +313,9 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 - Rust (backend, CGEvent paste, prompt engine)
 - OpenAI Whisper / gpt-4o-transcribe
 - OpenAI GPT-4o mini (text cleanup)
-- Talkis-managed local STT runtimes for Whisper, Qwen ASR, and NVIDIA Parakeet MLX
+- Talkis-managed local STT runtimes for Whisper, Qwen ASR, NVIDIA Parakeet MLX, and speaker diarization
 - Bundled ffmpeg sidecar for media conversion and file transcription chunking
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.18**.
+Talkis is an active work in progress. Current version: **0.1.19**.

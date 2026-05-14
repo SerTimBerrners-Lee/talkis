@@ -16,6 +16,22 @@ export interface HistoryEntry {
   style?: AppSettings["style"];
   /** Total processing time in milliseconds (STT + LLM) */
   processingTime?: number;
+  mode?: "plain" | "speakers";
+  speakers?: Speaker[];
+  segments?: SpeakerTranscriptSegment[];
+}
+
+export interface Speaker {
+  id: string;
+  label: string;
+}
+
+export interface SpeakerTranscriptSegment {
+  start: number;
+  end: number;
+  speakerId: string;
+  speakerLabel: string;
+  text: string;
 }
 
 export type ApiProvider = "openai" | "custom";
@@ -24,10 +40,12 @@ export type ThemePreference = "system" | "light" | "dark";
 export interface ApiAdapterSettings {
   apiKey: string;
   model: string;
+  endpoint?: string;
   connectionStatus?: "saved" | "verified";
   lastConnectedAt?: string;
   lastTestedApiKey?: string;
   lastTestedModel?: string;
+  lastTestedEndpoint?: string;
 }
 
 export interface LocalModelSettings {
@@ -41,6 +59,8 @@ export interface AppSettings {
   apiKey: string;
   /** Saved API adapter credentials keyed by adapter id */
   apiAdapters: Record<string, ApiAdapterSettings>;
+  /** API adapter selected for active API transcription mode */
+  selectedApiAdapter: string;
   /** Cached local model states keyed by local catalog id */
   localModels: Record<string, LocalModelSettings>;
   /** Optional custom directory for downloaded local STT models; empty means default app data path */
@@ -69,6 +89,8 @@ export interface AppSettings {
   useOwnKey: boolean;
   /** Device auth token for Talkis Cloud */
   deviceToken: string;
+  /** Default file transcription mode: split uploaded files by speakers */
+  fileSpeakerDiarization: boolean;
 }
 
 export interface WidgetPosition {
@@ -273,6 +295,7 @@ export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: 
 const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
   apiAdapters: {},
+  selectedApiAdapter: "openai",
   localModels: {},
   localModelsDir: "",
   whisperApiKey: "",
@@ -290,6 +313,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   llmEndpoint: "",
   useOwnKey: true,
   deviceToken: "",
+  fileSpeakerDiarization: false,
 };
 
 function parseStyle(value: unknown): AppSettings["style"] | undefined {
@@ -333,12 +357,14 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
         acc[key] = {
           apiKey: typeof adapter.apiKey === "string" ? adapter.apiKey : "",
           model: typeof adapter.model === "string" ? adapter.model : "",
+          endpoint: typeof adapter.endpoint === "string" ? adapter.endpoint : undefined,
           connectionStatus: adapter.connectionStatus === "saved" || adapter.connectionStatus === "verified"
             ? adapter.connectionStatus
             : undefined,
           lastConnectedAt: typeof adapter.lastConnectedAt === "string" ? adapter.lastConnectedAt : undefined,
           lastTestedApiKey: typeof adapter.lastTestedApiKey === "string" ? adapter.lastTestedApiKey : undefined,
           lastTestedModel: typeof adapter.lastTestedModel === "string" ? adapter.lastTestedModel : undefined,
+          lastTestedEndpoint: typeof adapter.lastTestedEndpoint === "string" ? adapter.lastTestedEndpoint : undefined,
         };
         return acc;
       }, {})
@@ -365,6 +391,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
     apiAdapters: rawApiAdapters,
+    selectedApiAdapter: typeof raw.selectedApiAdapter === "string" ? raw.selectedApiAdapter : undefined,
     localModels: rawLocalModels,
     localModelsDir: typeof raw.localModelsDir === "string" ? raw.localModelsDir : undefined,
     whisperApiKey: typeof raw.whisperApiKey === "string" ? raw.whisperApiKey : undefined,
@@ -382,6 +409,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
     llmEndpoint: typeof raw.llmEndpoint === "string" ? raw.llmEndpoint : undefined,
     useOwnKey: typeof raw.useOwnKey === "boolean" ? raw.useOwnKey : undefined,
     deviceToken: typeof raw.deviceToken === "string" ? raw.deviceToken : undefined,
+    fileSpeakerDiarization: typeof raw.fileSpeakerDiarization === "boolean" ? raw.fileSpeakerDiarization : undefined,
   };
 }
 

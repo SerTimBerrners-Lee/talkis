@@ -20,6 +20,8 @@ export const IDLE_WIDGET_WIDTH = IDLE_HOVER_WIDGET_WIDTH;
 export const IDLE_WIDGET_HEIGHT = IDLE_HOVER_WIDGET_HEIGHT;
 export const RECORDING_WIDGET_WIDTH = IDLE_HOVER_WIDGET_WIDTH;
 export const RECORDING_WIDGET_HEIGHT = IDLE_HOVER_WIDGET_HEIGHT;
+export const FILE_DROP_WIDGET_WIDTH = 236;
+export const FILE_DROP_WIDGET_HEIGHT = 82;
 export const NOTICE_WIDGET_WIDTH = 212;
 export const NOTICE_AREA_HEIGHT = 52;
 /** Must match NOTICE_GAP in src-tauri/src/lib.rs (logical pixels). */

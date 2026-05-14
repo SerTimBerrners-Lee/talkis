@@ -468,6 +468,17 @@ select {
   }
 }
 
+@keyframes widget-file-drop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes widgetProcessingDash {
   to {
     stroke-dashoffset: -18;

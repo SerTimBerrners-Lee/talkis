@@ -43,7 +43,7 @@ import volcengineAvatar from "../../../assets/adapters/volcengine.webp";
 import xAiAvatar from "../../../assets/adapters/xai.png";
 
 const IS_DEV = import.meta.env.DEV;
-type LocalRuntimeKind = "whisper" | "nvidia" | "qwen";
+type LocalRuntimeKind = "whisper" | "nvidia" | "qwen" | "diarization";
 type DesktopPlatform = "macos" | "windows" | "linux" | "unknown";
 
 function detectDesktopPlatform(): DesktopPlatform {
@@ -64,6 +64,7 @@ const LOCAL_RUNTIME_ENDPOINTS: Record<LocalRuntimeKind, string> = {
   whisper: "http://127.0.0.1:8000",
   nvidia: "http://127.0.0.1:8001",
   qwen: "http://127.0.0.1:8002",
+  diarization: "http://127.0.0.1:8003",
 };
 const LOCAL_STT_PRESET_ENDPOINT = LOCAL_RUNTIME_ENDPOINTS.whisper;
 const LOCAL_STT_PRESET_MODEL = "whisper-large-v3-turbo";
@@ -108,12 +109,14 @@ type ApiAdapterId =
   | "xai";
 
 type AdapterTestStatus = "idle" | "testing" | "success" | "error" | "info";
+type ModelMode = "cloud" | "api" | "local";
 
 interface ApiAdapterOption {
   id: ApiAdapterId;
   name: string;
   description: string;
   recommendedModel: string;
+  defaultEndpoint: string;
   initials: string;
   accent: string;
   avatar?: string;
@@ -126,6 +129,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "OpenAI API",
     description: "Подключение через OpenAI API для распознавания речи.",
     recommendedModel: "gpt-4o-transcribe",
+    defaultEndpoint: "https://api.openai.com",
     initials: "AI",
     accent: "#0f172a",
     avatar: openAiAvatar,
@@ -136,6 +140,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "Deepgram API",
     description: "Адаптер для облачного распознавания речи через Deepgram.",
     recommendedModel: "nova-3",
+    defaultEndpoint: "",
     initials: "DG",
     accent: "#13ef93",
     avatar: deepgramAvatar,
@@ -146,6 +151,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "Cartesia API",
     description: "Адаптер под речевые модели Cartesia.",
     recommendedModel: "sonic",
+    defaultEndpoint: "",
     initials: "CA",
     accent: "#6d5dfc",
     avatar: cartesiaAvatar,
@@ -156,6 +162,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "Mistral AI",
     description: "Адаптер под модели распознавания и обработки Mistral AI.",
     recommendedModel: "voxtral-mini-latest",
+    defaultEndpoint: "",
     initials: "MI",
     accent: "#ff7000",
     avatar: mistralAvatar,
@@ -166,6 +173,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "ElevenLabs API",
     description: "Адаптер для speech-to-text сценариев через ElevenLabs.",
     recommendedModel: "scribe_v1",
+    defaultEndpoint: "",
     initials: "EL",
     accent: "#111827",
     avatar: elevenLabsAvatar,
@@ -176,6 +184,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "Fireworks AI API",
     description: "Адаптер под hosted speech-модели Fireworks AI.",
     recommendedModel: "whisper-v3",
+    defaultEndpoint: "",
     initials: "FW",
     accent: "#f97316",
     avatar: fireworksAvatar,
@@ -186,6 +195,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "Groq API",
     description: "Адаптер под быстрые hosted Whisper-модели Groq.",
     recommendedModel: "whisper-large-v3-turbo",
+    defaultEndpoint: "",
     initials: "GQ",
     accent: "#f55036",
     avatar: groqAvatar,
@@ -196,6 +206,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "AssemblyAI",
     description: "Адаптер для распознавания речи через AssemblyAI.",
     recommendedModel: "universal",
+    defaultEndpoint: "",
     initials: "AA",
     accent: "#2563eb",
     avatar: assemblyAiAvatar,
@@ -206,6 +217,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "Volcengine API",
     description: "Адаптер под речевые сервисы Volcengine.",
     recommendedModel: "seed-asr",
+    defaultEndpoint: "",
     initials: "VE",
     accent: "#7c3aed",
     avatar: volcengineAvatar,
@@ -216,6 +228,7 @@ const API_ADAPTERS: ApiAdapterOption[] = [
     name: "xAI API",
     description: "Адаптер под API xAI для будущих voice/STT сценариев.",
     recommendedModel: "grok-voice",
+    defaultEndpoint: "",
     initials: "xAI",
     accent: "#000000",
     avatar: xAiAvatar,
@@ -241,60 +254,26 @@ interface LocalModelOption {
   runtimeReady?: boolean;
   unavailableReason?: string;
   downloadBytes?: number;
+  purpose?: "stt" | "diarization";
 }
 
 const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
   {
-    id: "parakeet-tdt-06b-v3",
-    name: "NVIDIA Parakeet TDT 0.6B v3",
-    description: "Быстрая локальная ASR-модель Parakeet через MLX runtime для Apple Silicon.",
-    model: "mlx-community/parakeet-tdt-0.6b-v3",
-    engineLabel: "Parakeet",
-    runtime: "OpenAI-compatible / Parakeet MLX runtime",
-    runtimeKind: "nvidia",
-    size: "0.6B",
+    id: "whisper-large-v3-turbo",
+    name: "Whisper Large V3 Turbo",
+    description: "Рекомендуемый Whisper-вариант: быстрый, качественный и хорошо подходит для диктовки.",
+    model: "whisper-large-v3-turbo",
+    engineLabel: "Whisper",
+    runtime: "Talkis Local / whisper.cpp",
+    runtimeKind: "whisper",
+    size: "large",
     speed: "быстро",
     accuracy: "высокая",
-    initials: "P3",
-    accent: "#76b900",
-    avatar: nvidiaAvatar,
+    initials: "WT",
+    accent: "#0f172a",
     recommended: true,
     runtimeReady: true,
-    downloadBytes: 2_509_044_141,
-  },
-  {
-    id: "parakeet-tdt-06b-v2",
-    name: "NVIDIA Parakeet TDT 0.6B v2",
-    description: "Стабильная английская Parakeet TDT-модель через MLX runtime для Apple Silicon.",
-    model: "mlx-community/parakeet-tdt-0.6b-v2",
-    engineLabel: "Parakeet",
-    runtime: "OpenAI-compatible / Parakeet MLX runtime",
-    runtimeKind: "nvidia",
-    size: "0.6B",
-    speed: "быстро",
-    accuracy: "высокая",
-    initials: "P2",
-    accent: "#5f9f00",
-    avatar: nvidiaAvatar,
-    runtimeReady: true,
-    downloadBytes: 2_470_305_134,
-  },
-  {
-    id: "qwen3-asr-06b",
-    name: "Qwen3-ASR 0.6B",
-    description: "Компактная ASR-модель Qwen для локального распознавания через совместимый runtime.",
-    model: "Qwen/Qwen3-ASR-0.6B",
-    engineLabel: "Qwen",
-    runtime: "OpenAI-compatible / Qwen runtime",
-    runtimeKind: "qwen",
-    size: "0.6B",
-    speed: "средне",
-    accuracy: "высокая",
-    initials: "Q3",
-    accent: "#2563eb",
-    avatar: qwenAvatar,
-    runtimeReady: true,
-    downloadBytes: 1_880_619_678,
+    downloadBytes: 1_624_555_275,
   },
   {
     id: "whisper-large-v3-turbo-quantized",
@@ -326,23 +305,6 @@ const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     accent: "#334155",
     runtimeReady: true,
     downloadBytes: 487_601_967,
-  },
-  {
-    id: "whisper-large-v3-turbo",
-    name: "Whisper Large V3 Turbo",
-    description: "Рекомендуемый Whisper-вариант: быстрый, качественный и хорошо подходит для диктовки.",
-    model: "whisper-large-v3-turbo",
-    engineLabel: "Whisper",
-    runtime: "Talkis Local / whisper.cpp",
-    runtimeKind: "whisper",
-    size: "large",
-    speed: "быстро",
-    accuracy: "высокая",
-    initials: "WT",
-    accent: "#0f172a",
-    recommended: true,
-    runtimeReady: true,
-    downloadBytes: 1_624_555_275,
   },
   {
     id: "whisper-large-v3",
@@ -424,6 +386,57 @@ const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     runtimeReady: true,
     downloadBytes: 77_691_713,
   },
+  {
+    id: "parakeet-tdt-06b-v3",
+    name: "NVIDIA Parakeet TDT 0.6B v3",
+    description: "Быстрая локальная ASR-модель Parakeet через MLX runtime для Apple Silicon.",
+    model: "mlx-community/parakeet-tdt-0.6b-v3",
+    engineLabel: "Parakeet",
+    runtime: "OpenAI-compatible / Parakeet MLX runtime",
+    runtimeKind: "nvidia",
+    size: "0.6B",
+    speed: "быстро",
+    accuracy: "высокая",
+    initials: "P3",
+    accent: "#76b900",
+    avatar: nvidiaAvatar,
+    runtimeReady: true,
+    downloadBytes: 2_509_044_141,
+  },
+  {
+    id: "parakeet-tdt-06b-v2",
+    name: "NVIDIA Parakeet TDT 0.6B v2",
+    description: "Стабильная английская Parakeet TDT-модель через MLX runtime для Apple Silicon.",
+    model: "mlx-community/parakeet-tdt-0.6b-v2",
+    engineLabel: "Parakeet",
+    runtime: "OpenAI-compatible / Parakeet MLX runtime",
+    runtimeKind: "nvidia",
+    size: "0.6B",
+    speed: "быстро",
+    accuracy: "высокая",
+    initials: "P2",
+    accent: "#5f9f00",
+    avatar: nvidiaAvatar,
+    runtimeReady: true,
+    downloadBytes: 2_470_305_134,
+  },
+  {
+    id: "qwen3-asr-06b",
+    name: "Qwen3-ASR 0.6B",
+    description: "Компактная ASR-модель Qwen для локального распознавания через совместимый runtime.",
+    model: "Qwen/Qwen3-ASR-0.6B",
+    engineLabel: "Qwen",
+    runtime: "OpenAI-compatible / Qwen runtime",
+    runtimeKind: "qwen",
+    size: "0.6B",
+    speed: "средне",
+    accuracy: "высокая",
+    initials: "Q3",
+    accent: "#2563eb",
+    avatar: qwenAvatar,
+    runtimeReady: true,
+    downloadBytes: 1_880_619_678,
+  },
 ];
 
 interface OptionCardProps {
@@ -503,12 +516,12 @@ function CloudSubscriptionAccountCard({
   onLogout: () => void;
 }) {
   return (
-    <div className="card" style={{ padding: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 8px" }}>
+    <div className="card" style={{ padding: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "2px 2px 4px" }}>
         <div
           style={{
-            width: 32,
-            height: 32,
+            width: 46,
+            height: 46,
             borderRadius: "50%",
             background: "var(--avatar-bg)",
             display: "flex",
@@ -525,15 +538,15 @@ function CloudSubscriptionAccountCard({
               style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
             />
           ) : (
-            <User size={16} strokeWidth={1.5} color="var(--text-low)" />
+            <User size={22} strokeWidth={1.5} color="var(--text-low)" />
           )}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 600,
+              fontSize: 17,
+              fontWeight: 700,
               color: "var(--text-hi)",
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -544,8 +557,9 @@ function CloudSubscriptionAccountCard({
           </div>
           <div
             style={{
-              fontSize: 11,
-              color: "var(--text-low)",
+              fontSize: 13,
+              color: "var(--text-mid)",
+              lineHeight: 1.6,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -561,8 +575,8 @@ function CloudSubscriptionAccountCard({
             background: "none",
             border: "none",
             cursor: "pointer",
-            padding: 6,
-            borderRadius: 6,
+            padding: 8,
+            borderRadius: 8,
             color: "var(--text-low)",
             display: "flex",
             alignItems: "center",
@@ -571,7 +585,7 @@ function CloudSubscriptionAccountCard({
           }}
           title="Выйти"
         >
-          <LogOut size={14} strokeWidth={1.8} />
+          <LogOut size={16} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -582,14 +596,14 @@ function CloudSubscriptionAccountCard({
           alignItems: "center",
           justifyContent: "center",
           gap: 6,
-          width: "calc(100% - 16px)",
-          margin: "8px 8px 0",
-          padding: "10px",
+          width: "100%",
+          margin: "10px 0 0",
+          padding: "12px 14px",
           borderRadius: 8,
           background: "var(--accent)",
           color: "var(--accent-contrast)",
           border: "none",
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: 700,
           textTransform: "uppercase",
           letterSpacing: "0.04em",
@@ -644,6 +658,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [waitingForAuth, setWaitingForAuth] = useState(false);
   const [waitingForSubscriptionRefresh, setWaitingForSubscriptionRefresh] = useState(false);
+  const [modelModeView, setModelModeView] = useState<ModelMode | null>(null);
   const [expandedApiAdapter, setExpandedApiAdapter] = useState<ApiAdapterId | null>(null);
   const [expandedLocalModel, setExpandedLocalModel] = useState<string | null>(null);
   const [pendingDeleteModel, setPendingDeleteModel] = useState<LocalModelOption | null>(null);
@@ -695,35 +710,41 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
       const installedModelSet = new Set(installedModels);
       const installedLocalOptions = LOCAL_MODEL_OPTIONS.filter((model) => installedModelSet.has(model.model));
-      if (installedLocalOptions.length > 0) {
-        const now = new Date().toISOString();
-        const nextLocalModels = { ...(settings.localModels || {}) };
-        let changed = false;
+      const now = new Date().toISOString();
+      const nextLocalModels = { ...(settings.localModels || {}) };
+      let changed = false;
 
-        for (const model of installedLocalOptions) {
-          const current = nextLocalModels[model.id] || { status: "not_downloaded" as const };
-          if (current.status !== "downloaded" || current.message) {
-            nextLocalModels[model.id] = {
-              ...current,
-              status: "downloaded",
-              message: undefined,
-              downloadedAt: current.downloadedAt || now,
-              lastCheckedAt: now,
-            };
-            changed = true;
+      for (const model of LOCAL_MODEL_OPTIONS) {
+        const current = nextLocalModels[model.id];
+        if (current?.status === "downloaded" && !installedModelSet.has(model.model)) {
+          delete nextLocalModels[model.id];
+          changed = true;
+        }
+      }
+
+      for (const model of installedLocalOptions) {
+        const current = nextLocalModels[model.id] || { status: "not_downloaded" as const };
+        if (current.status !== "downloaded" || current.message) {
+          nextLocalModels[model.id] = {
+            ...current,
+            status: "downloaded",
+            message: undefined,
+            downloadedAt: current.downloadedAt || now,
+            lastCheckedAt: now,
+          };
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        update({ localModels: nextLocalModels });
+        setLocalModelActionStates((prev) => {
+          const next = { ...prev };
+          for (const model of installedLocalOptions) {
+            delete next[model.id];
           }
-        }
-
-        if (changed) {
-          update({ localModels: nextLocalModels });
-          setLocalModelActionStates((prev) => {
-            const next = { ...prev };
-            for (const model of installedLocalOptions) {
-              delete next[model.id];
-            }
-            return next;
-          });
-        }
+          return next;
+        });
       }
     } catch (err) {
       setLocalInstalledModels([]);
@@ -902,6 +923,40 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
   }, [refreshLocalInstalledModels]);
 
   useEffect(() => {
+    if (!settings) return;
+
+    if (type !== "model") {
+      setModelModeView(null);
+      return;
+    }
+
+    const currentMode: ModelMode = !settings.useOwnKey
+      ? "cloud"
+      : settings.provider === "custom"
+        ? "local"
+        : "api";
+
+    setModelModeView((current) => current ?? currentMode);
+  }, [settings?.provider, settings?.useOwnKey, type]);
+
+  useEffect(() => {
+    if (!settings || type !== "model" || cloudProfile === undefined) return;
+    if (settings.useOwnKey || cloudProfile?.subscription.active === true) return;
+
+    const nextSettings = {
+      ...settings,
+      useOwnKey: true,
+    };
+    setSettings(nextSettings);
+    settingsSaveQueueRef.current = settingsSaveQueueRef.current
+      .catch(() => {})
+      .then(() => saveSettings(nextSettings))
+      .then(() => {
+        emit(SETTINGS_UPDATED_EVENT).catch(() => {});
+      });
+  }, [cloudProfile, settings, type]);
+
+  useEffect(() => {
     const unlistenPromise = listen<LocalModelDownloadProgressEvent>(LOCAL_STT_MODEL_DOWNLOAD_PROGRESS_EVENT, (event) => {
       const modelOptions = LOCAL_MODEL_OPTIONS.filter((model) => model.model === event.payload.model);
       if (modelOptions.length === 0) return;
@@ -957,18 +1012,19 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const hasActiveSubscription = cloudProfile?.subscription.active === true;
     const isCloudMode = !settings.useOwnKey;
     const isCustom = settings.provider === "custom";
+    const isCloudSelected = isCloudMode && hasActiveSubscription;
     const desktopPlatform = detectDesktopPlatform();
-    const activeModelMode: "cloud" | "api" | "local" = isCloudMode ? "cloud" : isCustom ? "local" : "api";
-    const isApiMode = activeModelMode === "api";
-    const isLocalMode = activeModelMode === "local";
+    const activeModelMode: ModelMode = isCloudSelected ? "cloud" : isCustom ? "local" : "api";
+    const visibleModelMode = modelModeView ?? activeModelMode;
+    const isApiMode = visibleModelMode === "api";
+    const isLocalMode = visibleModelMode === "local";
+    const isCloudView = visibleModelMode === "cloud";
+    const selectedApiAdapterId = (settings.selectedApiAdapter || "openai") as ApiAdapterId;
     const localSttTargetModel = (settings.whisperModel || LOCAL_STT_PRESET_MODEL).trim() || LOCAL_STT_PRESET_MODEL;
     const localInstalledModelSet = new Set(localInstalledModels);
     const localModelsDir = (settings.localModelsDir || "").trim();
-    const apiKeyValue = (settings.apiKey || "").trim();
-    const apiModelValue = (settings.whisperModel || "").trim();
-    const isApiTestDisabled = testStatus === "testing" || !apiKeyValue || !apiModelValue;
     const modeOptions: Array<{
-      id: "cloud" | "api" | "local";
+      id: ModelMode;
       label: string;
       Icon: LucideIcon;
     }> = [
@@ -992,6 +1048,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const resetTestState = () => {
       setTestStatus("idle");
       setTestMessage(null);
+      setApiAdapterTestStates({});
     };
 
     const resetInstallState = () => {
@@ -1009,6 +1066,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         if (port === 8000 || (port >= 18000 && port <= 18049)) return "whisper";
         if (port === 8001 || (port >= 18050 && port <= 18099)) return "nvidia";
         if (port === 8002 || (port >= 18100 && port <= 18149)) return "qwen";
+        if (port === 8003 || (port >= 18150 && port <= 18199)) return "diarization";
       } catch {
         return null;
       }
@@ -1025,45 +1083,32 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       return LOCAL_RUNTIME_ENDPOINTS[model.runtimeKind];
     };
 
-    const getPreferredLocalModel = (): LocalModelOption => {
-      const currentModel = (settings.whisperModel || "").trim();
-      const isDownloaded = (model: LocalModelOption) =>
-        localInstalledModelSet.has(model.model) || settings.localModels?.[model.id]?.status === "downloaded";
-
-      const currentLocalModel = LOCAL_MODEL_OPTIONS.find(
-        (model) => model.runtimeReady === true && model.model === currentModel && isDownloaded(model),
-      );
-      if (currentLocalModel) {
-        return currentLocalModel;
-      }
-
-      return (
-        LOCAL_MODEL_OPTIONS.find((model) => model.runtimeReady === true && isDownloaded(model)) ||
-        LOCAL_MODEL_OPTIONS.find((model) => model.model === LOCAL_STT_PRESET_MODEL) ||
-        LOCAL_MODEL_OPTIONS.find((model) => model.runtimeReady === true) ||
-        LOCAL_MODEL_OPTIONS[0]
-      );
-    };
+    const isApiAdapterSelected = (adapter: ApiAdapterOption) => (
+      activeModelMode === "api" && selectedApiAdapterId === adapter.id
+    );
 
     const getApiAdapterValues = (adapter: ApiAdapterOption) => {
-      if (adapter.id === "openai") {
+      if (isApiAdapterSelected(adapter)) {
         return {
           apiKey: settings.apiKey || "",
           model: settings.whisperModel || "",
+          endpoint: settings.whisperEndpoint || "",
         };
       }
 
       const savedAdapter = settings.apiAdapters?.[adapter.id];
       return {
-        apiKey: savedAdapter?.apiKey || "",
+        apiKey: savedAdapter?.apiKey || (adapter.id === "openai" ? settings.apiKey || "" : ""),
         model: savedAdapter?.model || adapter.recommendedModel,
+        endpoint: savedAdapter?.endpoint || "",
       };
     };
 
-    const getPersistedAdapterStatus = (adapter: ApiAdapterOption, apiKey: string, model: string) => {
+    const getPersistedAdapterStatus = (adapter: ApiAdapterOption, apiKey: string, model: string, endpoint: string) => {
       const savedAdapter = settings.apiAdapters?.[adapter.id];
       const normalizedApiKey = apiKey.trim();
       const normalizedModel = model.trim();
+      const normalizedEndpoint = endpoint.trim();
 
       if (!savedAdapter?.connectionStatus || !normalizedApiKey || !normalizedModel) {
         return null;
@@ -1071,7 +1116,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
       if (
         savedAdapter.lastTestedApiKey !== normalizedApiKey ||
-        savedAdapter.lastTestedModel !== normalizedModel
+        savedAdapter.lastTestedModel !== normalizedModel ||
+        (savedAdapter.lastTestedEndpoint || "") !== normalizedEndpoint
       ) {
         return null;
       }
@@ -1079,23 +1125,25 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
       return savedAdapter.connectionStatus;
     };
 
-    const updateApiAdapterValues = (adapter: ApiAdapterOption, patch: Partial<{ apiKey: string; model: string }>) => {
-      if (adapter.id === "openai") {
-        update({
-          ...(patch.apiKey !== undefined ? { apiKey: patch.apiKey } : {}),
-          ...(patch.model !== undefined ? { whisperModel: patch.model } : {}),
-        });
-        resetTestState();
-        return;
-      }
-
+    const updateApiAdapterValues = (adapter: ApiAdapterOption, patch: Partial<{ apiKey: string; model: string; endpoint: string }>) => {
       const currentValues = getApiAdapterValues(adapter);
+      const nextValues = {
+        ...currentValues,
+        ...patch,
+      };
+
       update({
+        ...(isApiAdapterSelected(adapter)
+          ? {
+              apiKey: nextValues.apiKey,
+              whisperModel: nextValues.model,
+              whisperEndpoint: nextValues.endpoint,
+            }
+          : {}),
         apiAdapters: {
           ...(settings.apiAdapters || {}),
           [adapter.id]: {
-            ...currentValues,
-            ...patch,
+            ...nextValues,
           },
         },
       });
@@ -1103,20 +1151,30 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         ...prev,
         [adapter.id]: { status: "idle", message: "" },
       }));
+      if (adapter.id === "openai") {
+        setTestStatus("idle");
+        setTestMessage(null);
+      }
     };
 
-    const getAdapterStatus = (adapter: ApiAdapterOption, apiKey: string, model: string) => {
-      const persistedStatus = getPersistedAdapterStatus(adapter, apiKey, model);
+    const getAdapterStatus = (adapter: ApiAdapterOption, apiKey: string, model: string, endpoint: string) => {
+      const persistedStatus = getPersistedAdapterStatus(adapter, apiKey, model, endpoint);
+      const isSelected = isApiAdapterSelected(adapter);
 
       if (adapter.id === "openai") {
         const hasCredentials = Boolean(apiKey.trim()) && Boolean(model.trim());
-        const effectiveStatus = testStatus === "idle" && persistedStatus === "verified"
+        const adapterState = apiAdapterTestStates[adapter.id];
+        const effectiveStatus = adapterState?.status === "testing" || adapterState?.status === "error" || adapterState?.status === "success"
+          ? adapterState.status
+          : testStatus === "idle" && persistedStatus
           ? "success"
           : testStatus as AdapterTestStatus;
-        const label = !apiKey.trim()
+        const label = isSelected
+          ? "Выбран"
+          : !apiKey.trim()
           ? "Нужен API-ключ"
           : effectiveStatus === "success"
-            ? "Подключен"
+            ? "Готов"
             : effectiveStatus === "error"
               ? "Ошибка"
               : effectiveStatus === "testing"
@@ -1124,6 +1182,8 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 : "Готов к проверке";
         const connectionLabel = !hasCredentials
           ? "API-ключ не указан"
+          : isSelected
+            ? "Используется для распознавания"
           : effectiveStatus === "success"
             ? "Соединение работает"
             : effectiveStatus === "error"
@@ -1131,7 +1191,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
               : effectiveStatus === "testing"
                 ? "Проверяем соединение..."
                 : "Соединение не проверено";
-        const color = effectiveStatus === "success"
+        const color = isSelected || effectiveStatus === "success"
           ? "var(--success-bright)"
           : effectiveStatus === "error"
             ? "var(--error-bright)"
@@ -1139,10 +1199,11 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
         return {
           label,
-          message: testMessage || (persistedStatus === "verified" ? "Соединение проверено и сохранено." : null),
-          status: effectiveStatus,
+          message: adapterState?.message || testMessage || (persistedStatus === "verified" ? "Соединение проверено и сохранено." : null),
+          status: isSelected ? "success" as AdapterTestStatus : effectiveStatus,
           color,
           connectionLabel,
+          isSelected,
         };
       }
 
@@ -1153,29 +1214,27 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         : persistedStatus
           ? "success"
           : adapterState?.status || "idle";
-      const label = effectiveStatus === "success"
-        ? "Сохранен"
+      const label = isSelected
+        ? "Выбран"
+        : effectiveStatus === "success"
+        ? "Готов"
         : !apiKey.trim()
           ? "Нужен API-ключ"
           : !model.trim()
             ? "Нужна модель"
-            : "Готов к подключению";
+            : "Готов к выбору";
 
       return {
         label,
         message: adapterState?.message || (persistedStatus ? `${adapter.name}: ключ и модель сохранены.` : null),
         status: effectiveStatus,
-        color: effectiveStatus === "success" ? "var(--success-bright)" : effectiveStatus === "error" ? "var(--error-bright)" : hasCredentials ? "var(--text-hi)" : "var(--text-low)",
-        connectionLabel: effectiveStatus === "success" ? "Ключ и модель сохранены" : hasCredentials ? "Готов к сохранению" : "Заполните ключ и модель",
+        color: isSelected || effectiveStatus === "success" ? "var(--success-bright)" : effectiveStatus === "error" ? "var(--error-bright)" : hasCredentials ? "var(--text-hi)" : "var(--text-low)",
+        connectionLabel: isSelected ? "Используется для распознавания" : effectiveStatus === "success" ? "Ключ и модель сохранены" : hasCredentials ? "Готов к выбору" : "Заполните ключ и модель",
+        isSelected,
       };
     };
 
     const handleApiAdapterTest = async (adapter: ApiAdapterOption) => {
-      if (adapter.id === "openai") {
-        await handleTestConnection();
-        return;
-      }
-
       const values = getApiAdapterValues(adapter);
       if (!values.apiKey.trim() || !values.model.trim()) {
         setApiAdapterTestStates((prev) => ({
@@ -1185,11 +1244,54 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         return;
       }
 
+      if (adapter.testable) {
+        setApiAdapterTestStates((prev) => ({
+          ...prev,
+          [adapter.id]: { status: "testing", message: "Проверяем соединение..." },
+        }));
+
+        try {
+          const result = await invoke<{ success: boolean; message: string; latency_ms: number }>("test_api_connection", {
+            req: {
+              api_key: values.apiKey || "",
+              whisper_api_key: null,
+              whisper_endpoint: values.endpoint || null,
+              local_models_dir: null,
+              whisper_model: values.model || "whisper-1",
+              llm_api_key: null,
+              llm_endpoint: null,
+              llm_model: "none",
+              test_stt: true,
+              test_llm: false,
+            },
+          });
+          setApiAdapterTestStates((prev) => ({
+            ...prev,
+            [adapter.id]: { status: result.success ? "success" : "error", message: result.message },
+          }));
+          if (!result.success) return;
+        } catch (err) {
+          setApiAdapterTestStates((prev) => ({
+            ...prev,
+            [adapter.id]: { status: "error", message: err instanceof Error ? err.message : String(err) },
+          }));
+          return;
+        }
+      } else {
+        setApiAdapterTestStates((prev) => ({
+          ...prev,
+          [adapter.id]: {
+            status: "success",
+            message: `${adapter.name}: ключ и модель сохранены. Реальная проверка соединения будет доступна после подключения backend-адаптера.`,
+          },
+        }));
+      }
+
       setApiAdapterTestStates((prev) => ({
         ...prev,
         [adapter.id]: {
           status: "success",
-          message: `${adapter.name}: ключ и модель сохранены. Реальная проверка соединения будет доступна после подключения backend-адаптера.`,
+          message: adapter.testable ? "Соединение проверено и сохранено." : `${adapter.name}: ключ и модель сохранены. Реальная проверка соединения будет доступна после подключения backend-адаптера.`,
         },
       }));
       update({
@@ -1198,13 +1300,83 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           [adapter.id]: {
             apiKey: values.apiKey,
             model: values.model,
-            connectionStatus: "saved",
+            endpoint: values.endpoint,
+            connectionStatus: adapter.testable ? "verified" : "saved",
             lastConnectedAt: new Date().toISOString(),
             lastTestedApiKey: values.apiKey.trim(),
             lastTestedModel: values.model.trim(),
+            lastTestedEndpoint: values.endpoint.trim(),
           },
         },
       });
+    };
+
+    const buildActiveApiAdapterSnapshot = (): Partial<AppSettings> => {
+      if (activeModelMode !== "api") {
+        return {};
+      }
+
+      const adapterId = selectedApiAdapterId || "openai";
+      const currentAdapter = settings.apiAdapters?.[adapterId] || {
+        apiKey: settings.apiKey || "",
+        model: settings.whisperModel || "whisper-1",
+      };
+
+      return {
+        apiAdapters: {
+          ...(settings.apiAdapters || {}),
+          [adapterId]: {
+            ...currentAdapter,
+            apiKey: settings.apiKey || "",
+            model: settings.whisperModel || "whisper-1",
+            endpoint: settings.whisperEndpoint || "",
+          },
+        },
+      };
+    };
+
+    const handleSelectApiAdapter = (adapter: ApiAdapterOption) => {
+      const values = getApiAdapterValues(adapter);
+      const apiKey = values.apiKey.trim();
+      const model = values.model.trim();
+      const endpoint = values.endpoint.trim();
+
+      if (!apiKey || !model) {
+        setApiAdapterTestStates((prev) => ({
+          ...prev,
+          [adapter.id]: { status: "error", message: "Укажите API-ключ и модель перед выбором адаптера." },
+        }));
+        return;
+      }
+
+      update({
+        useOwnKey: true,
+        provider: "openai",
+        selectedApiAdapter: adapter.id,
+        apiKey,
+        whisperApiKey: "",
+        whisperEndpoint: endpoint,
+        whisperModel: model,
+        llmApiKey: "",
+        llmEndpoint: "",
+        llmModel: "none",
+        apiAdapters: {
+          ...(settings.apiAdapters || {}),
+          [adapter.id]: {
+            ...(settings.apiAdapters?.[adapter.id] || {}),
+            apiKey,
+            model,
+            endpoint,
+            connectionStatus: settings.apiAdapters?.[adapter.id]?.connectionStatus || "saved",
+            lastConnectedAt: settings.apiAdapters?.[adapter.id]?.lastConnectedAt || new Date().toISOString(),
+            lastTestedApiKey: settings.apiAdapters?.[adapter.id]?.lastTestedApiKey,
+            lastTestedModel: settings.apiAdapters?.[adapter.id]?.lastTestedModel,
+            lastTestedEndpoint: settings.apiAdapters?.[adapter.id]?.lastTestedEndpoint,
+          },
+        },
+      });
+      setModelModeView("api");
+      resetInstallState();
     };
 
     const handleActivateSubscription = async () => {
@@ -1238,94 +1410,24 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     };
 
     const handleModeChange = (mode: typeof modeOptions[number]["id"]) => {
-      if (mode === activeModelMode) {
+      if (mode === visibleModelMode) {
         return;
       }
 
+      setModelModeView(mode);
       resetTestState();
       resetInstallState();
+    };
 
-      if (mode === "cloud") {
-        update({ useOwnKey: false });
+    const handleSelectCloudMode = () => {
+      if (!hasActiveSubscription) {
         return;
       }
 
-      const localModel = getPreferredLocalModel();
-      update({
-        useOwnKey: true,
-        ...(mode === "api"
-          ? {
-              provider: "openai" as const,
-              whisperEndpoint: "",
-              llmApiKey: "",
-              llmEndpoint: "",
-              whisperModel: "whisper-1",
-              llmModel: "none",
-            }
-          : {
-              provider: "custom" as const,
-              whisperApiKey: "",
-              whisperEndpoint: getLocalModelEndpoint(localModel),
-              whisperModel: localModel.model,
-              llmApiKey: "",
-              llmEndpoint: "",
-              llmModel: "none",
-            }),
-      });
-    };
-
-    const handleTestConnection = async () => {
-      setTestStatus("testing");
-      setTestMessage(null);
-
-      const testStt = isCustom || settings.provider === "openai";
-      const testLlm = false;
-
-      try {
-        if (!testStt && !testLlm) {
-          setTestStatus("error");
-          setTestMessage("Сначала укажите endpoint или API-ключ для проверки соединения.");
-          return;
-        }
-
-        const result = await invoke<{ success: boolean; message: string; latency_ms: number }>("test_api_connection", {
-          req: {
-            api_key: settings.apiKey || "",
-            whisper_api_key: isCustom ? (settings.whisperApiKey || null) : null,
-            whisper_endpoint: isCustom ? (settings.whisperEndpoint || null) : null,
-            local_models_dir: isCustom ? (localModelsDir || null) : null,
-            whisper_model: isCustom ? (settings.whisperModel || null) : (settings.whisperModel || "whisper-1"),
-            llm_api_key: null,
-            llm_endpoint: null,
-            llm_model: "none",
-            test_stt: testStt,
-            test_llm: testLlm,
-          },
-        });
-        setTestStatus(result.success ? "success" : "error");
-        setTestMessage(result.message);
-        if (result.success && !isCustom) {
-          const normalizedApiKey = (settings.apiKey || "").trim();
-          const normalizedModel = (settings.whisperModel || "whisper-1").trim();
-
-          update({
-            apiAdapters: {
-              ...(settings.apiAdapters || {}),
-              openai: {
-                apiKey: settings.apiKey || "",
-                model: settings.whisperModel || "whisper-1",
-                connectionStatus: "verified",
-                lastConnectedAt: new Date().toISOString(),
-                lastTestedApiKey: normalizedApiKey,
-                lastTestedModel: normalizedModel,
-              },
-            },
-          });
-        }
-      } catch (err) {
-        setTestStatus("error");
-        setTestMessage(err instanceof Error ? err.message : String(err));
-      }
+      update({ ...buildActiveApiAdapterSnapshot(), useOwnKey: false });
+      setModelModeView("cloud");
+      resetTestState();
+      resetInstallState();
     };
 
     const updateLocalModelCache = (modelId: string, patch: Partial<LocalModelSettings>) => {
@@ -1344,14 +1446,14 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
     const getLocalModelStatus = (model: LocalModelOption) => {
       const actionState = localModelActionStates[model.id];
       const cachedState = settings.localModels?.[model.id];
-      const isPlatformSupported = model.runtimeKind === "whisper" || desktopPlatform === "macos";
+      const isPlatformSupported = model.runtimeKind === "whisper" || model.runtimeKind === "diarization" || desktopPlatform === "macos";
       const isRuntimeReady = model.runtimeReady === true && isPlatformSupported;
       const isInstalled = isRuntimeReady && (localInstalledModelSet.has(model.model) || cachedState?.status === "downloaded");
-      const isSelected = localSttTargetModel === model.model && isInstalled;
+      const isSelected = activeModelMode === "local" && localSttTargetModel === model.model && isInstalled;
 
       if (!isRuntimeReady) {
-        const runtimeName = model.runtimeKind === "nvidia" ? "NVIDIA" : model.runtimeKind === "qwen" ? "Qwen" : "MLX";
-        const isRuntimeSlotReady = model.runtimeKind === "qwen" || model.runtimeKind === "nvidia";
+        const runtimeName = model.runtimeKind === "nvidia" ? "NVIDIA" : model.runtimeKind === "qwen" ? "Qwen" : model.runtimeKind === "diarization" ? "Diarization" : "MLX";
+        const isRuntimeSlotReady = model.runtimeKind === "qwen" || model.runtimeKind === "nvidia" || model.runtimeKind === "diarization";
         return {
           label: isRuntimeSlotReady ? "Модель не подключена" : "Движок не подключен",
           connectionLabel: isRuntimeSlotReady
@@ -1525,6 +1627,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
     const handleSelectLocalModel = (model: LocalModelOption, endpointOverride?: string) => {
       update({
+        ...buildActiveApiAdapterSnapshot(),
         useOwnKey: true,
         provider: "custom",
         whisperApiKey: "",
@@ -1534,6 +1637,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
         llmEndpoint: "",
         llmModel: "none",
       });
+      setModelModeView("local");
       resetTestState();
       resetInstallState();
 
@@ -1579,8 +1683,10 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
           lastCheckedAt: new Date().toISOString(),
         });
 
-        if (result.success) {
+        if (result.success && model.purpose !== "diarization") {
           handleSelectLocalModel(model, result.whisper_endpoint || undefined);
+          await refreshLocalInstalledModels();
+        } else if (result.success) {
           await refreshLocalInstalledModels();
         }
       } catch (err) {
@@ -1695,7 +1801,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
             <div style={{ display: "flex", background: "var(--control-track)", borderRadius: 10, padding: 3, gap: 2 }}>
               {modeOptions.map(({ id, label, Icon }) => {
-                const active = activeModelMode === id;
+                const active = visibleModelMode === id;
 
                 return (
                   <button
@@ -1727,20 +1833,62 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
             </div>
           </div>
 
-          {hasActiveSubscription && !settings.useOwnKey && (
-            <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Облако</div>
-              <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                Запросы на распознавание и обработку текста идут через облако Talkis. Все данные шифруются при передаче, а аудио и текст не сохраняются на сервере после обработки.
+          {isCloudView && (
+            <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)", marginBottom: 4 }}>Облако</div>
+                <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
+                  {hasActiveSubscription
+                    ? "Запросы на распознавание и обработку текста идут через облако Talkis. Все данные шифруются при передаче, а аудио и текст не сохраняются на сервере после обработки."
+                    : "Для облачного режима нужна авторизация и активная подписка. После входа плашка и статус подписки обновятся автоматически."}
+                </div>
               </div>
-            </div>
-          )}
 
-          {isCloudMode && !hasActiveSubscription && (
-            <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>Облако</div>
-              <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                Для облачного режима нужна авторизация и активная подписка. После входа плашка и статус подписки обновятся автоматически.
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: isCloudSelected ? "var(--success-bright)" : hasActiveSubscription ? "var(--text-hi)" : "var(--text-low)", fontSize: 12, fontWeight: 600 }}>
+                  {(isCloudSelected || hasActiveSubscription) && <Check size={15} strokeWidth={2.5} />}
+                  {isCloudSelected ? "Используется для распознавания" : hasActiveSubscription ? "PRO активен, облако готово к выбору" : "Нужна активная подписка PRO"}
+                </div>
+
+                {isCloudSelected ? (
+                  <div style={{
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--success-border)",
+                    background: "var(--success-soft)",
+                    color: "var(--success-bright)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}>
+                    <Check size={14} strokeWidth={2.5} />
+                    Выбрано
+                  </div>
+                ) : hasActiveSubscription ? (
+                  <button
+                    type="button"
+                    onClick={handleSelectCloudMode}
+                    style={{
+                      padding: "9px 12px",
+                      borderRadius: 10,
+                      border: "1px solid var(--border-dashed)",
+                      background: "var(--control-muted)",
+                      color: "var(--text-hi)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      fontFamily: "var(--font-main)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <Check size={14} strokeWidth={2.5} />
+                    Выбрать
+                  </button>
+                ) : null}
               </div>
             </div>
           )}
@@ -1760,11 +1908,11 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                 {API_ADAPTERS.map((adapter) => {
                   const isExpanded = expandedApiAdapter === adapter.id;
                   const adapterValues = getApiAdapterValues(adapter);
-                  const adapterStatus = getAdapterStatus(adapter, adapterValues.apiKey, adapterValues.model);
-                  const isAdapterConnected = adapterStatus.status === "success";
-                  const isAdapterTestDisabled = adapter.id === "openai"
-                    ? isApiTestDisabled
-                    : !adapterValues.apiKey.trim() || !adapterValues.model.trim();
+                  const adapterStatus = getAdapterStatus(adapter, adapterValues.apiKey, adapterValues.model, adapterValues.endpoint);
+                  const isAdapterSelected = adapterStatus.isSelected;
+                  const isAdapterReady = adapterStatus.status === "success";
+                  const canSelectApiAdapter = Boolean(adapterValues.apiKey.trim()) && Boolean(adapterValues.model.trim());
+                  const isAdapterTestDisabled = adapterStatus.status === "testing" || !canSelectApiAdapter;
 
                   return (
                     <div key={adapter.id} className="card" style={{ padding: 0, overflow: "hidden", background: "var(--surface)" }}>
@@ -1839,6 +1987,41 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                             <div style={{ fontSize: 11, color: "var(--text-low)", whiteSpace: "nowrap", flexShrink: 0 }}>Рекомендуем: {adapter.recommendedModel}</div>
                           </div>
 
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div className="label" style={{ width: 76, flexShrink: 0 }}>Хост</div>
+                            <input
+                              type="url"
+                              value={adapterValues.endpoint}
+                              onChange={(e) => updateApiAdapterValues(adapter, { endpoint: e.target.value })}
+                              className="input"
+                              placeholder={adapter.defaultEndpoint ? `По умолчанию: ${adapter.defaultEndpoint}` : "https://api.example.com или http://localhost:8000"}
+                              style={{ flex: 1, minWidth: 0, height: 36, padding: "8px 10px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 12 }}
+                            />
+                            {adapterValues.endpoint.trim() ? (
+                              <button
+                                type="button"
+                                onClick={() => updateApiAdapterValues(adapter, { endpoint: "" })}
+                                style={{
+                                  border: "1px solid var(--border-dashed)",
+                                  background: "var(--control-muted)",
+                                  color: "var(--text-hi)",
+                                  borderRadius: 8,
+                                  padding: "7px 9px",
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  fontFamily: "var(--font-main)",
+                                  whiteSpace: "nowrap",
+                                  flexShrink: 0,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Сбросить
+                              </button>
+                            ) : (
+                              <div style={{ fontSize: 11, color: "var(--text-low)", whiteSpace: "nowrap", flexShrink: 0 }}>Необязательно</div>
+                            )}
+                          </div>
+
                           {adapterStatus.message && (
                             <div style={{
                               fontSize: 12,
@@ -1858,7 +2041,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                               {adapterStatus.status === "success" && <Check size={15} strokeWidth={2.5} />}
                               {adapterStatus.connectionLabel}
                             </div>
-                            {isAdapterConnected ? (
+                            {isAdapterSelected ? (
                               <div style={{
                                 padding: "9px 12px",
                                 borderRadius: 10,
@@ -1872,39 +2055,65 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                                 gap: 8,
                               }}>
                                 <Check size={14} strokeWidth={2.5} />
-                                Подключено
+                                Выбрано
                               </div>
                             ) : (
-                              <button
-                                onClick={() => void handleApiAdapterTest(adapter)}
-                                disabled={isAdapterTestDisabled}
-                                style={{
-                                  padding: "9px 12px",
-                                  borderRadius: 10,
-                                  border: "1px solid var(--border-dashed)",
-                                  background: isAdapterTestDisabled ? "var(--control-muted)" : "var(--accent)",
-                                  color: isAdapterTestDisabled ? "var(--text-mid)" : "var(--accent-contrast)",
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  fontFamily: "var(--font-main)",
-                                  cursor: adapterStatus.status === "testing" ? "wait" : isAdapterTestDisabled ? "not-allowed" : "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                }}
-                              >
-                                {adapterStatus.status === "testing" ? (
-                                  <>
-                                    <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid color-mix(in srgb, var(--accent-contrast) 35%, transparent)", borderTopColor: "var(--accent-contrast)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
-                                    Проверяем...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Zap size={14} strokeWidth={2.2} />
-                                    {adapter.testable ? "Тестировать и сохранить" : "Сохранить"}
-                                  </>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                {isAdapterReady && (
+                                  <button
+                                    onClick={() => handleSelectApiAdapter(adapter)}
+                                    disabled={!canSelectApiAdapter}
+                                    style={{
+                                      padding: "9px 12px",
+                                      borderRadius: 10,
+                                      border: "1px solid var(--border-dashed)",
+                                      background: canSelectApiAdapter ? "var(--control-muted)" : "var(--control-muted)",
+                                      color: canSelectApiAdapter ? "var(--text-hi)" : "var(--text-mid)",
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      fontFamily: "var(--font-main)",
+                                      cursor: canSelectApiAdapter ? "pointer" : "not-allowed",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                    }}
+                                  >
+                                    <Check size={14} strokeWidth={2.5} />
+                                    Выбрать
+                                  </button>
                                 )}
-                              </button>
+
+                                <button
+                                  onClick={() => void handleApiAdapterTest(adapter)}
+                                  disabled={isAdapterTestDisabled}
+                                  style={{
+                                    padding: "9px 12px",
+                                    borderRadius: 10,
+                                    border: "1px solid var(--border-dashed)",
+                                    background: isAdapterTestDisabled ? "var(--control-muted)" : "var(--accent)",
+                                    color: isAdapterTestDisabled ? "var(--text-mid)" : "var(--accent-contrast)",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    fontFamily: "var(--font-main)",
+                                    cursor: adapterStatus.status === "testing" ? "wait" : isAdapterTestDisabled ? "not-allowed" : "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                  }}
+                                >
+                                  {adapterStatus.status === "testing" ? (
+                                    <>
+                                      <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid color-mix(in srgb, var(--accent-contrast) 35%, transparent)", borderTopColor: "var(--accent-contrast)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                                      Проверяем...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Zap size={14} strokeWidth={2.2} />
+                                      {adapter.testable ? "Тестировать и сохранить" : "Сохранить"}
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1936,7 +2145,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                   const isDownloaded = modelStatus.isInstalled;
                   const isModelBusy = modelStatus.status === "installing" || modelStatus.status === "deleting";
                   const isInstallDisabled = isModelBusy || !isRuntimeReady;
-                  const canSelect = isRuntimeReady && modelStatus.isInstalled;
+                  const canSelect = isRuntimeReady && modelStatus.isInstalled && model.purpose !== "diarization";
                   const downloadProgress = modelStatus.status === "installing" ? modelActionState?.progress : undefined;
                   const downloadedLabel = formatLocalDownloadBytes(modelActionState?.downloadedBytes, { showZero: Boolean(modelActionState?.totalBytes) });
                   const totalLabel = formatLocalDownloadBytes(modelActionState?.totalBytes);

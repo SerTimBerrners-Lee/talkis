@@ -1,6 +1,6 @@
 [package]
 name = "talkis"
-version = "0.1.18"
+version = "0.1.19"
 description = "Talkis - Voice to Text Desktop Widget"
 authors = ["trixter"]
 edition = "2021"

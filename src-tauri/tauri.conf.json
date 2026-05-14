@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Talkis",
   "mainBinaryName": "Talkis",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "identifier": "com.trixter.talkis",
   "build": {
     "beforeDevCommand": "bun run prepare:sidecars && bun run dev",
@@ -41,10 +41,11 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "externalBin": [
-      "binaries/ffmpeg",
+      "binaries/talkis-ffmpeg",
       "binaries/talkis-stt",
       "binaries/talkis-stt-nvidia",
-      "binaries/talkis-stt-qwen"
+      "binaries/talkis-stt-qwen",
+      "binaries/talkis-diarize"
     ],
     "icon": [
       "icons/32x32.png",

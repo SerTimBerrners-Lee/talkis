@@ -14,14 +14,17 @@ use tokio::process::Command as TokioCommand;
 const WHISPER_RUNTIME_NAME: &str = "talkis-stt";
 const NVIDIA_RUNTIME_NAME: &str = "talkis-stt-nvidia";
 const QWEN_RUNTIME_NAME: &str = "talkis-stt-qwen";
+const DIARIZATION_RUNTIME_NAME: &str = "talkis-diarize";
 const DEFAULT_RUNTIME_MANIFEST_URL: &str = "https://talkis.ru/downloads/talkis-stt/manifest.json";
 pub const MODEL_DOWNLOAD_PROGRESS_EVENT: &str = "local-stt-model-download-progress";
+pub const LOCAL_DIARIZATION_MODEL_ID: &str = "sherpa-diarization-pyannote-titanet-int8";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LocalRuntimeKind {
     Whisper,
     Nvidia,
     Qwen,
+    Diarization,
 }
 
 impl LocalRuntimeKind {
@@ -30,6 +33,7 @@ impl LocalRuntimeKind {
             LocalRuntimeKind::Whisper => WHISPER_RUNTIME_NAME,
             LocalRuntimeKind::Nvidia => NVIDIA_RUNTIME_NAME,
             LocalRuntimeKind::Qwen => QWEN_RUNTIME_NAME,
+            LocalRuntimeKind::Diarization => DIARIZATION_RUNTIME_NAME,
         }
     }
 
@@ -38,6 +42,7 @@ impl LocalRuntimeKind {
             LocalRuntimeKind::Whisper => "whisper.cpp",
             LocalRuntimeKind::Nvidia => "parakeet-mlx",
             LocalRuntimeKind::Qwen => "qwen-asr",
+            LocalRuntimeKind::Diarization => "sherpa-onnx",
         }
     }
 
@@ -46,6 +51,7 @@ impl LocalRuntimeKind {
             LocalRuntimeKind::Whisper => 8000,
             LocalRuntimeKind::Nvidia => 8001,
             LocalRuntimeKind::Qwen => 8002,
+            LocalRuntimeKind::Diarization => 8003,
         }
     }
 
@@ -54,6 +60,7 @@ impl LocalRuntimeKind {
             LocalRuntimeKind::Whisper => "Whisper",
             LocalRuntimeKind::Nvidia => "NVIDIA",
             LocalRuntimeKind::Qwen => "Qwen",
+            LocalRuntimeKind::Diarization => "Diarization",
         }
     }
 }
@@ -323,6 +330,10 @@ fn runtime_kind_for_port(port: u16) -> Option<LocalRuntimeKind> {
         return Some(LocalRuntimeKind::Qwen);
     }
 
+    if port == LocalRuntimeKind::Diarization.default_port() || (18150..=18199).contains(&port) {
+        return Some(LocalRuntimeKind::Diarization);
+    }
+
     None
 }
 
@@ -331,6 +342,7 @@ fn dynamic_port_range(kind: LocalRuntimeKind) -> std::ops::RangeInclusive<u16> {
         LocalRuntimeKind::Whisper => 18000..=18049,
         LocalRuntimeKind::Nvidia => 18050..=18099,
         LocalRuntimeKind::Qwen => 18100..=18149,
+        LocalRuntimeKind::Diarization => 18150..=18199,
     }
 }
 
@@ -634,6 +646,9 @@ pub fn installed_model_ids(
             models.push(model.id.to_string());
         }
     }
+    if diarization_model_is_installed_in_dir(&models_dir) {
+        models.push(LOCAL_DIARIZATION_MODEL_ID.to_string());
+    }
 
     models.sort();
     models.dedup();
@@ -659,6 +674,13 @@ fn installed_model_ids_for_runtime(kind: LocalRuntimeKind, models_dir: &Path) ->
             .filter(|model| nvidia_model_is_installed_in_dir(models_dir, model))
             .map(|model| model.id.to_string())
             .collect::<Vec<_>>(),
+        LocalRuntimeKind::Diarization => {
+            if diarization_model_is_installed_in_dir(models_dir) {
+                vec![LOCAL_DIARIZATION_MODEL_ID.to_string()]
+            } else {
+                Vec::new()
+            }
+        }
     };
 
     models.sort();
@@ -690,6 +712,14 @@ fn nvidia_model_is_installed_in_dir(models_dir: &Path, model: &NvidiaModelInfo) 
         .files
         .iter()
         .all(|file| model_dir.join(file.file_name).is_file())
+}
+
+fn diarization_model_is_installed_in_dir(models_dir: &Path) -> bool {
+    let model_dir = models_dir.join(LOCAL_DIARIZATION_MODEL_ID);
+    model_dir
+        .join("pyannote-segmentation-3.0.int8.onnx")
+        .is_file()
+        && model_dir.join("nemo_en_titanet_small.onnx").is_file()
 }
 
 pub fn qwen_model_is_installed(app: &AppHandle, custom_dir: Option<&str>) -> Result<bool, String> {
@@ -792,6 +822,15 @@ pub fn resolve_installed_model_for_runtime(
             }
 
             Ok(None)
+        }
+        LocalRuntimeKind::Diarization => {
+            if requested.eq_ignore_ascii_case(LOCAL_DIARIZATION_MODEL_ID)
+                && diarization_model_is_installed_in_dir(&models_dir)
+            {
+                Ok(Some(LOCAL_DIARIZATION_MODEL_ID.to_string()))
+            } else {
+                Ok(None)
+            }
         }
     }
 }
@@ -1128,6 +1167,10 @@ fn stop_stale_managed_runtime(_kind: LocalRuntimeKind, _port: u16) -> Result<(),
     )
 }
 
+pub fn stop_managed_runtime(kind: LocalRuntimeKind, port: u16) -> Result<(), String> {
+    stop_stale_managed_runtime(kind, port)
+}
+
 async fn wait_for_local_stt(
     client: &reqwest::Client,
     kind: LocalRuntimeKind,
@@ -1222,7 +1265,7 @@ pub async fn ensure_runtime(
     custom_models_dir: Option<&str>,
 ) -> Result<String, String> {
     let kind = managed_runtime_kind(models_url).ok_or_else(|| {
-        "Автоматический запуск локального runtime поддержан только для портов Talkis 8000/8001/8002."
+        "Автоматический запуск локального runtime поддержан только для портов Talkis 8000/8001/8002/8003."
             .to_string()
     })?;
 

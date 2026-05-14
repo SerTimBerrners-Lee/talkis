@@ -276,7 +276,7 @@ fn route_request(request: &HttpRequest, config: &RuntimeConfig) -> (u16, String)
             .to_string(),
         ),
         ("POST", "/v1/audio/transcriptions") => match transcribe(request, config) {
-            Ok(text) => (200, json!({ "text": text }).to_string()),
+            Ok(body) => (200, body),
             Err((status, message)) => (
                 status,
                 json!({ "error": { "message": message, "type": "local_stt_error" } }).to_string(),
@@ -538,13 +538,35 @@ fn transcribe(request: &HttpRequest, config: &RuntimeConfig) -> Result<String, (
         .full(params, &audio)
         .map_err(|err| (500, format!("Whisper не смог распознать аудио: {}", err)))?;
 
-    Ok(state
+    let segments = state
+        .as_iter()
+        .map(|segment| {
+            let text = segment.to_string();
+            json!({
+                "start": segment.start_timestamp() as f64 / 100.0,
+                "end": segment.end_timestamp() as f64 / 100.0,
+                "text": text.trim()
+            })
+        })
+        .collect::<Vec<_>>();
+    let text = state
         .as_iter()
         .map(|segment| segment.to_string())
         .collect::<Vec<_>>()
         .join("")
         .trim()
-        .to_string())
+        .to_string();
+    let response_format = multipart
+        .fields
+        .get("response_format")
+        .map(|value| value.trim())
+        .unwrap_or("json");
+
+    if response_format == "verbose_json" {
+        Ok(json!({ "text": text, "segments": segments }).to_string())
+    } else {
+        Ok(json!({ "text": text }).to_string())
+    }
 }
 
 fn parse_multipart(request: &HttpRequest) -> Result<MultipartData, (u16, String)> {

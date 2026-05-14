@@ -1,27 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, FileAudio, Loader2 } from "lucide-react";
 
 import { HISTORY_CLEARED_EVENT, HISTORY_DELETED_EVENT, HISTORY_UPDATED_EVENT } from "../../lib/hotkeyEvents";
-import { getHistory, type HistoryEntry } from "../../lib/store";
+import { addHistoryEntry, getHistory, getSettings, type HistoryEntry } from "../../lib/store";
+import {
+  fileNameFromPath,
+  type FileTranscriptionProgress,
+  type FileTranscriptionStatus,
+  getFileTranscriptionPercent,
+  toFileTranscriptionErrorMessage,
+  transcribeFilePathOnly,
+} from "../../lib/fileTranscription";
 import { logError } from "../../lib/logger";
 import { startAppUpdateScheduler } from "../../lib/updater";
 import { useWidgetController } from "./hooks/useWidgetController";
 import {
   ACTIVE_WIDGET_SHELL_HEIGHT,
   ACTIVE_WIDGET_SHELL_WIDTH,
+  FILE_DROP_WIDGET_HEIGHT,
+  FILE_DROP_WIDGET_WIDTH,
   IDLE_HOVER_WIDGET_HEIGHT,
   IDLE_HOVER_WIDGET_WIDTH,
+  IDLE_WIDGET_HEIGHT,
+  IDLE_WIDGET_WIDTH,
   IDLE_HOVER_SCALE,
   WIDGET_SHELL_HEIGHT,
   WIDGET_SHELL_WIDTH,
 } from "./widgetConstants";
 
 const WIDGET_RECORD_BUTTON_LEFT = 10;
+const FILE_DROP_LEAVE_GRACE_MS = 260;
+const FILE_DROP_CLOSE_ANIMATION_MS = 160;
+type WidgetFileDropState = "idle" | "drag-over" | "processing" | "success" | "error" | "closing";
 
 const WIDGET_WAVES = [
   {
@@ -68,16 +84,221 @@ export function Widget() {
   const dragTriggeredRef = useRef(false);
   const { state, stream, lockedRecording, toggleManualRecording } = useWidgetController();
   const stateRef = useRef(state);
+  const fileDropStateRef = useRef<WidgetFileDropState>("idle");
+  const fileResetTimerRef = useRef<number | null>(null);
+  const fileDragLeaveTimerRef = useRef<number | null>(null);
+  const fileCloseTimerRef = useRef<number | null>(null);
+  const fileDragDepthRef = useRef(0);
+  const fileDropExpandedRef = useRef(false);
+  const fileProcessRef = useRef<(filePath: string) => Promise<void>>(async () => {});
   const [latestCopyText, setLatestCopyText] = useState<string | null>(null);
+  const [fileDropState, setFileDropState] = useState<WidgetFileDropState>("idle");
+  const [fileDropName, setFileDropName] = useState("");
+  const [fileStatus, setFileStatus] = useState<FileTranscriptionStatus | null>(null);
+  const [fileProgress, setFileProgress] = useState<FileTranscriptionProgress | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   useEffect(() => {
+    fileDropStateRef.current = fileDropState;
+  }, [fileDropState]);
+
+  useEffect(() => {
     return startAppUpdateScheduler({
       canRunUpdate: () => stateRef.current === "idle",
     });
+  }, []);
+
+  const clearFileResetTimer = () => {
+    if (!fileResetTimerRef.current) return;
+    window.clearTimeout(fileResetTimerRef.current);
+    fileResetTimerRef.current = null;
+  };
+
+  const clearFileDragLeaveTimer = () => {
+    if (!fileDragLeaveTimerRef.current) return;
+    window.clearTimeout(fileDragLeaveTimerRef.current);
+    fileDragLeaveTimerRef.current = null;
+  };
+
+  const clearFileCloseTimer = () => {
+    if (!fileCloseTimerRef.current) return;
+    window.clearTimeout(fileCloseTimerRef.current);
+    fileCloseTimerRef.current = null;
+  };
+
+  const resizeWidgetForFileDrop = async (active: boolean): Promise<void> => {
+    if (fileDropExpandedRef.current === active) {
+      return;
+    }
+
+    fileDropExpandedRef.current = active;
+    await invoke("widget_resize", {
+      width: active ? FILE_DROP_WIDGET_WIDTH : IDLE_WIDGET_WIDTH,
+      height: active ? FILE_DROP_WIDGET_HEIGHT : IDLE_WIDGET_HEIGHT,
+    }).catch((error) => {
+      logError("WIDGET_FILE", `Resize failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  };
+
+  const resetFileDropUi = async (): Promise<void> => {
+    clearFileResetTimer();
+    clearFileDragLeaveTimer();
+    clearFileCloseTimer();
+    fileDragDepthRef.current = 0;
+    setFileDropState("idle");
+    setFileDropName("");
+    setFileStatus(null);
+    setFileProgress(null);
+    await resizeWidgetForFileDrop(false);
+  };
+
+  const closeFileDropUi = (): void => {
+    clearFileResetTimer();
+    clearFileDragLeaveTimer();
+    clearFileCloseTimer();
+
+    if (fileDropStateRef.current === "idle") {
+      return;
+    }
+
+    setFileDropState("closing");
+    fileCloseTimerRef.current = window.setTimeout(() => {
+      fileCloseTimerRef.current = null;
+      void resetFileDropUi();
+    }, FILE_DROP_CLOSE_ANIMATION_MS);
+  };
+
+  const scheduleFileDropReset = () => {
+    clearFileResetTimer();
+    fileResetTimerRef.current = window.setTimeout(() => {
+      fileResetTimerRef.current = null;
+      void resetFileDropUi();
+    }, 1800);
+  };
+
+  const canAcceptFileDrop = () => stateRef.current === "idle" && fileDropStateRef.current !== "processing";
+
+  fileProcessRef.current = async (filePath: string): Promise<void> => {
+    if (!filePath || !canAcceptFileDrop()) {
+      return;
+    }
+
+    clearFileResetTimer();
+    clearFileDragLeaveTimer();
+    clearFileCloseTimer();
+    const fileName = fileNameFromPath(filePath);
+    setFileDropState("processing");
+    setFileDropName(fileName);
+    setFileStatus("preparing");
+    setFileProgress(null);
+    await resizeWidgetForFileDrop(true);
+
+    try {
+      const settings = await getSettings({ reload: true });
+      const startedAt = Date.now();
+      const transcription = await transcribeFilePathOnly({
+        filePath,
+        settings,
+        onStatus: setFileStatus,
+        onProgress: setFileProgress,
+      });
+      const entry: HistoryEntry = {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        duration: 0,
+        raw: transcription.text,
+        cleaned: transcription.text,
+        source: "file",
+        fileName,
+        status: "completed",
+        processingTime: Date.now() - startedAt,
+        mode: transcription.mode,
+        speakers: transcription.speakers,
+        segments: transcription.segments,
+      };
+
+      await addHistoryEntry(entry);
+      await emit(HISTORY_UPDATED_EVENT, entry);
+      setLatestCopyText(getCopyableText(entry));
+      setFileDropState("success");
+      setFileStatus("done");
+      setFileProgress(null);
+      scheduleFileDropReset();
+    } catch (error) {
+      logError("WIDGET_FILE", `File transcription failed: ${error instanceof Error ? error.message : String(error)}`);
+      setFileDropState("error");
+      setFileStatus(null);
+      setFileProgress(null);
+      setFileDropName(toFileTranscriptionErrorMessage(error));
+      scheduleFileDropReset();
+    }
+  };
+
+  useEffect(() => {
+    let disposed = false;
+
+    const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
+      if (disposed) return;
+
+      if (event.payload.type === "enter") {
+        if (!canAcceptFileDrop()) return;
+        clearFileDragLeaveTimer();
+        clearFileCloseTimer();
+        fileDragDepthRef.current += 1;
+        clearFileResetTimer();
+        setFileDropState("drag-over");
+        setFileDropName("Отпустите файл");
+        void resizeWidgetForFileDrop(true);
+        return;
+      }
+
+      if (event.payload.type === "over") {
+        if (!canAcceptFileDrop()) return;
+        clearFileDragLeaveTimer();
+        clearFileCloseTimer();
+        fileDragDepthRef.current = Math.max(1, fileDragDepthRef.current);
+        setFileDropState("drag-over");
+        setFileDropName("Отпустите файл");
+        return;
+      }
+
+      if (event.payload.type === "leave") {
+        fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+        clearFileDragLeaveTimer();
+        fileDragLeaveTimerRef.current = window.setTimeout(() => {
+          fileDragLeaveTimerRef.current = null;
+          if (fileDragDepthRef.current === 0 && fileDropStateRef.current === "drag-over") {
+            closeFileDropUi();
+          }
+        }, FILE_DROP_LEAVE_GRACE_MS);
+        return;
+      }
+
+      if (event.payload.type !== "drop") {
+        return;
+      }
+
+      fileDragDepthRef.current = 0;
+      clearFileDragLeaveTimer();
+      const filePath = event.payload.paths[0];
+      if (!filePath) {
+        void resetFileDropUi();
+        return;
+      }
+
+      void fileProcessRef.current(filePath);
+    });
+
+    return () => {
+      disposed = true;
+      clearFileResetTimer();
+      clearFileDragLeaveTimer();
+      clearFileCloseTimer();
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
   }, []);
 
   useEffect(() => {
@@ -178,7 +399,19 @@ export function Widget() {
         justifyContent: "center",
       }}
     >
-      {state === "idle" && (
+      {fileDropState !== "idle" && (
+        <FileDropPill
+          state={fileDropState}
+          fileName={fileDropName}
+          status={fileStatus}
+          progress={fileProgress}
+          onPointerDown={handleDragPointerDown}
+          onPointerMove={handleDragPointerMove}
+          onPointerUp={handleDragPointerUp}
+          onPointerCancel={handleDragPointerUp}
+        />
+      )}
+      {fileDropState === "idle" && state === "idle" && (
         <IdlePill
           latestCopyText={latestCopyText}
           onToggleRecording={toggleManualRecording}
@@ -189,7 +422,7 @@ export function Widget() {
           onPointerCancel={handleDragPointerUp}
         />
       )}
-      {state === "recording" && (
+      {fileDropState === "idle" && state === "recording" && (
         <RecordingPill
           stream={stream}
           locked={lockedRecording}
@@ -200,7 +433,7 @@ export function Widget() {
           onPointerCancel={handleDragPointerUp}
         />
       )}
-      {state === "processing" && (
+      {fileDropState === "idle" && state === "processing" && (
         <ProcessingPill
           onPointerDown={handleDragPointerDown}
           onPointerMove={handleDragPointerMove}
@@ -209,6 +442,96 @@ export function Widget() {
         />
       )}
     </div>
+  );
+}
+
+function FileDropPill({
+  state,
+  status,
+  progress,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+}: DragHandlers & {
+  state: WidgetFileDropState;
+  fileName: string;
+  status: FileTranscriptionStatus | null;
+  progress: FileTranscriptionProgress | null;
+}) {
+  const isProcessing = state === "processing";
+  const isSuccess = state === "success";
+  const isError = state === "error";
+  const isClosing = state === "closing";
+  const progressPercent = getFileTranscriptionPercent(isSuccess ? "done" : isError ? "error" : status ?? "idle", progress);
+  const showPercent = isProcessing && progressPercent > 0;
+
+  return (
+    <ActiveWidgetShell
+      width={FILE_DROP_WIDGET_WIDTH}
+      height={FILE_DROP_WIDGET_HEIGHT}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      cursor="grab"
+    >
+      <div
+        style={{
+          width: FILE_DROP_WIDGET_WIDTH,
+          height: FILE_DROP_WIDGET_HEIGHT,
+          borderRadius: 18,
+          background: isError ? "rgba(42, 9, 9, 0.98)" : "rgba(5, 5, 5, 0.98)",
+          border: "1.5px dashed rgba(255,255,255,0.34)",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+          padding: "0 18px",
+          boxShadow: "none",
+          WebkitFontSmoothing: "antialiased",
+          opacity: isClosing ? 0 : 1,
+          transform: isClosing ? "scale(0.94)" : "scale(1)",
+          transformOrigin: "center center",
+          transition: "opacity 0.16s ease, transform 0.16s cubic-bezier(0.22, 1, 0.36, 1)",
+          animation: isClosing ? undefined : "widget-file-drop-in 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+      >
+        <span
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            display: "grid",
+            placeItems: "center",
+            color: isError ? "#ff8f8f" : "rgba(255,255,255,0.86)",
+            background: "rgba(255,255,255,0.08)",
+          }}
+        >
+          {isProcessing ? (
+            <Loader2 size={20} strokeWidth={2} style={{ animation: "spin 0.9s linear infinite" }} />
+          ) : isSuccess ? (
+            <Check size={20} strokeWidth={2.4} />
+          ) : (
+            <FileAudio size={20} strokeWidth={2} />
+          )}
+        </span>
+        <span
+          style={{
+            minWidth: 0,
+            overflow: "visible",
+            whiteSpace: "nowrap",
+            fontSize: 14,
+            lineHeight: 1.2,
+            fontWeight: 750,
+            color: isError ? "#ffb4b4" : "rgba(255,255,255,0.94)",
+          }}
+        >
+          {showPercent ? `Транскрибация ${progressPercent}%` : "Транскрибация"}
+        </span>
+      </div>
+    </ActiveWidgetShell>
   );
 }
 

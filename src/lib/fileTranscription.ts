@@ -9,6 +9,18 @@ const PROXY_BASE_URL = "https://proxy.talkis.ru";
 const TRANSCRIPTION_MAX_BYTES = 25 * 1024 * 1024;
 const INPUT_MAX_BYTES = 200 * 1024 * 1024;
 const FILE_TRANSCRIPTION_PROGRESS_EVENT = "file-transcription-progress";
+const DIARIZED_WHISPER_ENDPOINT = "http://127.0.0.1:8000";
+const DIARIZED_WHISPER_MODEL = "whisper-large-v3-turbo";
+const DIARIZED_WHISPER_MODEL_OPTIONS = [
+  "whisper-large-v3-turbo",
+  "whisper-large-v3",
+  "whisper-large-v2",
+  "whisper-medium",
+  "whisper-small",
+  "whisper-base",
+  "whisper-tiny",
+] as const;
+const STRONG_DIARIZED_WHISPER_MODELS = new Set(["whisper-large-v3-turbo", "whisper-large-v3", "whisper-large-v2", "whisper-medium"]);
 
 const DIRECT_EXTENSIONS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -23,7 +35,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   webm: "audio/webm",
 };
 
-export type FileTranscriptionStatus = "reading" | "converting" | "uploading" | "preparing" | "transcribing" | "done";
+export type FileTranscriptionStatus = "reading" | "converting" | "uploading" | "preparing" | "diarizing" | "transcribing" | "assembling" | "done";
 
 export interface FileTranscriptionProgress {
   status: FileTranscriptionStatus;
@@ -37,6 +49,30 @@ export interface FileTranscriptionResult {
   converted: boolean;
   uploadedFileName: string;
   uploadedSizeBytes: number;
+  mode: "plain" | "speakers";
+  speakers?: Speaker[];
+  segments?: SpeakerTranscriptSegment[];
+}
+
+export interface Speaker {
+  id: string;
+  label: string;
+}
+
+export interface SpeakerTranscriptSegment {
+  start: number;
+  end: number;
+  speakerId: string;
+  speakerLabel: string;
+  text: string;
+}
+
+interface NativeTranscriptionResult {
+  raw: string;
+  cleaned: string;
+  mode?: "plain" | "speakers";
+  speakers?: Speaker[];
+  segments?: SpeakerTranscriptSegment[];
 }
 
 interface PreparedMediaResponse {
@@ -60,6 +96,14 @@ interface FileTranscriptionProgressPayload {
   current_chunk: number;
   total_chunks: number;
   message: string;
+}
+
+interface FilePathRequestSettings {
+  whisperApiKey: string | null;
+  whisperEndpoint: string | null;
+  whisperModel: string | null;
+  useOwnKey: boolean;
+  deviceToken: string | null;
 }
 
 function fileExtension(fileName: string): string {
@@ -113,6 +157,45 @@ function shouldConvert(file: File): boolean {
   return isVideo || !isDirectFormat || file.size > TRANSCRIPTION_MAX_BYTES;
 }
 
+function buildFilePathRequestSettings(settings: AppSettings, speakerDiarization: boolean): FilePathRequestSettings {
+  if (!speakerDiarization) {
+    return {
+      whisperApiKey: settings.whisperApiKey || null,
+      whisperEndpoint: settings.whisperEndpoint || null,
+      whisperModel: settings.whisperModel || null,
+      useOwnKey: settings.useOwnKey,
+      deviceToken: settings.deviceToken || null,
+    };
+  }
+
+  return {
+    whisperApiKey: null,
+    whisperEndpoint: DIARIZED_WHISPER_ENDPOINT,
+    whisperModel: getDiarizedWhisperModel(settings),
+    useOwnKey: true,
+    deviceToken: null,
+  };
+}
+
+function getDiarizedWhisperModel(settings: AppSettings): string {
+  const currentModel = (settings.whisperModel || "").trim().toLowerCase();
+  const currentOption = DIARIZED_WHISPER_MODEL_OPTIONS.find((model) => (
+    model.toLowerCase() === currentModel && settings.localModels?.[model]?.status === "downloaded"
+  ));
+
+  if (currentOption && STRONG_DIARIZED_WHISPER_MODELS.has(currentOption)) {
+    return currentOption;
+  }
+
+  const strongestDownloadedOption = DIARIZED_WHISPER_MODEL_OPTIONS.find((model) => (
+    STRONG_DIARIZED_WHISPER_MODELS.has(model) && settings.localModels?.[model]?.status === "downloaded"
+  ));
+
+  return strongestDownloadedOption || currentOption || DIARIZED_WHISPER_MODEL_OPTIONS.find((model) => (
+    settings.localModels?.[model]?.status === "downloaded"
+  )) || DIARIZED_WHISPER_MODEL;
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes <= 0) {
     return "0 Б";
@@ -127,6 +210,30 @@ export function formatFileSize(bytes: number): string {
   }
 
   return `${bytes} Б`;
+}
+
+export function getFileTranscriptionPercent(
+  status: FileTranscriptionStatus | "idle" | "error",
+  progress: FileTranscriptionProgress | null,
+): number {
+  if (status === "done") return 100;
+  if (status === "error" || status === "idle") return 0;
+  if (status === "reading") return 12;
+  if (status === "converting") return 32;
+  if (status === "uploading") return 58;
+  if (status === "preparing") return 18;
+  if (status === "diarizing") return 42;
+  if (status === "assembling") return 96;
+
+  if (status === "transcribing" && progress && progress.totalChunks > 0) {
+    const currentChunk = Math.max(0, Math.min(progress.currentChunk, progress.totalChunks));
+    const chunkProgress = currentChunk / progress.totalChunks;
+    return Math.max(58, Math.min(94, Math.round(58 + chunkProgress * 36)));
+  }
+
+  if (status === "transcribing") return 70;
+
+  return 0;
 }
 
 export function toFileTranscriptionErrorMessage(error: unknown): string {
@@ -155,6 +262,36 @@ export function toFileTranscriptionErrorMessage(error: unknown): string {
 
   if (normalized.includes("subscription inactive") || normalized.includes("403")) {
     return "Для облачной транскрибации нужна активная подписка Talkis.";
+  }
+
+  if (normalized.includes("не удалось подготовить аудио для разделения говорящих")) {
+    return "Не удалось подготовить аудио для разметки говорящих. Попробуйте другой аудио- или видеофайл.";
+  }
+
+  if (normalized.includes("таймкод")) {
+    return "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами.";
+  }
+
+  if (
+    normalized.includes("разделения говорящих ещё не скачана")
+    || normalized.includes("sherpa-diarization-pyannote-titanet-int8") && normalized.includes("ещё не скачана")
+  ) {
+    return "Для разделения по говорящим скачайте локальные компоненты в блоке транскрибации файла.";
+  }
+
+  if (
+    normalized.includes("sherpa-onnx установлен")
+    && (normalized.includes("diarization binary") || normalized.includes("binary для разметки говорящих"))
+  ) {
+    return "Runtime для разметки установился не полностью. Нажмите «Скачать» в подготовке разметки, чтобы Talkis восстановил его.";
+  }
+
+  if (normalized.includes("sherpa-onnx diarization не вернул сегменты")) {
+    return "Не удалось найти отдельные реплики говорящих в этом файле.";
+  }
+
+  if (normalized.includes("sherpa-onnx diarization завершился с ошибкой")) {
+    return raw;
   }
 
   if (normalized.includes("not installed locally") || normalized.includes("ещё не скачана")) {
@@ -258,8 +395,8 @@ async function transcribeViaProxy(
 async function transcribeViaBackend(
   prepared: PreparedTranscriptionFile,
   settings: AppSettings,
-): Promise<{ raw: string; cleaned: string }> {
-  return invoke<{ raw: string; cleaned: string }>("transcribe_only", {
+): Promise<NativeTranscriptionResult> {
+  return invoke<NativeTranscriptionResult>("transcribe_only", {
     req: {
       audio_base64: prepared.audioBase64,
       language: settings.language,
@@ -282,7 +419,7 @@ async function transcribeViaBackend(
 async function transcribePreparedFile(
   prepared: PreparedTranscriptionFile,
   settings: AppSettings,
-): Promise<{ raw: string; cleaned: string }> {
+): Promise<NativeTranscriptionResult> {
   if (!settings.useOwnKey && settings.deviceToken?.trim()) {
     return transcribeViaProxy(prepared, settings);
   }
@@ -323,6 +460,7 @@ export async function transcribeFileOnly({
     converted: prepared.converted,
     uploadedFileName: prepared.fileName,
     uploadedSizeBytes: prepared.sizeBytes,
+    mode: "plain",
   };
 }
 
@@ -331,11 +469,13 @@ export async function transcribeFilePathOnly({
   settings,
   onStatus,
   onProgress,
+  speakerDiarization = false,
 }: {
   filePath: string;
   settings: AppSettings;
   onStatus?: (status: FileTranscriptionStatus) => void;
   onProgress?: (progress: FileTranscriptionProgress) => void;
+  speakerDiarization?: boolean;
 }): Promise<FileTranscriptionResult> {
   const requestId = crypto.randomUUID();
   const fileName = fileNameFromPath(filePath);
@@ -367,8 +507,9 @@ export async function transcribeFilePathOnly({
     });
 
     logInfo("FILE_TRANSCRIPTION", `Sending file path ${fileName} through native pipeline`);
+    const requestSettings = buildFilePathRequestSettings(settings, speakerDiarization);
 
-    const result = await invoke<{ raw: string; cleaned: string }>("transcribe_file_path", {
+    const result = await invoke<NativeTranscriptionResult>("transcribe_file_path", {
       req: {
         request_id: requestId,
         file_path: filePath,
@@ -376,13 +517,14 @@ export async function transcribeFilePathOnly({
         file_size: null,
         language: settings.language,
         api_key: settings.apiKey,
-        whisper_api_key: settings.whisperApiKey || null,
+        whisper_api_key: requestSettings.whisperApiKey,
         style: settings.style || "classic",
-        whisper_endpoint: settings.whisperEndpoint || null,
+        whisper_endpoint: requestSettings.whisperEndpoint,
         local_models_dir: settings.localModelsDir || null,
-        whisper_model: settings.whisperModel || null,
-        use_own_key: settings.useOwnKey,
-        device_token: settings.deviceToken || null,
+        whisper_model: requestSettings.whisperModel,
+        use_own_key: requestSettings.useOwnKey,
+        device_token: requestSettings.deviceToken,
+        speaker_diarization: speakerDiarization,
       },
     });
     const text = (result.raw || result.cleaned).trim();
@@ -396,6 +538,9 @@ export async function transcribeFilePathOnly({
       converted: true,
       uploadedFileName: fileName,
       uploadedSizeBytes: 0,
+      mode: result.mode || "plain",
+      speakers: result.speakers,
+      segments: result.segments,
     };
   } finally {
     unlisten();

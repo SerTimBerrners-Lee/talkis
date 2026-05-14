@@ -201,7 +201,7 @@ export function UserPanel() {
         <ProfileRow profile={profile} onLogout={handleLogout} />
         <button onClick={handleActivate} style={styles.compactCta}>
           <Crown size={13} strokeWidth={2} color="var(--accent-contrast)" />
-          <span style={styles.compactCtaLabel}>Активировать подписку</span>
+          <span style={styles.compactCtaLabel}>Перейти на PRO</span>
         </button>
       </div>
     );

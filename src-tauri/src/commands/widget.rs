@@ -9,6 +9,17 @@ pub const NOTICE_HEIGHT: f64 = 52.0;
 pub const NOTICE_GAP: f64 = 2.0;
 pub const WIDGET_WIDTH: f64 = 86.0;
 pub const WIDGET_HEIGHT: f64 = 34.0;
+const WIDGET_EXPANDED_OFFSET_RATIO: f64 = 0.20;
+
+fn centered_resize_offset(current: f64, target: f64) -> f64 {
+    let centered = (current - target) / 2.0;
+
+    if target > current {
+        centered - (target - current) * WIDGET_EXPANDED_OFFSET_RATIO
+    } else {
+        centered
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct WidgetNoticePayload {
@@ -86,16 +97,19 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
                 return Ok(());
             };
 
-            let scale_factor = win.scale_factor().unwrap_or(1.0);
-
             unsafe {
                 let ns_win: &objc2_app_kit::NSWindow =
                     &*win.ns_window().map_err(|e| e.to_string())?.cast();
                 let frame = ns_win.frame();
-                let target_width = width * scale_factor;
-                let target_height = height * scale_factor;
-                let next_x = frame.origin.x + (frame.size.width - target_width) / 2.0;
-                let next_y = frame.origin.y + frame.size.height - target_height;
+                // NSWindow frames are measured in macOS points, matching Tauri
+                // logical sizes. Do not multiply by scale factor here, or the
+                // resize anchor drifts away from the visible widget center.
+                let target_width = width;
+                let target_height = height;
+                let next_x =
+                    frame.origin.x + centered_resize_offset(frame.size.width, target_width);
+                let next_y =
+                    frame.origin.y + centered_resize_offset(frame.size.height, target_height);
                 let next_frame = objc2_foundation::NSRect::new(
                     objc2_foundation::NSPoint::new(next_x, next_y),
                     objc2_foundation::NSSize::new(target_width, target_height),
@@ -154,8 +168,8 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
         if let (Some(position), Some(size)) = (current_position, current_size) {
             let target_width = width * scale_factor;
             let target_height = height * scale_factor;
-            let x = position.x as f64 + (size.width as f64 - target_width) / 2.0;
-            let y = position.y as f64 + size.height as f64 - target_height;
+            let x = position.x as f64 + centered_resize_offset(size.width as f64, target_width);
+            let y = position.y as f64 + centered_resize_offset(size.height as f64, target_height);
 
             if let Err(err) = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                 x: x.round() as i32,

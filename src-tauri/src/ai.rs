@@ -61,6 +61,42 @@ pub struct TranscribeRequest {
 pub struct TranscribeResponse {
     pub raw: String,
     pub cleaned: String,
+    #[serde(default)]
+    pub mode: TranscriptionMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<Vec<Speaker>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Vec<SpeakerTranscriptSegment>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionMode {
+    Plain,
+    Speakers,
+}
+
+impl Default for TranscriptionMode {
+    fn default() -> Self {
+        Self::Plain
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Speaker {
+    pub id: String,
+    pub label: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerTranscriptSegment {
+    pub start: f64,
+    pub end: f64,
+    pub speaker_id: String,
+    pub speaker_label: String,
+    pub text: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -78,6 +114,8 @@ pub struct FilePathTranscriptionRequest {
     pub whisper_model: Option<String>,
     pub use_own_key: bool,
     pub device_token: Option<String>,
+    #[serde(default)]
+    pub speaker_diarization: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -122,6 +160,12 @@ fn is_known_whisper_hallucination(text: &str) -> bool {
 #[derive(Deserialize, Debug)]
 struct WhisperSegment {
     #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    start: Option<f64>,
+    #[serde(default)]
+    end: Option<f64>,
+    #[serde(default)]
     avg_logprob: Option<f64>,
     #[serde(default)]
     no_speech_prob: Option<f64>,
@@ -136,6 +180,29 @@ struct WhisperResp {
     duration: Option<f64>,
     #[serde(default)]
     segments: Vec<WhisperSegment>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct SttTranscriptSegment {
+    start: f64,
+    end: f64,
+    text: String,
+}
+
+struct AudioTranscriptionResult {
+    raw: String,
+    cleaned: String,
+    segments: Vec<SttTranscriptSegment>,
+}
+
+fn plain_transcribe_response(raw: String, cleaned: String) -> TranscribeResponse {
+    TranscribeResponse {
+        raw,
+        cleaned,
+        mode: TranscriptionMode::Plain,
+        speakers: None,
+        segments: None,
+    }
 }
 
 fn is_likely_short_uncertain_transcription(
@@ -211,9 +278,24 @@ async fn transcribe_audio_bytes(
     app: AppHandle,
     req: &TranscribeRequest,
     audio_bytes: Vec<u8>,
+    file_name: String,
+    mime_type: String,
+) -> Result<TranscribeResponse, String> {
+    let result =
+        transcribe_audio_bytes_internal(app, req, audio_bytes, file_name, mime_type, false, 0.0)
+            .await?;
+    Ok(plain_transcribe_response(result.raw, result.cleaned))
+}
+
+async fn transcribe_audio_bytes_internal(
+    app: AppHandle,
+    req: &TranscribeRequest,
+    audio_bytes: Vec<u8>,
     mut file_name: String,
     mut mime_type: String,
-) -> Result<TranscribeResponse, String> {
+    require_segments: bool,
+    segment_offset_seconds: f64,
+) -> Result<AudioTranscriptionResult, String> {
     let client = http_client();
 
     // ── Step 1: Whisper Speech-to-Text ──────────────────────────────────
@@ -322,7 +404,14 @@ async fn transcribe_audio_bytes(
         }
     } else if is_local_endpoint {
         // Local faster-whisper: use the most compatible response format.
-        form = form.text("response_format", "json");
+        form = form.text(
+            "response_format",
+            if require_segments {
+                "verbose_json"
+            } else {
+                "json"
+            },
+        );
 
         if !lang_param.is_empty() {
             form = form.text("language", lang_param);
@@ -393,9 +482,10 @@ async fn transcribe_audio_bytes(
 
     if raw.is_empty() {
         logger::log_info("WHISPER", "Empty transcription, returning empty response");
-        return Ok(TranscribeResponse {
+        return Ok(AudioTranscriptionResult {
             raw: String::new(),
             cleaned: String::new(),
+            segments: Vec::new(),
         });
     }
 
@@ -407,9 +497,10 @@ async fn transcribe_audio_bytes(
                 raw
             ),
         );
-        return Ok(TranscribeResponse {
+        return Ok(AudioTranscriptionResult {
             raw: String::new(),
             cleaned: String::new(),
+            segments: Vec::new(),
         });
     }
 
@@ -428,9 +519,10 @@ async fn transcribe_audio_bytes(
                 raw, whisper_body.duration, whisper_body.segments
             ),
         );
-        return Ok(TranscribeResponse {
+        return Ok(AudioTranscriptionResult {
             raw: String::new(),
             cleaned: String::new(),
+            segments: Vec::new(),
         });
     }
 
@@ -440,9 +532,39 @@ async fn transcribe_audio_bytes(
     );
     logger::log_info("API", "Transcription complete");
 
-    Ok(TranscribeResponse {
+    let segments = whisper_body
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let text = segment.text.as_deref()?.trim();
+            if text.is_empty() {
+                return None;
+            }
+
+            let start = segment.start? + segment_offset_seconds;
+            let end = segment.end? + segment_offset_seconds;
+            if end <= start {
+                return None;
+            }
+
+            Some(SttTranscriptSegment {
+                start,
+                end,
+                text: text.to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if require_segments && segments.is_empty() {
+        return Err(
+            "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами.".to_string(),
+        );
+    }
+
+    Ok(AudioTranscriptionResult {
         raw: raw.clone(),
         cleaned: raw,
+        segments,
     })
 }
 
@@ -520,10 +642,276 @@ async fn transcribe_file_chunk_via_proxy(
     let parsed = serde_json::from_str::<ProxyTranscribeResponse>(&body)
         .map_err(|err| format!("Talkis Cloud returned an invalid response: {}", err))?;
     let raw = parsed.raw.unwrap_or_default();
-    Ok(TranscribeResponse {
-        cleaned: parsed.cleaned.unwrap_or_else(|| raw.clone()),
-        raw,
+    Ok(plain_transcribe_response(
+        raw.clone(),
+        parsed.cleaned.unwrap_or(raw),
+    ))
+}
+
+#[derive(Deserialize)]
+struct DiarizationResponse {
+    #[serde(default)]
+    segments: Vec<DiarizationSegment>,
+}
+
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct DiarizationSegment {
+    start: f64,
+    end: f64,
+    #[serde(alias = "speaker_id")]
+    speaker_id: String,
+}
+
+fn local_runtime_kind_from_endpoint(endpoint: Option<&str>) -> Option<local_stt::LocalRuntimeKind> {
+    let whisper_url = resolve_whisper_url(endpoint);
+    let models_url = resolve_whisper_models_url(&whisper_url);
+    local_stt::managed_runtime_kind(&models_url)
+}
+
+fn port_from_url(value: &str) -> Option<u16> {
+    reqwest::Url::parse(value)
+        .ok()
+        .and_then(|url| url.port_or_known_default())
+}
+
+fn is_repairable_diarization_runtime_error(message: &str) -> bool {
+    let normalized = message.to_lowercase();
+    normalized.contains("sherpa-onnx установлен")
+        && (normalized.contains("diarization binary")
+            || normalized.contains("binary для разметки говорящих")
+            || normalized.contains("python runtime для разметки говорящих"))
+}
+
+fn ensure_diarized_file_preconditions(req: &FilePathTranscriptionRequest) -> Result<(), String> {
+    if !req.use_own_key {
+        return Err(
+            "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами.".to_string(),
+        );
+    }
+
+    let kind = local_runtime_kind_from_endpoint(req.whisper_endpoint.as_deref());
+    if kind != Some(local_stt::LocalRuntimeKind::Whisper) {
+        return Err(
+            "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами.".to_string(),
+        );
+    }
+
+    if req
+        .whisper_model
+        .as_deref()
+        .unwrap_or_default()
+        .contains("transcribe")
+    {
+        return Err(
+            "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами.".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+async fn diarize_audio_file(
+    app: &AppHandle,
+    req: &FilePathTranscriptionRequest,
+    wav_path: &std::path::Path,
+) -> Result<Vec<DiarizationSegment>, String> {
+    let client = long_http_client();
+    let models_url = "http://127.0.0.1:8003/v1/models";
+    let runtime_base_url =
+        local_stt::ensure_runtime(app, client, models_url, req.local_models_dir.as_deref()).await?;
+    let diarization_url = format!(
+        "{}/v1/audio/diarization",
+        runtime_base_url.trim_end_matches('/')
+    );
+    let bytes = fs::read(wav_path)
+        .map_err(|err| format!("Не удалось прочитать WAV для разделения говорящих: {}", err))?;
+    let file_part = multipart::Part::bytes(bytes)
+        .file_name("talkis-diarization.wav")
+        .mime_str("audio/wav")
+        .map_err(|err| format!("MIME error: {}", err))?;
+    let form = multipart::Form::new()
+        .part("file", file_part)
+        .text("model", local_stt::LOCAL_DIARIZATION_MODEL_ID);
+    let response = client
+        .post(&diarization_url)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|err| format!("Diarization request failed: {}", err))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|err| format!("Diarization response read failed: {}", err))?;
+
+    if !status.is_success() {
+        return Err(format!("Diarization error ({}): {}", status, body));
+    }
+
+    let parsed = serde_json::from_str::<DiarizationResponse>(&body)
+        .map_err(|err| format!("Diarization returned an invalid response: {}", err))?;
+    let mut segments = parsed
+        .segments
+        .into_iter()
+        .filter(|segment| segment.end > segment.start && !segment.speaker_id.trim().is_empty())
+        .collect::<Vec<_>>();
+    segments.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    if segments.is_empty() {
+        return Err("Разделение говорящих не нашло речевых сегментов.".to_string());
+    }
+
+    Ok(segments)
+}
+
+fn overlap_seconds(stt: &SttTranscriptSegment, diarization: &DiarizationSegment) -> f64 {
+    let start = stt.start.max(diarization.start);
+    let end = stt.end.min(diarization.end);
+    (end - start).max(0.0)
+}
+
+fn nearest_diarization_segment<'a>(
+    stt: &SttTranscriptSegment,
+    diarization_segments: &'a [DiarizationSegment],
+) -> Option<&'a DiarizationSegment> {
+    let stt_mid = (stt.start + stt.end) / 2.0;
+    diarization_segments.iter().min_by(|left, right| {
+        let left_mid = (left.start + left.end) / 2.0;
+        let right_mid = (right.start + right.end) / 2.0;
+        (left_mid - stt_mid)
+            .abs()
+            .partial_cmp(&(right_mid - stt_mid).abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
     })
+}
+
+fn speaker_for_stt_segment<'a>(
+    stt: &SttTranscriptSegment,
+    diarization_segments: &'a [DiarizationSegment],
+) -> Option<&'a str> {
+    let best_overlap = diarization_segments
+        .iter()
+        .map(|segment| (segment, overlap_seconds(stt, segment)))
+        .filter(|(_, overlap)| *overlap > 0.0)
+        .max_by(|(_, left), (_, right)| {
+            left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+    if let Some((segment, _)) = best_overlap {
+        return Some(segment.speaker_id.as_str());
+    }
+
+    nearest_diarization_segment(stt, diarization_segments)
+        .map(|segment| segment.speaker_id.as_str())
+}
+
+fn speaker_labels(
+    assigned_segments: &[(SttTranscriptSegment, String)],
+) -> (Vec<Speaker>, std::collections::HashMap<String, String>) {
+    let mut ordered_ids = Vec::<String>::new();
+    for (_, speaker_id) in assigned_segments {
+        if !ordered_ids.contains(speaker_id) {
+            ordered_ids.push(speaker_id.clone());
+        }
+    }
+
+    let mut labels = std::collections::HashMap::new();
+    let speakers = ordered_ids
+        .into_iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let label = format!("Гость {}", index + 1);
+            labels.insert(id.clone(), label.clone());
+            Speaker { id, label }
+        })
+        .collect::<Vec<_>>();
+
+    (speakers, labels)
+}
+
+fn merge_speaker_segments(
+    assigned_segments: Vec<(SttTranscriptSegment, String)>,
+    labels: &std::collections::HashMap<String, String>,
+) -> Vec<SpeakerTranscriptSegment> {
+    let mut merged = Vec::<SpeakerTranscriptSegment>::new();
+    for (segment, speaker_id) in assigned_segments {
+        let label = labels
+            .get(&speaker_id)
+            .cloned()
+            .unwrap_or_else(|| "Гость 1".to_string());
+
+        if let Some(last) = merged.last_mut() {
+            if last.speaker_id == speaker_id && segment.start - last.end < 1.2 {
+                last.end = last.end.max(segment.end);
+                if !last.text.ends_with(char::is_whitespace) {
+                    last.text.push(' ');
+                }
+                last.text.push_str(segment.text.trim());
+                continue;
+            }
+        }
+
+        merged.push(SpeakerTranscriptSegment {
+            start: segment.start,
+            end: segment.end,
+            speaker_id,
+            speaker_label: label,
+            text: segment.text.trim().to_string(),
+        });
+    }
+
+    merged
+}
+
+fn format_timestamp(seconds: f64) -> String {
+    let total = seconds.max(0.0).round() as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
+fn format_speaker_transcript(segments: &[SpeakerTranscriptSegment]) -> String {
+    segments
+        .iter()
+        .map(|segment| {
+            format!(
+                "[{}] {}: {}",
+                format_timestamp(segment.start),
+                segment.speaker_label,
+                segment.text.trim()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn assemble_speaker_transcript(
+    stt_segments: Vec<SttTranscriptSegment>,
+    diarization_segments: Vec<DiarizationSegment>,
+) -> Result<(String, Vec<Speaker>, Vec<SpeakerTranscriptSegment>), String> {
+    let assigned_segments = stt_segments
+        .into_iter()
+        .filter_map(|segment| {
+            let speaker_id = speaker_for_stt_segment(&segment, &diarization_segments)?.to_string();
+            Some((segment, speaker_id))
+        })
+        .collect::<Vec<_>>();
+
+    if assigned_segments.is_empty() {
+        return Err("Не удалось сопоставить речь с говорящими.".to_string());
+    }
+
+    let (speakers, labels) = speaker_labels(&assigned_segments);
+    let segments = merge_speaker_segments(assigned_segments, &labels);
+    let transcript = format_speaker_transcript(&segments);
+
+    Ok((transcript, speakers, segments))
 }
 
 #[tauri::command]
@@ -561,8 +949,29 @@ pub async fn transcribe_file_path(
             "Файл слишком большой. Максимальный размер для транскрибации: 1 ГБ.".to_string(),
         );
     }
+    if req.speaker_diarization {
+        ensure_diarized_file_preconditions(&req)?;
+    }
 
     emit_file_progress(&app, &req.request_id, "preparing", 0, 0, "Готовим файл");
+    let diarization_segments = if req.speaker_diarization {
+        let diarization_audio =
+            media::prepare_media_file_for_diarization(&app, &input_path).await?;
+        emit_file_progress(
+            &app,
+            &req.request_id,
+            "diarizing",
+            0,
+            0,
+            "Разделяем говорящих",
+        );
+        let result = diarize_audio_file(&app, &req, &diarization_audio.path).await;
+        let _ = fs::remove_dir_all(&diarization_audio.temp_dir);
+        Some(result?)
+    } else {
+        None
+    };
+
     let prepared = media::prepare_media_file_chunks_for_transcription(&app, &input_path).await?;
     let total_chunks = prepared.chunks.len();
     emit_file_progress(
@@ -592,6 +1001,7 @@ pub async fn transcribe_file_path(
     };
 
     let mut parts = Vec::with_capacity(total_chunks);
+    let mut stt_segments = Vec::<SttTranscriptSegment>::new();
     for (index, chunk) in prepared.chunks.iter().enumerate() {
         emit_file_progress(
             &app,
@@ -611,37 +1021,55 @@ pub async fn transcribe_file_path(
             ),
         );
 
-        let result = if !req.use_own_key {
-            transcribe_file_chunk_via_proxy(&req, chunk).await
+        let text = if !req.use_own_key {
+            let result = transcribe_file_chunk_via_proxy(&req, chunk).await;
+            let result = match result {
+                Ok(result) => result,
+                Err(err) => {
+                    let _ = fs::remove_dir_all(&prepared.temp_dir);
+                    return Err(err);
+                }
+            };
+            if result.raw.trim().is_empty() {
+                result.cleaned
+            } else {
+                result.raw
+            }
         } else {
             match fs::read(&chunk.path) {
-                Ok(bytes) => {
-                    transcribe_audio_bytes(
-                        app.clone(),
-                        &base_req,
-                        bytes,
-                        chunk.file_name.clone(),
-                        chunk.mime_type.clone(),
-                    )
-                    .await
+                Ok(bytes) => match transcribe_audio_bytes_internal(
+                    app.clone(),
+                    &base_req,
+                    bytes,
+                    chunk.file_name.clone(),
+                    chunk.mime_type.clone(),
+                    req.speaker_diarization,
+                    chunk.start_offset_seconds,
+                )
+                .await
+                {
+                    Ok(result) => {
+                        if req.speaker_diarization {
+                            stt_segments.extend(result.segments);
+                        }
+                        if result.raw.trim().is_empty() {
+                            result.cleaned
+                        } else {
+                            result.raw
+                        }
+                    }
+                    Err(err) => {
+                        let _ = fs::remove_dir_all(&prepared.temp_dir);
+                        return Err(err);
+                    }
+                },
+                Err(err) => {
+                    let _ = fs::remove_dir_all(&prepared.temp_dir);
+                    return Err(format!("Не удалось прочитать фрагмент аудио: {}", err));
                 }
-                Err(err) => Err(format!("Не удалось прочитать фрагмент аудио: {}", err)),
             }
         };
 
-        let result = match result {
-            Ok(result) => result,
-            Err(err) => {
-                let _ = fs::remove_dir_all(&prepared.temp_dir);
-                return Err(err);
-            }
-        };
-
-        let text = if result.raw.trim().is_empty() {
-            result.cleaned
-        } else {
-            result.raw
-        };
         let text = text.trim().to_string();
         if !text.is_empty() {
             parts.push(text);
@@ -649,6 +1077,36 @@ pub async fn transcribe_file_path(
     }
 
     let _ = fs::remove_dir_all(&prepared.temp_dir);
+
+    if let Some(diarization_segments) = diarization_segments {
+        emit_file_progress(
+            &app,
+            &req.request_id,
+            "assembling",
+            total_chunks,
+            total_chunks,
+            "Собираем протокол",
+        );
+        let (raw, speakers, segments) =
+            assemble_speaker_transcript(stt_segments, diarization_segments)?;
+        emit_file_progress(
+            &app,
+            &req.request_id,
+            "done",
+            total_chunks,
+            total_chunks,
+            "Готово",
+        );
+
+        return Ok(TranscribeResponse {
+            cleaned: raw.clone(),
+            raw,
+            mode: TranscriptionMode::Speakers,
+            speakers: Some(speakers),
+            segments: Some(segments),
+        });
+    }
+
     emit_file_progress(
         &app,
         &req.request_id,
@@ -659,10 +1117,7 @@ pub async fn transcribe_file_path(
     );
 
     let raw = parts.join("\n\n");
-    Ok(TranscribeResponse {
-        cleaned: raw.clone(),
-        raw,
-    })
+    Ok(plain_transcribe_response(raw.clone(), raw))
 }
 
 // ── Connection test ──────────────────────────────────────────────────────
@@ -1106,6 +1561,7 @@ pub async fn install_stt_model(
             let runtime_label = match kind {
                 local_stt::LocalRuntimeKind::Nvidia => "Parakeet",
                 local_stt::LocalRuntimeKind::Qwen => "Qwen",
+                local_stt::LocalRuntimeKind::Diarization => "Diarization",
                 local_stt::LocalRuntimeKind::Whisper => "Whisper",
             };
             local_stt::emit_model_download_progress_message(
@@ -1218,7 +1674,8 @@ pub async fn install_stt_model(
                             &task_model,
                         )
                     }
-                    local_stt::LocalRuntimeKind::Whisper => Ok((0, None)),
+                    local_stt::LocalRuntimeKind::Whisper
+                    | local_stt::LocalRuntimeKind::Diarization => Ok((0, None)),
                 };
                 if let Ok((downloaded, total)) = snapshot {
                     let percent = total
@@ -1238,12 +1695,18 @@ pub async fn install_stt_model(
                                     local_stt::LocalRuntimeKind::Nvidia => {
                                         "Устанавливаем Parakeet зависимости."
                                     }
+                                    local_stt::LocalRuntimeKind::Diarization => {
+                                        "Скачиваем sherpa-onnx модели diarization."
+                                    }
                                     _ => "Устанавливаем Qwen зависимости.",
                                 }
                             } else {
                                 match task_kind {
                                     local_stt::LocalRuntimeKind::Nvidia => {
                                         "Скачиваем файлы Parakeet модели."
+                                    }
+                                    local_stt::LocalRuntimeKind::Diarization => {
+                                        "Скачиваем sherpa-onnx модели diarization."
                                     }
                                     _ => "Скачиваем файлы Qwen модели.",
                                 }
@@ -1292,8 +1755,60 @@ pub async fn install_stt_model(
 
     let status = response.status();
     if !status.is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        let message = match status.as_u16() {
+        let mut status_code = status.as_u16();
+        let mut error_text = response.text().await.unwrap_or_default();
+
+        if managed_runtime_kind == Some(local_stt::LocalRuntimeKind::Diarization)
+            && is_repairable_diarization_runtime_error(&error_text)
+        {
+            logger::log_info(
+                "STT_INSTALL",
+                "Restarting Diarization runtime after incomplete sherpa-onnx runtime error",
+            );
+            if let Some(port) = port_from_url(&models_url) {
+                if let Err(err) =
+                    local_stt::stop_managed_runtime(local_stt::LocalRuntimeKind::Diarization, port)
+                {
+                    logger::log_error("STT_INSTALL", &err);
+                }
+                tokio::time::sleep(Duration::from_millis(700)).await;
+            }
+
+            if let Ok(runtime_base_url) =
+                local_stt::ensure_runtime(&app, client, &models_url, req.local_models_dir.as_deref())
+                    .await
+            {
+                effective_whisper_endpoint = Some(runtime_base_url.clone());
+                let retry_models_url = resolve_managed_models_url(&runtime_base_url);
+                let retry_download_url =
+                    resolve_whisper_model_download_url(&retry_models_url, requested_model);
+                match install_client.post(&retry_download_url).send().await {
+                    Ok(retry_response) if retry_response.status().is_success() => {
+                        logger::log_info(
+                            "STT_INSTALL",
+                            "Diarization runtime repair succeeded after restart",
+                        );
+                        return Ok(InstallSttModelResult {
+                            success: true,
+                            message: format!(
+                                "Модель «{}» скачана и готова к локальному распознаванию.",
+                                requested_model
+                            ),
+                            whisper_endpoint: effective_whisper_endpoint.clone(),
+                        });
+                    }
+                    Ok(retry_response) => {
+                        status_code = retry_response.status().as_u16();
+                        error_text = retry_response.text().await.unwrap_or_default();
+                    }
+                    Err(err) => {
+                        error_text = format!("Ошибка повторной установки diarization runtime: {}", err);
+                    }
+                }
+            }
+        }
+
+        let message = match status_code {
             401 => "STT endpoint отклонил API-ключ при установке модели.".to_string(),
             403 => "STT endpoint запретил установку модели. Проверьте права доступа.".to_string(),
             404 => format!(
@@ -1306,7 +1821,7 @@ pub async fn install_stt_model(
             ),
             _ => format!(
                 "STT endpoint вернул ошибку {} при установке модели: {}",
-                status.as_u16(),
+                status_code,
                 error_text.chars().take(200).collect::<String>()
             ),
         };
@@ -1330,6 +1845,7 @@ pub async fn install_stt_model(
                 requested_model,
             )
             .unwrap_or((1, Some(1))),
+            Some(local_stt::LocalRuntimeKind::Diarization) => (1, Some(1)),
             _ => local_stt::qwen_model_progress_snapshot(&app, req.local_models_dir.as_deref())
                 .unwrap_or((1, Some(1))),
         };
@@ -1460,6 +1976,87 @@ pub async fn delete_stt_model(
         success: true,
         message: format!("Модель «{}» удалена.", requested_model),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stt(start: f64, end: f64, text: &str) -> SttTranscriptSegment {
+        SttTranscriptSegment {
+            start,
+            end,
+            text: text.to_string(),
+        }
+    }
+
+    fn dia(start: f64, end: f64, speaker_id: &str) -> DiarizationSegment {
+        DiarizationSegment {
+            start,
+            end,
+            speaker_id: speaker_id.to_string(),
+        }
+    }
+
+    #[test]
+    fn assigns_speaker_by_maximum_overlap() {
+        let diarization = vec![dia(0.0, 3.0, "SPEAKER_00"), dia(3.0, 8.0, "SPEAKER_01")];
+        let speaker = speaker_for_stt_segment(&stt(2.0, 6.0, "hello"), &diarization);
+
+        assert_eq!(speaker, Some("SPEAKER_01"));
+    }
+
+    #[test]
+    fn falls_back_to_nearest_speaker_when_overlap_is_missing() {
+        let diarization = vec![dia(0.0, 2.0, "SPEAKER_00"), dia(8.0, 10.0, "SPEAKER_01")];
+        let speaker = speaker_for_stt_segment(&stt(4.8, 5.0, "gap"), &diarization);
+
+        assert_eq!(speaker, Some("SPEAKER_00"));
+    }
+
+    #[test]
+    fn maps_speaker_ids_to_guest_labels_in_first_appearance_order() {
+        let (transcript, speakers, segments) = assemble_speaker_transcript(
+            vec![
+                stt(600.0, 602.0, "Второй chunk"),
+                stt(603.0, 605.0, "Ответ"),
+            ],
+            vec![
+                dia(599.0, 602.5, "SPEAKER_01"),
+                dia(602.5, 606.0, "SPEAKER_00"),
+            ],
+        )
+        .expect("speaker transcript");
+
+        assert_eq!(speakers[0].id, "SPEAKER_01");
+        assert_eq!(speakers[0].label, "Гость 1");
+        assert_eq!(speakers[1].id, "SPEAKER_00");
+        assert_eq!(segments[0].start, 600.0);
+        assert!(transcript.starts_with("[00:10:00] Гость 1:"));
+    }
+
+    #[test]
+    fn merges_adjacent_segments_for_same_speaker_under_pause_threshold() {
+        let (_, _, segments) = assemble_speaker_transcript(
+            vec![stt(0.0, 1.0, "Давайте"), stt(1.8, 2.5, "начнем")],
+            vec![dia(0.0, 3.0, "SPEAKER_00")],
+        )
+        .expect("speaker transcript");
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "Давайте начнем");
+    }
+
+    #[test]
+    fn plain_response_keeps_legacy_raw_cleaned_shape() {
+        let response = plain_transcribe_response("raw".to_string(), "cleaned".to_string());
+
+        assert_eq!(response.raw, "raw");
+        assert_eq!(response.cleaned, "cleaned");
+        assert_eq!(response.mode, TranscriptionMode::Plain);
+        assert!(response.speakers.is_none());
+        assert!(response.segments.is_none());
+    }
 }
 
 #[tauri::command]
