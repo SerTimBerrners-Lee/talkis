@@ -267,6 +267,15 @@ This repository also uses `.cargo/config.toml` to keep Cargo build artifacts off
 
 If you want to run the project locally:
 
+On Ubuntu/Debian, install the native Tauri and bindgen dependencies first:
+
+```bash
+sudo apt update
+sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev patchelf clang libclang-dev
+```
+
+`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
+
 ```bash
 bun install
 bun run prepare:sidecars
@@ -322,4 +331,4 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.19**.
+Talkis is an active work in progress. Current version: **0.1.21**.

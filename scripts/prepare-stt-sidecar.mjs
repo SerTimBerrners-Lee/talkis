@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,54 @@ import { fileURLToPath } from "node:url";
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const tauriDir = join(rootDir, "src-tauri");
 const binariesDir = join(tauriDir, "binaries");
+
+function directoryHasLibclang(directory) {
+  if (!directory || !existsSync(directory)) return false;
+
+  try {
+    return readdirSync(directory).some((name) => (
+      name === "libclang.so"
+      || name.startsWith("libclang.so.")
+      || (name.startsWith("libclang-") && name.includes(".so"))
+    ));
+  } catch {
+    return false;
+  }
+}
+
+function hasLibclang() {
+  if (directoryHasLibclang(process.env.LIBCLANG_PATH)) {
+    return true;
+  }
+
+  const commonDirectories = [
+    "/usr/lib",
+    "/usr/lib64",
+    "/usr/lib/llvm-18/lib",
+    "/usr/lib/llvm-17/lib",
+    "/usr/lib/llvm-16/lib",
+    "/usr/lib/llvm-15/lib",
+    "/usr/lib/llvm-14/lib",
+    "/usr/lib/x86_64-linux-gnu",
+    "/usr/local/lib",
+  ];
+
+  return commonDirectories.some(directoryHasLibclang);
+}
+
+function ensureLinuxBindgenDependencies(targetTriple) {
+  if (!targetTriple.includes("linux") || hasLibclang()) return;
+
+  console.error("");
+  console.error("Missing libclang: whisper-rs-sys uses bindgen and needs libclang.so during local sidecar builds.");
+  console.error("Install it on Ubuntu/Debian with:");
+  console.error("");
+  console.error("  sudo apt update && sudo apt install -y clang libclang-dev");
+  console.error("");
+  console.error("If libclang is installed in a custom location, set LIBCLANG_PATH to the directory that contains libclang.so.");
+  console.error("");
+  process.exit(1);
+}
 
 function readTargetTriple() {
   if (process.env.TAURI_STT_TARGET_TRIPLE) {
@@ -27,6 +75,8 @@ function readTargetTriple() {
 }
 
 const targetTriple = readTargetTriple();
+ensureLinuxBindgenDependencies(targetTriple);
+
 const extension = targetTriple.includes("windows") ? ".exe" : "";
 const profile = process.env.TALKIS_STT_RELEASE === "1" ? "release" : "debug";
 const sidecars = ["talkis-stt", "talkis-stt-nvidia", "talkis-stt-qwen", "talkis-diarize"];

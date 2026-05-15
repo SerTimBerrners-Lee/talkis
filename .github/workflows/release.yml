@@ -60,7 +60,9 @@ jobs:
             libayatana-appindicator3-dev \
             libxdo-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            clang \
+            libclang-dev
 
       - name: Cache Bun dependencies
         uses: actions/cache@v4
