@@ -1,24 +1,88 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const tauriDir = join(rootDir, "src-tauri");
 const binariesDir = join(tauriDir, "binaries");
+const commonLibraryDirectories = [
+  "/lib",
+  "/lib64",
+  "/lib/aarch64-linux-gnu",
+  "/lib/arm-linux-gnueabihf",
+  "/lib/x86_64-linux-gnu",
+  "/usr/lib",
+  "/usr/lib64",
+  "/usr/lib/aarch64-linux-gnu",
+  "/usr/lib/arm-linux-gnueabihf",
+  "/usr/lib/llvm-18/lib",
+  "/usr/lib/llvm-17/lib",
+  "/usr/lib/llvm-16/lib",
+  "/usr/lib/llvm-15/lib",
+  "/usr/lib/llvm-14/lib",
+  "/usr/lib/x86_64-linux-gnu",
+  "/usr/local/lib",
+];
 
-function directoryHasLibclang(directory) {
+function directoryHasMatchingFile(directory, matches) {
   if (!directory || !existsSync(directory)) return false;
 
   try {
-    return readdirSync(directory).some((name) => (
-      name === "libclang.so"
-      || name.startsWith("libclang.so.")
-      || (name.startsWith("libclang-") && name.includes(".so"))
-    ));
+    return readdirSync(directory).some(matches);
   } catch {
     return false;
   }
+}
+
+function directoryHasLibclang(directory) {
+  return directoryHasMatchingFile(directory, (name) => (
+    name === "libclang.so"
+    || name.startsWith("libclang.so.")
+    || (name.startsWith("libclang-") && name.includes(".so"))
+  ));
+}
+
+function splitPathList(value) {
+  if (!value) return [];
+  return value.split(delimiter).filter(Boolean);
+}
+
+function librarySearchDirectories() {
+  return [
+    ...splitPathList(process.env.LIBRARY_PATH),
+    ...splitPathList(process.env.LD_LIBRARY_PATH),
+    ...commonLibraryDirectories,
+  ];
+}
+
+function hasLibraryFile(fileName) {
+  return librarySearchDirectories().some((directory) => (
+    directoryHasMatchingFile(directory, (name) => name === fileName)
+  ));
+}
+
+function compilerCanFindLibraryFile(fileName) {
+  for (const compiler of ["cc", "gcc"]) {
+    const result = spawnSync(compiler, ["-print-file-name=" + fileName], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    if (result.error || result.status !== 0) continue;
+
+    const resolvedPath = result.stdout.trim();
+    if (resolvedPath && resolvedPath !== fileName && existsSync(resolvedPath)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasLinkableLibrary(libraryName) {
+  const fileName = `lib${libraryName}.so`;
+  return hasLibraryFile(fileName) || compilerCanFindLibraryFile(fileName);
 }
 
 function hasLibclang() {
@@ -26,19 +90,7 @@ function hasLibclang() {
     return true;
   }
 
-  const commonDirectories = [
-    "/usr/lib",
-    "/usr/lib64",
-    "/usr/lib/llvm-18/lib",
-    "/usr/lib/llvm-17/lib",
-    "/usr/lib/llvm-16/lib",
-    "/usr/lib/llvm-15/lib",
-    "/usr/lib/llvm-14/lib",
-    "/usr/lib/x86_64-linux-gnu",
-    "/usr/local/lib",
-  ];
-
-  return commonDirectories.some(directoryHasLibclang);
+  return librarySearchDirectories().some(directoryHasLibclang);
 }
 
 function commandExists(command) {
@@ -59,11 +111,15 @@ function ensureLinuxBuildDependencies(targetTriple) {
     missingPackages.push("cmake");
   }
 
+  if (!hasLinkableLibrary("xdo")) {
+    missingPackages.push("libxdo-dev");
+  }
+
   if (missingPackages.length === 0) return;
 
   console.error("");
   console.error("Missing Linux build dependencies for local STT sidecars.");
-  console.error("whisper-rs-sys needs libclang for bindgen and cmake for whisper.cpp.");
+  console.error("whisper-rs-sys needs libclang for bindgen, cmake for whisper.cpp, and xdo for Tauri/global hotkey linking.");
   console.error("Install it on Ubuntu/Debian with:");
   console.error("");
   console.error(`  sudo apt update && sudo apt install -y ${missingPackages.join(" ")}`);

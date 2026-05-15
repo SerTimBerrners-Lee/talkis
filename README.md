@@ -274,7 +274,7 @@ sudo apt update
 sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev patchelf clang libclang-dev cmake
 ```
 
-`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars, and `cmake` is required by the bundled `whisper.cpp` build. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
+`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars, `cmake` is required by the bundled `whisper.cpp` build, and `libxdo-dev` provides the `xdo` library used by Tauri/global hotkey linking. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
 
 ```bash
 bun install
