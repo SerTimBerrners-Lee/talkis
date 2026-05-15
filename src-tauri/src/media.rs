@@ -40,6 +40,14 @@ pub struct PreparedMediaChunks {
     pub chunks: Vec<PreparedMediaChunk>,
 }
 
+pub struct PreparedProxyMedia {
+    pub temp_dir: PathBuf,
+    pub path: PathBuf,
+    pub file_name: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+}
+
 pub struct PreparedDiarizationAudio {
     pub temp_dir: PathBuf,
     pub path: PathBuf,
@@ -307,6 +315,76 @@ pub async fn prepare_media_file_chunks_for_transcription(
     Ok(PreparedMediaChunks {
         temp_dir: chunks_dir,
         chunks,
+    })
+}
+
+pub async fn prepare_media_file_for_proxy_transcription(
+    app: &tauri::AppHandle,
+    input_path: &Path,
+) -> Result<PreparedProxyMedia, String> {
+    let metadata =
+        fs::metadata(input_path).map_err(|err| format!("Не удалось прочитать файл: {}", err))?;
+
+    if !metadata.is_file() {
+        return Err("Выбранный путь не является файлом.".to_string());
+    }
+
+    if metadata.len() == 0 {
+        return Err("Пустой файл нельзя транскрибировать.".to_string());
+    }
+
+    if metadata.len() > MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
+        return Err(
+            "Файл слишком большой. Максимальный размер для локальной подготовки: 1 ГБ.".to_string(),
+        );
+    }
+
+    let temp_dir = unique_temp_path("file-proxy-transcription", "dir");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|err| format!("Не удалось подготовить временную папку: {}", err))?;
+    let output_path = temp_dir.join("talkis-cloud-diarization.mp3");
+    let ffmpeg_args = vec![
+        "-hide_banner".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input_path.to_string_lossy().to_string(),
+        "-vn".to_string(),
+        "-ac".to_string(),
+        "1".to_string(),
+        "-ar".to_string(),
+        "16000".to_string(),
+        "-b:a".to_string(),
+        "32k".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+
+    if let Err(message) = run_ffmpeg(app, ffmpeg_args).await {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(if message.is_empty() {
+            "Не удалось извлечь аудио из файла.".to_string()
+        } else {
+            format!("Не удалось извлечь аудио из файла: {}", message)
+        });
+    }
+
+    let output_metadata = fs::metadata(&output_path).map_err(|err| {
+        let _ = fs::remove_dir_all(&temp_dir);
+        format!("Не удалось прочитать сжатый аудиофайл: {}", err)
+    })?;
+
+    if output_metadata.len() > MAX_TRANSCRIPTION_BYTES {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err("После сжатия файл всё ещё больше 25 МБ. Для облачного разделения по говорящим выберите более короткий файл или используйте локальную разметку.".to_string());
+    }
+
+    Ok(PreparedProxyMedia {
+        temp_dir,
+        path: output_path,
+        file_name: "talkis-cloud-diarization.mp3".to_string(),
+        mime_type: "audio/mpeg".to_string(),
+        size_bytes: output_metadata.len(),
     })
 }
 

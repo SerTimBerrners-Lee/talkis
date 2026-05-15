@@ -164,14 +164,15 @@ The `Файлы` tab can transcribe audio or video files without LLM cleanup. Fi
 
 Talkis supports file transcription up to 1 GB. Video files, long recordings, and less common formats are converted inside the app with the bundled ffmpeg sidecar, split into safe audio chunks, and transcribed sequentially. The UI shows chunk progress while processing.
 
-File transcription can optionally split the transcript by speakers. When `Разделить по говорящим` is enabled, Talkis uses a local Whisper model with timestamps plus the speaker-diarization components for that file job. The global API or local model selection is not overwritten by this background diarization flow.
+File transcription can optionally split the transcript by speakers. In Talkis Cloud mode, `Разделить по говорящим` sends that file job to the cloud diarization endpoint on `proxy.talkis.ru`, backed by AssemblyAI, and does not use the installed local Whisper runtime. If cloud diarization is unavailable, Talkis stops with an error instead of silently falling back to local processing. In API or local mode, Talkis uses a downloaded local Whisper model with timestamps plus the speaker-diarization components for that file job. The global API or local model selection is not overwritten by this background diarization flow.
 
 File transcription uses the same access mode as voice recording:
 
 - Talkis Cloud sends files to `proxy.talkis.ru/api/transcribe-only`
+- Talkis Cloud sends speaker diarization files to `proxy.talkis.ru/api/transcribe-diarized`
 - Custom provider mode sends files to the configured OpenAI-compatible STT endpoint
 - Local mode sends chunks to the active managed local STT runtime
-- Speaker diarization mode uses local Whisper and the local diarization runtime even when the normal active mode is API or cloud
+- Speaker diarization mode uses local Whisper and the local diarization runtime only outside Talkis Cloud mode
 
 ## Text styles
 
@@ -200,7 +201,7 @@ History is stored locally on your machine. The app keeps the newest 1000 voice e
 
 - Audio is sent to the API endpoints you configure for transcription and cleanup
 - In subscription mode, requests go through `proxy.talkis.ru`
-- File transcription in subscription mode uses the raw transcription endpoint and skips text cleanup
+- File transcription in subscription mode uses raw transcription endpoints and skips text cleanup; speaker diarization files are processed through the cloud diarization provider
 - In custom mode, requests go directly to your configured endpoints
 - In local mode, all processing stays on your machine
 - Your API key and device token are stored locally in the app settings

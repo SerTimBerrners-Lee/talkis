@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { AppSettings } from "./store";
+import { fetchCloudProfile } from "./cloudAuth";
 import { logError, logInfo } from "./logger";
 import { formatErrorMessage } from "./utils";
 
@@ -11,6 +12,7 @@ const INPUT_MAX_BYTES = 200 * 1024 * 1024;
 const FILE_TRANSCRIPTION_PROGRESS_EVENT = "file-transcription-progress";
 const DIARIZED_WHISPER_ENDPOINT = "http://127.0.0.1:8000";
 const DIARIZED_WHISPER_MODEL = "whisper-large-v3-turbo";
+const CLOUD_CAPABILITIES_CACHE_MS = 60_000;
 const DIARIZED_WHISPER_MODEL_OPTIONS = [
   "whisper-large-v3-turbo",
   "whisper-large-v3",
@@ -106,6 +108,15 @@ interface FilePathRequestSettings {
   deviceToken: string | null;
 }
 
+interface CloudTranscriptionCapabilities {
+  fileTranscription: boolean;
+  speakerDiarization: boolean;
+  speakerDiarizationProvider?: string;
+  speakerDiarizationMaxSpeakers?: number;
+}
+
+let cloudCapabilitiesCache: { value: CloudTranscriptionCapabilities; expiresAt: number } | null = null;
+
 function fileExtension(fileName: string): string {
   const match = fileName.toLowerCase().match(/\.([a-z0-9]+)$/);
   return match ? match[1] : "";
@@ -157,8 +168,12 @@ function shouldConvert(file: File): boolean {
   return isVideo || !isDirectFormat || file.size > TRANSCRIPTION_MAX_BYTES;
 }
 
-function buildFilePathRequestSettings(settings: AppSettings, speakerDiarization: boolean): FilePathRequestSettings {
-  if (!speakerDiarization) {
+function buildFilePathRequestSettings(
+  settings: AppSettings,
+  speakerDiarization: boolean,
+  useCloudSpeakerDiarization: boolean,
+): FilePathRequestSettings {
+  if (!speakerDiarization || useCloudSpeakerDiarization) {
     return {
       whisperApiKey: settings.whisperApiKey || null,
       whisperEndpoint: settings.whisperEndpoint || null,
@@ -175,6 +190,66 @@ function buildFilePathRequestSettings(settings: AppSettings, speakerDiarization:
     useOwnKey: true,
     deviceToken: null,
   };
+}
+
+export async function getCloudTranscriptionCapabilities(force = false): Promise<CloudTranscriptionCapabilities> {
+  const now = Date.now();
+  if (!force && cloudCapabilitiesCache && cloudCapabilitiesCache.expiresAt > now) {
+    return cloudCapabilitiesCache.value;
+  }
+
+  const response = await fetch(`${PROXY_BASE_URL}/api/capabilities`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+  const body = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Proxy capabilities error (${response.status}): ${body}`);
+  }
+
+  let parsed: Partial<CloudTranscriptionCapabilities>;
+  try {
+    parsed = JSON.parse(body) as Partial<CloudTranscriptionCapabilities>;
+  } catch (error) {
+    logError("FILE_TRANSCRIPTION", `Proxy capabilities parse failed: ${formatErrorMessage(error)}; body=${body}`);
+    throw new Error("Talkis Cloud returned invalid capabilities");
+  }
+
+  const capabilities: CloudTranscriptionCapabilities = {
+    fileTranscription: parsed.fileTranscription === true,
+    speakerDiarization: parsed.speakerDiarization === true,
+    speakerDiarizationProvider: typeof parsed.speakerDiarizationProvider === "string" ? parsed.speakerDiarizationProvider : undefined,
+    speakerDiarizationMaxSpeakers: typeof parsed.speakerDiarizationMaxSpeakers === "number" ? parsed.speakerDiarizationMaxSpeakers : undefined,
+  };
+
+  cloudCapabilitiesCache = {
+    value: capabilities,
+    expiresAt: now + CLOUD_CAPABILITIES_CACHE_MS,
+  };
+
+  return capabilities;
+}
+
+export async function canUseCloudSpeakerDiarization(settings: AppSettings, force = false): Promise<boolean> {
+  if (settings.useOwnKey || !settings.deviceToken?.trim()) {
+    return false;
+  }
+
+  try {
+    const profile = await fetchCloudProfile({ force });
+    if (profile?.subscription.active !== true) {
+      return false;
+    }
+
+    const capabilities = await getCloudTranscriptionCapabilities(force);
+    return capabilities.speakerDiarization === true;
+  } catch (error) {
+    logError("FILE_TRANSCRIPTION", `Cloud diarization capability check failed: ${formatErrorMessage(error)}`);
+    return false;
+  }
 }
 
 function getDiarizedWhisperModel(settings: AppSettings): string {
@@ -258,6 +333,14 @@ export function toFileTranscriptionErrorMessage(error: unknown): string {
 
   if (normalized.includes("talkis cloud session missing")) {
     return "Войдите в Talkis Cloud заново, чтобы использовать облачный режим.";
+  }
+
+  if (normalized.includes("speaker diarization is not configured")) {
+    return "Облачная разметка говорящих пока недоступна. Используйте локальную подготовку в блоке транскрибации файла.";
+  }
+
+  if (normalized.includes("cloud speaker diarization unavailable")) {
+    return "Облачное разделение по говорящим сейчас недоступно. Проверьте активную подписку PRO или переключитесь на локальный режим.";
   }
 
   if (normalized.includes("subscription inactive") || normalized.includes("403")) {
@@ -507,7 +590,11 @@ export async function transcribeFilePathOnly({
     });
 
     logInfo("FILE_TRANSCRIPTION", `Sending file path ${fileName} through native pipeline`);
-    const requestSettings = buildFilePathRequestSettings(settings, speakerDiarization);
+    const useCloudSpeakerDiarization = speakerDiarization && await canUseCloudSpeakerDiarization(settings);
+    if (speakerDiarization && !settings.useOwnKey && !useCloudSpeakerDiarization) {
+      throw new Error("Cloud speaker diarization unavailable");
+    }
+    const requestSettings = buildFilePathRequestSettings(settings, speakerDiarization, useCloudSpeakerDiarization);
 
     const result = await invoke<NativeTranscriptionResult>("transcribe_file_path", {
       req: {

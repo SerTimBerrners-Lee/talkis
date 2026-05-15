@@ -10,6 +10,7 @@ import { addHistoryEntry, getSettings, HistoryEntry, saveSettings, updateHistory
 import { HISTORY_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 import { formatErrorMessage } from "../../../lib/utils";
 import {
+  canUseCloudSpeakerDiarization,
   fileNameFromPath,
   FileTranscriptionProgress,
   FileTranscriptionStatus,
@@ -225,8 +226,12 @@ export function FileTranscriptionTab(): JSX.Element {
     getSettings({ reload: true })
       .then(async (settings) => {
         const syncedSettings = await refreshSpeakerInstalledModels(settings);
+        const cloudSpeakerReady = await canUseCloudSpeakerDiarization(syncedSettings);
         syncSpeakerSetupState(syncedSettings);
-        if (syncedSettings.fileSpeakerDiarization && !isSpeakerSetupReady(syncedSettings)) {
+        if (
+          syncedSettings.fileSpeakerDiarization
+          && ((!syncedSettings.useOwnKey && !cloudSpeakerReady) || (syncedSettings.useOwnKey && !isSpeakerSetupReady(syncedSettings)))
+        ) {
           setSpeakerDiarization(false);
           void saveSettings({ fileSpeakerDiarization: false });
           return;
@@ -299,8 +304,15 @@ export function FileTranscriptionTab(): JSX.Element {
 
     try {
       const settings = await refreshSpeakerInstalledModels(await getSettings({ reload: true }));
+      const cloudSpeakerReady = await canUseCloudSpeakerDiarization(settings, true);
       syncSpeakerSetupState(settings);
-      if (speakerMode && !isSpeakerSetupReady(settings)) {
+      if (speakerMode && !settings.useOwnKey && !cloudSpeakerReady) {
+        setSpeakerDiarization(false);
+        await saveSettings({ fileSpeakerDiarization: false });
+        throw new Error("Cloud speaker diarization unavailable");
+      }
+
+      if (speakerMode && settings.useOwnKey && !isSpeakerSetupReady(settings)) {
         setPendingSpeakerFilePath(filePath);
         setSpeakerSetupIntent("process");
         setSpeakerSetupMessage("");
@@ -571,7 +583,21 @@ export function FileTranscriptionTab(): JSX.Element {
     }
 
     const settings = await refreshSpeakerInstalledModels(await getSettings({ reload: true }));
+    const cloudSpeakerReady = await canUseCloudSpeakerDiarization(settings, true);
     syncSpeakerSetupState(settings);
+
+    if (!settings.useOwnKey) {
+      if (cloudSpeakerReady) {
+        setSpeakerDiarization(true);
+        await saveSettings({ fileSpeakerDiarization: true });
+        return;
+      }
+
+      setError(toFileTranscriptionErrorMessage(new Error("Cloud speaker diarization unavailable")));
+      setSpeakerDiarization(false);
+      await saveSettings({ fileSpeakerDiarization: false });
+      return;
+    }
 
     if (isSpeakerSetupReady(settings)) {
       setSpeakerDiarization(true);
