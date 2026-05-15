@@ -204,6 +204,7 @@ export function Widget() {
         settings,
         onStatus: setFileStatus,
         onProgress: setFileProgress,
+        speakerDiarization: settings.fileSpeakerDiarization === true,
       });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
