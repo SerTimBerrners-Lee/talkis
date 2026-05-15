@@ -267,14 +267,14 @@ This repository also uses `.cargo/config.toml` to keep Cargo build artifacts off
 
 If you want to run the project locally:
 
-On Ubuntu/Debian, install the native Tauri and bindgen dependencies first:
+On Ubuntu/Debian, install the native Tauri and local sidecar build dependencies first:
 
 ```bash
 sudo apt update
-sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev patchelf clang libclang-dev
+sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev patchelf clang libclang-dev cmake
 ```
 
-`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
+`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars, and `cmake` is required by the bundled `whisper.cpp` build. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
 
 ```bash
 bun install

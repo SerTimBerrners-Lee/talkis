@@ -1,5 +1,5 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,14 +41,32 @@ function hasLibclang() {
   return commonDirectories.some(directoryHasLibclang);
 }
 
-function ensureLinuxBindgenDependencies(targetTriple) {
-  if (!targetTriple.includes("linux") || hasLibclang()) return;
+function commandExists(command) {
+  const result = spawnSync(command, ["--version"], { stdio: "ignore" });
+  return !result.error && result.status === 0;
+}
+
+function ensureLinuxBuildDependencies(targetTriple) {
+  if (!targetTriple.includes("linux")) return;
+
+  const missingPackages = [];
+
+  if (!hasLibclang()) {
+    missingPackages.push("clang", "libclang-dev");
+  }
+
+  if (!commandExists("cmake")) {
+    missingPackages.push("cmake");
+  }
+
+  if (missingPackages.length === 0) return;
 
   console.error("");
-  console.error("Missing libclang: whisper-rs-sys uses bindgen and needs libclang.so during local sidecar builds.");
+  console.error("Missing Linux build dependencies for local STT sidecars.");
+  console.error("whisper-rs-sys needs libclang for bindgen and cmake for whisper.cpp.");
   console.error("Install it on Ubuntu/Debian with:");
   console.error("");
-  console.error("  sudo apt update && sudo apt install -y clang libclang-dev");
+  console.error(`  sudo apt update && sudo apt install -y ${missingPackages.join(" ")}`);
   console.error("");
   console.error("If libclang is installed in a custom location, set LIBCLANG_PATH to the directory that contains libclang.so.");
   console.error("");
@@ -75,7 +93,7 @@ function readTargetTriple() {
 }
 
 const targetTriple = readTargetTriple();
-ensureLinuxBindgenDependencies(targetTriple);
+ensureLinuxBuildDependencies(targetTriple);
 
 const extension = targetTriple.includes("windows") ? ".exe" : "";
 const profile = process.env.TALKIS_STT_RELEASE === "1" ? "release" : "debug";
