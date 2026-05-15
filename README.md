@@ -18,6 +18,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - Recent voice recordings and file transcriptions are saved in local history with processing time
 - The app checks for updates after startup and then periodically in the background; available updates can be installed from the settings sidebar
 - Local STT can install and run Talkis-managed Whisper, Qwen, NVIDIA Parakeet, and speaker-diarization runtimes without requiring the user to install Python or Docker manually
+- Linux builds use non-transparent utility windows on X11/Cinnamon to avoid unsupported GDK/X11 window operations during startup
 
 ## Access modes
 
@@ -78,6 +79,8 @@ The app relies on:
 - accessibility permission on macOS for automatic text pasting (via CGEvent)
 - best-effort paste simulation on Windows/Linux
 - a global hotkey
+
+On Linux X11 sessions such as Cinnamon, Talkis disables transparent widget and settings windows while keeping the same compact window layout. This avoids known GDK/X11 crashes from unsupported compositor/window-manager operations.
 
 ## Setup
 

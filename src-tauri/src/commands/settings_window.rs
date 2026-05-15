@@ -21,15 +21,24 @@ fn show_and_focus_window(win: &tauri::WebviewWindow) {
 }
 
 fn create_settings_window(app: &AppHandle, url: &str) -> Result<tauri::WebviewWindow, String> {
-    let win = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(url.into()))
+    let mut builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(url.into()))
         .title("Talkis — Settings")
         .inner_size(920.0, 680.0)
         .min_inner_size(820.0, 560.0)
         .decorations(false)
-        .transparent(true)
-        .center()
-        .build()
-        .map_err(|e| e.to_string())?;
+        .center();
+
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.transparent(false);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        builder = builder.transparent(true);
+    }
+
+    let win = builder.build().map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "macos")]
     if let Err(err) = apply_vibrancy(&win, NSVisualEffectMaterial::HudWindow, None, None) {

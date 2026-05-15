@@ -1,7 +1,7 @@
 {
   "name": "talkis",
   "private": true,
-  "version": "0.1.20",
+  "version": "0.1.21",
   "type": "module",
   "packageManager": "bun@1.2.13",
   "scripts": {

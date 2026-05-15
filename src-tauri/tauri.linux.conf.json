@@ -1,0 +1,24 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "widget",
+        "title": "Talkis",
+        "url": "index.html?window=widget",
+        "width": 78,
+        "height": 32,
+        "minWidth": 18,
+        "minHeight": 18,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": false,
+        "acceptFirstMouse": true,
+        "shadow": false,
+        "x": 682,
+        "y": 800
+      }
+    ]
+  }
+}

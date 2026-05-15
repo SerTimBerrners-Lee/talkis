@@ -32,7 +32,7 @@ pub fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWind
         return Ok(win);
     }
 
-    let win = WebviewWindowBuilder::new(
+    let mut builder = WebviewWindowBuilder::new(
         app,
         NOTICE_WINDOW_LABEL,
         WebviewUrl::App("index.html?window=widget-notice".into()),
@@ -41,15 +41,23 @@ pub fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWind
     .inner_size(NOTICE_WIDTH, NOTICE_HEIGHT)
     .resizable(false)
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
-    .skip_taskbar(true)
     .accept_first_mouse(true)
     .focused(false)
     .visible(false)
-    .shadow(false)
-    .build()
-    .map_err(|e| e.to_string())?;
+    .shadow(false);
+
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.transparent(false).skip_taskbar(false);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        builder = builder.transparent(true).skip_taskbar(true);
+    }
+
+    let win = builder.build().map_err(|e| e.to_string())?;
 
     Ok(win)
 }
