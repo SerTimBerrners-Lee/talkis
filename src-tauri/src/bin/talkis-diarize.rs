@@ -372,7 +372,10 @@ fn marker_path(config: &RuntimeConfig) -> PathBuf {
 }
 
 fn installed_models(config: &RuntimeConfig) -> Vec<String> {
-    if segmentation_path(config).is_file() && embedding_path(config).is_file() && marker_path(config).is_file() {
+    if segmentation_path(config).is_file()
+        && embedding_path(config).is_file()
+        && marker_path(config).is_file()
+    {
         vec![MODEL_ID.to_string()]
     } else {
         Vec::new()
@@ -612,7 +615,8 @@ fn ensure_sherpa_runtime(config: &RuntimeConfig) -> Result<(), (u16, String)> {
 
     Err((
         500,
-        "sherpa-onnx установлен, но Python runtime для разметки говорящих не запускается.".to_string(),
+        "sherpa-onnx установлен, но Python runtime для разметки говорящих не запускается."
+            .to_string(),
     ))
 }
 

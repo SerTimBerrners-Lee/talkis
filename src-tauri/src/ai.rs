@@ -684,8 +684,12 @@ async fn transcribe_file_via_proxy_diarized(
         return Err(format!("Proxy diarized error ({}): {}", status, body));
     }
 
-    serde_json::from_str::<TranscribeResponse>(&body)
-        .map_err(|err| format!("Talkis Cloud returned an invalid diarized response: {}", err))
+    serde_json::from_str::<TranscribeResponse>(&body).map_err(|err| {
+        format!(
+            "Talkis Cloud returned an invalid diarized response: {}",
+            err
+        )
+    })
 }
 
 #[derive(Deserialize)]
@@ -995,8 +999,7 @@ pub async fn transcribe_file_path(
 
     emit_file_progress(&app, &req.request_id, "preparing", 0, 0, "Готовим файл");
     if req.speaker_diarization && !req.use_own_key {
-        let prepared =
-            media::prepare_media_file_for_proxy_transcription(&app, &input_path).await?;
+        let prepared = media::prepare_media_file_for_proxy_transcription(&app, &input_path).await?;
         emit_file_progress(
             &app,
             &req.request_id,
@@ -1837,9 +1840,13 @@ pub async fn install_stt_model(
                 tokio::time::sleep(Duration::from_millis(700)).await;
             }
 
-            if let Ok(runtime_base_url) =
-                local_stt::ensure_runtime(&app, client, &models_url, req.local_models_dir.as_deref())
-                    .await
+            if let Ok(runtime_base_url) = local_stt::ensure_runtime(
+                &app,
+                client,
+                &models_url,
+                req.local_models_dir.as_deref(),
+            )
+            .await
             {
                 effective_whisper_endpoint = Some(runtime_base_url.clone());
                 let retry_models_url = resolve_managed_models_url(&runtime_base_url);
@@ -1865,7 +1872,8 @@ pub async fn install_stt_model(
                         error_text = retry_response.text().await.unwrap_or_default();
                     }
                     Err(err) => {
-                        error_text = format!("Ошибка повторной установки diarization runtime: {}", err);
+                        error_text =
+                            format!("Ошибка повторной установки diarization runtime: {}", err);
                     }
                 }
             }

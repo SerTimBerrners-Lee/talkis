@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { Mic, Keyboard, Check, AlertCircle } from "lucide-react";
+import { Mic, Keyboard, Check, AlertCircle, Volume2 } from "lucide-react";
 import {
   PermissionStatus,
   checkAccessibilityPermission,
   checkMicrophonePermission,
+  checkSystemAudioPermission,
   requestMicrophonePermission,
+  requestSystemAudioPermission,
 } from "../lib/permissions";
 import { logError } from "../lib/logger";
-import { IDLE_WIDGET_HEIGHT, IDLE_WIDGET_WIDTH } from "../windows/widget/widgetConstants";
+import {
+  IDLE_WIDGET_HEIGHT,
+  IDLE_WIDGET_WIDTH,
+} from "../windows/widget/widgetConstants";
 
 interface PermissionRowProps {
   icon: React.ReactNode;
@@ -20,7 +25,14 @@ interface PermissionRowProps {
   helpText?: string;
 }
 
-function PermissionRow({ icon, title, description, status, onAction, helpText }: PermissionRowProps) {
+function PermissionRow({
+  icon,
+  title,
+  description,
+  status,
+  onAction,
+  helpText,
+}: PermissionRowProps) {
   const isGranted = status === "granted";
   const isDenied = status === "denied";
   const isPrompting = status === "prompting";
@@ -54,18 +66,38 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 6,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-hi)" }}>{title}</div>
-            <span style={{
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: isGranted ? "var(--success)" : "var(--text-low)",
-            }}>
-              {isGranted ? "Готово" : isPrompting ? "Проверьте" : isDenied ? "Нужно действие" : "Не выдано"}
-            </span>
+            <div
+              style={{ fontSize: 14, fontWeight: 600, color: "var(--text-hi)" }}
+            >
+              {title}
+            </div>
+            {!isGranted && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "var(--text-low)",
+                }}
+              >
+                {isPrompting
+                  ? "Проверьте"
+                  : isDenied
+                    ? "Нужно действие"
+                    : "Не выдано"}
+              </span>
+            )}
           </div>
 
           {!isGranted && (
@@ -80,8 +112,12 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
                 letterSpacing: "0.06em",
                 cursor: "pointer",
                 border: "none",
-                background: isPrompting ? "var(--control-muted)" : "var(--accent)",
-                color: isPrompting ? "var(--text-hi)" : "var(--accent-contrast)",
+                background: isPrompting
+                  ? "var(--control-muted)"
+                  : "var(--accent)",
+                color: isPrompting
+                  ? "var(--text-hi)"
+                  : "var(--accent-contrast)",
                 fontFamily: "var(--font)",
                 transition: "opacity 0.15s",
               }}
@@ -91,8 +127,23 @@ function PermissionRow({ icon, title, description, status, onAction, helpText }:
           )}
         </div>
 
-        <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>{description}</div>
-        {helpText && <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-low)", lineHeight: 1.55 }}>{helpText}</div>}
+        <div
+          style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}
+        >
+          {description}
+        </div>
+        {helpText && (
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: 12,
+              color: "var(--text-low)",
+              lineHeight: 1.55,
+            }}
+          >
+            {helpText}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -146,6 +197,8 @@ function microphoneHelpText(platform: DesktopPlatform): string {
 export function PermissionScreen({ onComplete }: PermissionScreenProps) {
   const [micStatus, setMicStatus] = useState<PermissionStatus>("unknown");
   const [accStatus, setAccStatus] = useState<PermissionStatus>("unknown");
+  const [systemAudioStatus, setSystemAudioStatus] =
+    useState<PermissionStatus>("unknown");
   const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo | null>(null);
 
   const refreshAccessibilityStatus = useCallback(async () => {
@@ -163,13 +216,18 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
   }, []);
 
   const refreshAllPermissions = useCallback(async () => {
-    const [nextMicStatus, nextAccStatus] = await Promise.all([
-      checkMicrophonePermission(),
-      refreshAccessibilityStatus(),
-    ]);
+    const [nextMicStatus, nextAccStatus, nextSystemAudioStatus] =
+      await Promise.all([
+        checkMicrophonePermission(),
+        refreshAccessibilityStatus(),
+        checkSystemAudioPermission(),
+      ]);
 
     setMicStatus(nextMicStatus);
-    return { nextMicStatus, nextAccStatus };
+    setSystemAudioStatus((current) =>
+      current === "granted" ? "granted" : nextSystemAudioStatus,
+    );
+    return { nextMicStatus, nextAccStatus, nextSystemAudioStatus };
   }, [refreshAccessibilityStatus]);
 
   useEffect(() => {
@@ -180,7 +238,10 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
     invoke<AppRuntimeInfo>("get_app_runtime_info")
       .then(setRuntimeInfo)
       .catch((error) => {
-        void logError("PERMISSIONS", `Failed to load runtime info: ${error instanceof Error ? error.message : String(error)}`);
+        void logError(
+          "PERMISSIONS",
+          `Failed to load runtime info: ${error instanceof Error ? error.message : String(error)}`,
+        );
       });
   }, []);
 
@@ -231,16 +292,33 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
     try {
       await invoke("reset_accessibility_permission");
     } catch (e) {
-      void logError("PERMISSIONS", `Failed to reset accessibility permission: ${e instanceof Error ? e.message : String(e)}`);
+      void logError(
+        "PERMISSIONS",
+        `Failed to reset accessibility permission: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
 
     try {
       await invoke("open_accessibility_settings");
       setAccStatus("prompting");
     } catch (e) {
-      void logError("PERMISSIONS", `Failed to open accessibility settings: ${e instanceof Error ? e.message : String(e)}`);
+      void logError(
+        "PERMISSIONS",
+        `Failed to open accessibility settings: ${e instanceof Error ? e.message : String(e)}`,
+      );
       setAccStatus("denied");
     }
+  };
+
+  const handleSystemAudioRequest = async () => {
+    if (!requiresSystemAudio) {
+      setSystemAudioStatus("granted");
+      return;
+    }
+
+    setSystemAudioStatus("prompting");
+    const granted = await requestSystemAudioPermission();
+    setSystemAudioStatus(granted ? "granted" : "denied");
   };
 
   const handleContinue = async () => {
@@ -251,22 +329,32 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
 
     const { nextMicStatus, nextAccStatus } = await refreshAllPermissions();
 
-    if (nextMicStatus !== "granted" || (requiresAccessibility && nextAccStatus !== "granted")) {
+    if (
+      nextMicStatus !== "granted" ||
+      (requiresAccessibility && nextAccStatus !== "granted") ||
+      (requiresSystemAudio && systemAudioStatus !== "granted")
+    ) {
       return;
     }
 
-    await invoke("widget_resize", { width: IDLE_WIDGET_WIDTH, height: IDLE_WIDGET_HEIGHT });
+    await invoke("widget_resize", {
+      width: IDLE_WIDGET_WIDTH,
+      height: IDLE_WIDGET_HEIGHT,
+    });
     onComplete();
   };
 
   const platform = runtimeInfo?.platform ?? detectDesktopPlatform();
   const requiresAccessibility = platform === "macos";
+  const requiresSystemAudio = platform === "macos";
   // In dev mode the binary lives in the build target dir (e.g. /Volumes/...),
   // which is not /Applications - but that's expected, so skip the warning.
   const shouldShowInstallWarning = import.meta.env.DEV
     ? false
     : Boolean(runtimeInfo?.shouldMoveToApplications);
-  const pastePermissionTitle = requiresAccessibility ? "Универсальный доступ" : "Вставка текста";
+  const pastePermissionTitle = requiresAccessibility
+    ? "Универсальный доступ"
+    : "Вставка текста";
   const pastePermissionDescription = requiresAccessibility
     ? "Нужен для глобальной горячей клавиши и вставки текста."
     : platform === "linux"
@@ -277,15 +365,21 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
     : platform === "linux"
       ? "Если вставка не сработает, скопированный текст останется в буфере обмена и его можно вставить вручную."
       : undefined;
-  const canContinue = micStatus === "granted" && (!requiresAccessibility || accStatus === "granted");
+  const canContinue =
+    micStatus === "granted" &&
+    (!requiresAccessibility || accStatus === "granted") &&
+    (!requiresSystemAudio || systemAudioStatus === "granted");
   const canCompleteOnboarding = canContinue && !shouldShowInstallWarning;
 
   return (
     <div
       style={{
         position: "fixed",
-        inset: 0,
-        background: "var(--overlay-bg)",
+        top: 48,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        background: "var(--main-bg)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         zIndex: 9999,
@@ -308,38 +402,38 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
             display: "flex",
             flexDirection: "column",
             gap: 20,
-            borderRadius: 14,
+            borderRadius: 10,
             background: "var(--surface-hi)",
             border: "1px solid var(--border)",
-            backdropFilter: "blur(18px)",
-            WebkitBackdropFilter: "blur(18px)",
             boxShadow: "var(--shadow-panel)",
           }}
         >
           {/* Header */}
           <div style={{ display: "grid", gap: 8 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: "var(--text-low)",
-            }}>
-              Настройка доступов
-            </div>
-            <h1 style={{
-              fontSize: 28,
-              lineHeight: 1,
-              margin: 0,
-              fontWeight: 800,
-              fontFamily: "var(--font-brand)",
-              letterSpacing: "-0.04em",
-              color: "var(--text-hi)",
-            }}>
+            <h1
+              style={{
+                fontSize: 28,
+                lineHeight: 1,
+                margin: 0,
+                fontWeight: 800,
+                fontFamily: "var(--font-brand)",
+                letterSpacing: "-0.04em",
+                color: "var(--text-hi)",
+              }}
+            >
               Доступы для Talkis
             </h1>
-            <p style={{ margin: 0, maxWidth: 520, fontSize: 13, color: "var(--text-mid)", lineHeight: 1.7 }}>
-              Осталось выдать системные разрешения для записи с микрофона и работы глобальной горячей клавиши.
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 520,
+                fontSize: 13,
+                color: "var(--text-mid)",
+                lineHeight: 1.7,
+              }}
+            >
+              Осталось выдать системные разрешения для записи голоса, звука
+              созвона и работы горячей клавиши.
             </p>
           </div>
 
@@ -357,13 +451,33 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                   border: "1px solid var(--danger-border)",
                 }}
               >
-                <AlertCircle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 1 }} />
+                <AlertCircle
+                  size={16}
+                  style={{
+                    color: "var(--danger)",
+                    flexShrink: 0,
+                    marginTop: 1,
+                  }}
+                />
                 <div style={{ display: "grid", gap: 4 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "var(--danger)",
+                    }}
+                  >
                     Переместите приложение в Applications
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
-                    Текущая сборка запущена из временного места. Переместите Talkis в Applications и откройте оттуда.
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-mid)",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Текущая сборка запущена из временного места. Переместите
+                    Talkis в Applications и откройте оттуда.
                   </div>
                 </div>
               </div>
@@ -377,11 +491,28 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
               onAction={handleMicRequest}
             />
 
+            {requiresSystemAudio && (
+              <PermissionRow
+                icon={<Volume2 size={16} strokeWidth={1.8} />}
+                title="Звук системы"
+                description="Нужен, чтобы слушать звук созвона вместе с микрофоном."
+                status={systemAudioStatus}
+                onAction={handleSystemAudioRequest}
+                helpText="После нажатия macOS может попросить разрешить Talkis запись системного аудио."
+              />
+            )}
+
             <PermissionRow
               icon={<Keyboard size={16} strokeWidth={1.8} />}
               title={pastePermissionTitle}
               description={pastePermissionDescription}
-              status={requiresAccessibility && shouldShowInstallWarning ? "denied" : requiresAccessibility ? accStatus : "granted"}
+              status={
+                requiresAccessibility && shouldShowInstallWarning
+                  ? "denied"
+                  : requiresAccessibility
+                    ? accStatus
+                    : "granted"
+              }
               onAction={() => {
                 if (shouldShowInstallWarning) {
                   void openPath("/Applications");
@@ -395,7 +526,9 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
           </div>
 
           {/* Hint */}
-          {(accStatus === "prompting" || micStatus === "denied") && (
+          {(accStatus === "prompting" ||
+            micStatus === "denied" ||
+            systemAudioStatus === "denied") && (
             <div
               style={{
                 display: "flex",
@@ -407,25 +540,57 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                 border: "1px solid var(--border-subtle)",
               }}
             >
-              <AlertCircle size={14} style={{ color: "var(--text-low)", flexShrink: 0, marginTop: 1 }} />
-              <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.6 }}>
-              {micStatus === "denied"
+              <AlertCircle
+                size={14}
+                style={{
+                  color: "var(--text-low)",
+                  flexShrink: 0,
+                  marginTop: 1,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-mid)",
+                  lineHeight: 1.6,
+                }}
+              >
+                {micStatus === "denied"
                   ? microphoneHelpText(platform)
-                  : shouldShowInstallWarning
-                    ? "После перемещения приложения в Applications откройте его заново."
-                    : "macOS применяет доступ не мгновенно. После изменения настройки вернитесь в приложение."}
+                  : systemAudioStatus === "denied"
+                    ? "Если доступ был отклонен, откройте Системные настройки -> Конфиденциальность и безопасность -> Запись экрана и системного аудио и включите Talkis."
+                    : shouldShowInstallWarning
+                      ? "После перемещения приложения в Applications откройте его заново."
+                      : "macOS применяет доступ не мгновенно. После изменения настройки вернитесь в приложение."}
               </div>
             </div>
           )}
 
           {/* Footer */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
-            <div style={{ fontSize: 12, color: canContinue ? "var(--success)" : "var(--text-low)", lineHeight: 1.55 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 16,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                color: canContinue ? "var(--success)" : "var(--text-low)",
+                lineHeight: 1.55,
+              }}
+            >
               {shouldShowInstallWarning
                 ? "Сначала запустите из Applications."
                 : canContinue
                   ? "Все доступы выданы."
-                  : requiresAccessibility ? "Выдайте оба разрешения для продолжения." : "Разрешите микрофон для продолжения."}
+                  : requiresSystemAudio
+                    ? "Выдайте разрешения для продолжения."
+                    : requiresAccessibility
+                      ? "Выдайте оба разрешения для продолжения."
+                      : "Разрешите микрофон для продолжения."}
             </div>
             <button
               onClick={handleContinue}
@@ -438,14 +603,22 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
                 letterSpacing: "0.06em",
                 cursor: "pointer",
                 border: "none",
-                background: canCompleteOnboarding ? "var(--accent)" : "var(--control-muted)",
-                color: canCompleteOnboarding ? "var(--accent-contrast)" : "var(--text-hi)",
+                background: canCompleteOnboarding
+                  ? "var(--accent)"
+                  : "var(--control-muted)",
+                color: canCompleteOnboarding
+                  ? "var(--accent-contrast)"
+                  : "var(--text-hi)",
                 fontFamily: "var(--font)",
                 transition: "opacity 0.15s",
                 minWidth: 140,
               }}
             >
-              {canCompleteOnboarding ? "Продолжить" : shouldShowInstallWarning ? "Applications" : "Проверить"}
+              {canCompleteOnboarding
+                ? "Продолжить"
+                : shouldShowInstallWarning
+                  ? "Applications"
+                  : "Проверить"}
             </button>
           </div>
         </div>

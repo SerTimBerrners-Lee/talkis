@@ -168,9 +168,15 @@ select {
     radial-gradient(circle at right 20%, var(--app-gradient-b), transparent 24%),
     linear-gradient(180deg, var(--app-gradient-start) 0%, var(--bg) 42%, var(--app-gradient-end) 100%);
   border-radius: var(--radius-app);
+  clip-path: inset(0 round var(--radius-app));
   overflow: hidden;
   position: relative;
   isolation: isolate;
+  contain: paint;
+}
+
+.app-root > * {
+  border-radius: inherit;
 }
 
 #root {
@@ -586,6 +592,34 @@ select {
   border-radius: 999px;
   background: #ff4d4d;
   box-shadow: none;
+}
+
+.flow-widget-long-mark.is-phone,
+.flow-widget-long-mark.is-success,
+.flow-widget-long-mark.is-error {
+  left: 5px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.flow-widget-long-mark.is-phone {
+  background: transparent;
+  color: #ff4d4d;
+}
+
+.flow-widget-long-mark.is-success {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.flow-widget-long-mark.is-error {
+  background: #ff4d4d;
 }
 
 /* ── Collapsible details/summary ──────────────────────── */

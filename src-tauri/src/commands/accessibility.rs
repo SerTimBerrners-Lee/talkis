@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 const APP_BUNDLE_ID: &str = "com.trixter.talkis";
 
 #[cfg(target_os = "macos")]

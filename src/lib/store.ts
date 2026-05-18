@@ -6,9 +6,15 @@ export interface HistoryEntry {
   duration: number;
   raw: string;
   cleaned: string;
-  source?: "voice" | "file";
+  source?: "voice" | "file" | "call";
   fileName?: string;
   fileSize?: number;
+  callSessionId?: string;
+  callTracks?: {
+    kind: "mic" | "system";
+    label: string;
+    path: string;
+  }[];
   status?: "completed" | "failed";
   errorMessage?: string;
   audioBase64?: string;
@@ -100,6 +106,7 @@ export interface WidgetPosition {
 
 const HISTORY_MAX_VOICE_ENTRIES = 1000;
 const HISTORY_MAX_FILE_ENTRIES = 200;
+const HISTORY_MAX_CALL_ENTRIES = 200;
 const HISTORY_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 const MODIFIER_ORDER = ["Control", "Alt", "Shift", "Command"] as const;
@@ -208,12 +215,16 @@ function isFunctionKey(part: string): boolean {
   return FUNCTION_KEY_PATTERN.test(part);
 }
 
-export function validateHotkey(hotkey: string): { valid: boolean; error?: string } {
+export function validateHotkey(hotkey: string): {
+  valid: boolean;
+  error?: string;
+} {
   const parts = hotkey.split("+").map((part) => normalizeHotkeyPart(part));
   if (parts.some((part) => part === null)) {
     return {
       valid: false,
-      error: "Поддерживаются буквы, цифры, Space, F-клавиши и стандартные модификаторы",
+      error:
+        "Поддерживаются буквы, цифры, Space, F-клавиши и стандартные модификаторы",
     };
   }
 
@@ -249,10 +260,15 @@ export function validateHotkey(hotkey: string): { valid: boolean; error?: string
     };
   }
 
-  if (isMacPlatform() && modifiers.includes("Control") && modifiers.includes("Alt")) {
+  if (
+    isMacPlatform() &&
+    modifiers.includes("Control") &&
+    modifiers.includes("Alt")
+  ) {
     return {
       valid: false,
-      error: "На macOS сочетания Control + Option часто перехватываются VoiceOver. Выберите другое сочетание.",
+      error:
+        "На macOS сочетания Control + Option часто перехватываются VoiceOver. Выберите другое сочетание.",
     };
   }
 
@@ -266,7 +282,11 @@ export function validateHotkey(hotkey: string): { valid: boolean; error?: string
   return { valid: true };
 }
 
-export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: string; error?: string } {
+export function normalizeHotkey(hotkey: string): {
+  valid: boolean;
+  normalized?: string;
+  error?: string;
+} {
   const validation = validateHotkey(hotkey);
   if (!validation.valid) {
     return validation;
@@ -276,7 +296,9 @@ export function normalizeHotkey(hotkey: string): { valid: boolean; normalized?: 
     .split("+")
     .map((part) => normalizeHotkeyPart(part))
     .filter((part): part is string => part !== null);
-  const modifiers = MODIFIER_ORDER.filter((modifier) => parts.includes(modifier));
+  const modifiers = MODIFIER_ORDER.filter((modifier) =>
+    parts.includes(modifier),
+  );
   const mainKey = parts.find((part) => !isModifier(part));
 
   if (!mainKey) {
@@ -349,67 +371,118 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
   }
 
   const raw = saved as Record<string, unknown>;
-  const rawApiAdapters = raw.apiAdapters && typeof raw.apiAdapters === "object"
-    ? Object.entries(raw.apiAdapters as Record<string, unknown>).reduce<Record<string, ApiAdapterSettings>>((acc, [key, value]) => {
-        if (!value || typeof value !== "object") return acc;
+  const rawApiAdapters =
+    raw.apiAdapters && typeof raw.apiAdapters === "object"
+      ? Object.entries(raw.apiAdapters as Record<string, unknown>).reduce<
+          Record<string, ApiAdapterSettings>
+        >((acc, [key, value]) => {
+          if (!value || typeof value !== "object") return acc;
 
-        const adapter = value as Record<string, unknown>;
-        acc[key] = {
-          apiKey: typeof adapter.apiKey === "string" ? adapter.apiKey : "",
-          model: typeof adapter.model === "string" ? adapter.model : "",
-          endpoint: typeof adapter.endpoint === "string" ? adapter.endpoint : undefined,
-          connectionStatus: adapter.connectionStatus === "saved" || adapter.connectionStatus === "verified"
-            ? adapter.connectionStatus
-            : undefined,
-          lastConnectedAt: typeof adapter.lastConnectedAt === "string" ? adapter.lastConnectedAt : undefined,
-          lastTestedApiKey: typeof adapter.lastTestedApiKey === "string" ? adapter.lastTestedApiKey : undefined,
-          lastTestedModel: typeof adapter.lastTestedModel === "string" ? adapter.lastTestedModel : undefined,
-          lastTestedEndpoint: typeof adapter.lastTestedEndpoint === "string" ? adapter.lastTestedEndpoint : undefined,
-        };
-        return acc;
-      }, {})
-    : undefined;
+          const adapter = value as Record<string, unknown>;
+          acc[key] = {
+            apiKey: typeof adapter.apiKey === "string" ? adapter.apiKey : "",
+            model: typeof adapter.model === "string" ? adapter.model : "",
+            endpoint:
+              typeof adapter.endpoint === "string"
+                ? adapter.endpoint
+                : undefined,
+            connectionStatus:
+              adapter.connectionStatus === "saved" ||
+              adapter.connectionStatus === "verified"
+                ? adapter.connectionStatus
+                : undefined,
+            lastConnectedAt:
+              typeof adapter.lastConnectedAt === "string"
+                ? adapter.lastConnectedAt
+                : undefined,
+            lastTestedApiKey:
+              typeof adapter.lastTestedApiKey === "string"
+                ? adapter.lastTestedApiKey
+                : undefined,
+            lastTestedModel:
+              typeof adapter.lastTestedModel === "string"
+                ? adapter.lastTestedModel
+                : undefined,
+            lastTestedEndpoint:
+              typeof adapter.lastTestedEndpoint === "string"
+                ? adapter.lastTestedEndpoint
+                : undefined,
+          };
+          return acc;
+        }, {})
+      : undefined;
 
-  const rawLocalModels = raw.localModels && typeof raw.localModels === "object"
-    ? Object.entries(raw.localModels as Record<string, unknown>).reduce<Record<string, LocalModelSettings>>((acc, [key, value]) => {
-        if (!value || typeof value !== "object") return acc;
+  const rawLocalModels =
+    raw.localModels && typeof raw.localModels === "object"
+      ? Object.entries(raw.localModels as Record<string, unknown>).reduce<
+          Record<string, LocalModelSettings>
+        >((acc, [key, value]) => {
+          if (!value || typeof value !== "object") return acc;
 
-        const model = value as Record<string, unknown>;
-        const status = model.status === "downloading" || model.status === "downloaded" || model.status === "error"
-          ? model.status
-          : "not_downloaded";
-        acc[key] = {
-          status,
-          message: typeof model.message === "string" ? model.message : undefined,
-          downloadedAt: typeof model.downloadedAt === "string" ? model.downloadedAt : undefined,
-          lastCheckedAt: typeof model.lastCheckedAt === "string" ? model.lastCheckedAt : undefined,
-        };
-        return acc;
-      }, {})
-    : undefined;
+          const model = value as Record<string, unknown>;
+          const status =
+            model.status === "downloading" ||
+            model.status === "downloaded" ||
+            model.status === "error"
+              ? model.status
+              : "not_downloaded";
+          acc[key] = {
+            status,
+            message:
+              typeof model.message === "string" ? model.message : undefined,
+            downloadedAt:
+              typeof model.downloadedAt === "string"
+                ? model.downloadedAt
+                : undefined,
+            lastCheckedAt:
+              typeof model.lastCheckedAt === "string"
+                ? model.lastCheckedAt
+                : undefined,
+          };
+          return acc;
+        }, {})
+      : undefined;
 
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
     apiAdapters: rawApiAdapters,
-    selectedApiAdapter: typeof raw.selectedApiAdapter === "string" ? raw.selectedApiAdapter : undefined,
+    selectedApiAdapter:
+      typeof raw.selectedApiAdapter === "string"
+        ? raw.selectedApiAdapter
+        : undefined,
     localModels: rawLocalModels,
-    localModelsDir: typeof raw.localModelsDir === "string" ? raw.localModelsDir : undefined,
-    whisperApiKey: typeof raw.whisperApiKey === "string" ? raw.whisperApiKey : undefined,
+    localModelsDir:
+      typeof raw.localModelsDir === "string" ? raw.localModelsDir : undefined,
+    whisperApiKey:
+      typeof raw.whisperApiKey === "string" ? raw.whisperApiKey : undefined,
     llmApiKey: typeof raw.llmApiKey === "string" ? raw.llmApiKey : undefined,
     provider: parseProvider(raw.provider),
-    whisperModel: typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
+    whisperModel:
+      typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
     llmModel: typeof raw.llmModel === "string" ? raw.llmModel : undefined,
-    hotkey: typeof raw.hotkey === "string" ? normalizeHotkey(raw.hotkey).normalized : undefined,
+    hotkey:
+      typeof raw.hotkey === "string"
+        ? normalizeHotkey(raw.hotkey).normalized
+        : undefined,
     theme: parseTheme(raw.theme),
     language: typeof raw.language === "string" ? raw.language : undefined,
-    doubleTapTimeout: typeof raw.doubleTapTimeout === "number" ? raw.doubleTapTimeout : undefined,
+    doubleTapTimeout:
+      typeof raw.doubleTapTimeout === "number"
+        ? raw.doubleTapTimeout
+        : undefined,
     style: parseStyle(raw.style),
     micId: typeof raw.micId === "string" ? raw.micId : undefined,
-    whisperEndpoint: typeof raw.whisperEndpoint === "string" ? raw.whisperEndpoint : undefined,
-    llmEndpoint: typeof raw.llmEndpoint === "string" ? raw.llmEndpoint : undefined,
+    whisperEndpoint:
+      typeof raw.whisperEndpoint === "string" ? raw.whisperEndpoint : undefined,
+    llmEndpoint:
+      typeof raw.llmEndpoint === "string" ? raw.llmEndpoint : undefined,
     useOwnKey: typeof raw.useOwnKey === "boolean" ? raw.useOwnKey : undefined,
-    deviceToken: typeof raw.deviceToken === "string" ? raw.deviceToken : undefined,
-    fileSpeakerDiarization: typeof raw.fileSpeakerDiarization === "boolean" ? raw.fileSpeakerDiarization : undefined,
+    deviceToken:
+      typeof raw.deviceToken === "string" ? raw.deviceToken : undefined,
+    fileSpeakerDiarization:
+      typeof raw.fileSpeakerDiarization === "boolean"
+        ? raw.fileSpeakerDiarization
+        : undefined,
   };
 }
 
@@ -422,8 +495,14 @@ async function getStore() {
   return _store;
 }
 
-function getHistoryEntrySource(entry: HistoryEntry): NonNullable<HistoryEntry["source"]> {
-  return entry.source === "file" ? "file" : "voice";
+function getHistoryEntrySource(
+  entry: HistoryEntry,
+): NonNullable<HistoryEntry["source"]> {
+  if (entry.source === "file" || entry.source === "call") {
+    return entry.source;
+  }
+
+  return "voice";
 }
 
 function estimateJsonBytes(value: unknown): number {
@@ -438,10 +517,12 @@ function pruneHistory(history: HistoryEntry[]): HistoryEntry[] {
   // Limits:
   // - voice: 1000 entries
   // - file: 200 entries
+  // - call: 200 entries
   // - combined JSON payload: 50 MB
   const limitedByType: HistoryEntry[] = [];
   let voiceCount = 0;
   let fileCount = 0;
+  let callCount = 0;
 
   for (const entry of history) {
     const source = getHistoryEntrySource(entry);
@@ -451,6 +532,11 @@ function pruneHistory(history: HistoryEntry[]): HistoryEntry[] {
         continue;
       }
       fileCount += 1;
+    } else if (source === "call") {
+      if (callCount >= HISTORY_MAX_CALL_ENTRIES) {
+        continue;
+      }
+      callCount += 1;
     } else {
       if (voiceCount >= HISTORY_MAX_VOICE_ENTRIES) {
         continue;
@@ -461,7 +547,10 @@ function pruneHistory(history: HistoryEntry[]): HistoryEntry[] {
     limitedByType.push(entry);
   }
 
-  while (limitedByType.length > 1 && estimateJsonBytes(limitedByType) > HISTORY_MAX_TOTAL_BYTES) {
+  while (
+    limitedByType.length > 1 &&
+    estimateJsonBytes(limitedByType) > HISTORY_MAX_TOTAL_BYTES
+  ) {
     limitedByType.pop();
   }
 
@@ -472,13 +561,18 @@ interface GetSettingsOptions {
   reload?: boolean;
 }
 
-export async function getSettings(options: GetSettingsOptions = {}): Promise<AppSettings> {
+export async function getSettings(
+  options: GetSettingsOptions = {},
+): Promise<AppSettings> {
   const store = await getStore();
   if (options.reload) {
     try {
       await store.reload();
     } catch (error) {
-      console.warn("Failed to reload settings store, using in-memory store", error);
+      console.warn(
+        "Failed to reload settings store, using in-memory store",
+        error,
+      );
     }
   }
   const saved = await store.get<unknown>("settings");
@@ -491,7 +585,9 @@ export async function getSettings(options: GetSettingsOptions = {}): Promise<App
   return result;
 }
 
-export async function saveSettings(settings: Partial<AppSettings>): Promise<void> {
+export async function saveSettings(
+  settings: Partial<AppSettings>,
+): Promise<void> {
   const store = await getStore();
   const current = await getSettings({ reload: true });
   const nextSettings = { ...current, ...settings };
@@ -525,7 +621,9 @@ export async function addHistoryEntry(entry: HistoryEntry): Promise<void> {
 export async function updateHistoryEntry(entry: HistoryEntry): Promise<void> {
   const store = await getStore();
   const history = await getHistory();
-  const updated = pruneHistory(history.map((item) => (item.id === entry.id ? entry : item)));
+  const updated = pruneHistory(
+    history.map((item) => (item.id === entry.id ? entry : item)),
+  );
   await store.set("history", updated);
   await store.save();
 }
@@ -533,7 +631,10 @@ export async function updateHistoryEntry(entry: HistoryEntry): Promise<void> {
 export async function deleteHistoryEntry(id: string): Promise<void> {
   const store = await getStore();
   const history = await getHistory();
-  await store.set("history", history.filter((e) => e.id !== id));
+  await store.set(
+    "history",
+    history.filter((e) => e.id !== id),
+  );
   await store.save();
 }
 
@@ -544,16 +645,24 @@ export async function clearHistory(): Promise<void> {
 }
 
 const PERMISSIONS_PASSED_KEY = "permissions_passed";
+const PERMISSIONS_VERSION_KEY = "permissions_version";
+const CURRENT_PERMISSIONS_VERSION = 2;
 const WIDGET_POSITION_KEY = "widget_position";
 
 export async function getPermissionsPassed(): Promise<boolean> {
   const store = await getStore();
-  return (await store.get<boolean>(PERMISSIONS_PASSED_KEY)) ?? false;
+  const passed = (await store.get<boolean>(PERMISSIONS_PASSED_KEY)) ?? false;
+  const version = (await store.get<number>(PERMISSIONS_VERSION_KEY)) ?? 1;
+  return passed && version >= CURRENT_PERMISSIONS_VERSION;
 }
 
 export async function setPermissionsPassed(value: boolean): Promise<void> {
   const store = await getStore();
   await store.set(PERMISSIONS_PASSED_KEY, value);
+  await store.set(
+    PERMISSIONS_VERSION_KEY,
+    value ? CURRENT_PERMISSIONS_VERSION : 0,
+  );
   await store.save();
 }
 
@@ -573,7 +682,9 @@ export async function getWidgetPosition(): Promise<WidgetPosition | null> {
   return { x: raw.x, y: raw.y };
 }
 
-export async function saveWidgetPosition(position: WidgetPosition): Promise<void> {
+export async function saveWidgetPosition(
+  position: WidgetPosition,
+): Promise<void> {
   const store = await getStore();
   await store.set(WIDGET_POSITION_KEY, position);
   await store.save();

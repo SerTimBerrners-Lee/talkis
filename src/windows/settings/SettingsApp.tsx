@@ -2,15 +2,35 @@ import { useState, useEffect } from "react";
 import type { ReactElement } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { Download, FileAudio, Home, Cpu, Loader2, Sparkles, Sliders, LucideIcon } from "lucide-react";
+import {
+  Download,
+  FileAudio,
+  Home,
+  Cpu,
+  Loader2,
+  Sparkles,
+  Sliders,
+  LucideIcon,
+} from "lucide-react";
 import { TitleBar } from "../../components/TitleBar";
 import { MainTab } from "./tabs/MainTab";
 import { FileTranscriptionTab } from "./tabs/FileTranscriptionTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { SettingsTabs } from "./tabs/SettingsTabs";
 import { PermissionScreen } from "../../components/PermissionScreen";
-import { SETTINGS_NAVIGATE_EVENT, SETTINGS_UPDATED_EVENT, SettingsNavigatePayload } from "../../lib/hotkeyEvents";
-import { getPermissionsPassed, setPermissionsPassed, getHistory, getSettings, HistoryEntry, type ThemePreference } from "../../lib/store";
+import {
+  SETTINGS_NAVIGATE_EVENT,
+  SETTINGS_UPDATED_EVENT,
+  SettingsNavigatePayload,
+} from "../../lib/hotkeyEvents";
+import {
+  getPermissionsPassed,
+  setPermissionsPassed,
+  getHistory,
+  getSettings,
+  HistoryEntry,
+  type ThemePreference,
+} from "../../lib/store";
 import { checkAllPermissions } from "../../lib/permissions";
 import { logError } from "../../lib/logger";
 import { UserPanel } from "../../components/UserPanel";
@@ -27,7 +47,12 @@ type Tab = "main" | "file" | "settings" | "model" | "style";
 function resolveInitialTab(): Tab {
   const requestedTab = new URLSearchParams(window.location.search).get("tab");
 
-  if (requestedTab === "file" || requestedTab === "settings" || requestedTab === "model" || requestedTab === "style") {
+  if (
+    requestedTab === "file" ||
+    requestedTab === "settings" ||
+    requestedTab === "model" ||
+    requestedTab === "style"
+  ) {
     return requestedTab;
   }
 
@@ -35,18 +60,45 @@ function resolveInitialTab(): Tab {
 }
 
 const TABS: { id: Tab; label: string; icon: LucideIcon; note: string }[] = [
-  { id: "main", label: "Главное", icon: Home, note: "История записей" },
-  { id: "file", label: "Файлы", icon: FileAudio, note: "Транскрибация файла" },
-  { id: "settings", label: "Настройки", icon: Sliders, note: "Язык, микрофон и горячая клавиша" },
-  { id: "model", label: "Модели", icon: Cpu, note: "Ключи и подключение модели" },
+  { id: "main", label: "Главная", icon: Home, note: "История записей" },
+  {
+    id: "file",
+    label: "Транскрибация",
+    icon: FileAudio,
+    note: "Транскрибация",
+  },
+  {
+    id: "settings",
+    label: "Настройки",
+    icon: Sliders,
+    note: "Язык, микрофон и горячая клавиша",
+  },
+  {
+    id: "model",
+    label: "Модели",
+    icon: Cpu,
+    note: "Ключи и подключение модели",
+  },
   { id: "style", label: "Стиль", icon: Sparkles, note: "Обработка текста" },
 ];
 
-function TabButton({ tab, isActive, onClick }: { tab: typeof TABS[0]; isActive: boolean; onClick: () => void }) {
+function TabButton({
+  tab,
+  isActive,
+  onClick,
+}: {
+  tab: (typeof TABS)[0];
+  isActive: boolean;
+  onClick: () => void;
+}) {
   const Icon = tab.icon;
 
   return (
-    <button onClick={onClick} className={`nav-item ${isActive ? "active" : ""}`} style={{ width: "100%", textAlign: "left", font: "inherit" }}>
+    <button
+      onClick={onClick}
+      className={`nav-item ${isActive ? "active" : ""}`}
+      style={{ width: "100%", textAlign: "left", font: "inherit" }}
+    >
       <Icon size={18} strokeWidth={isActive ? 2.2 : 1.6} />
       <span>{tab.label}</span>
     </button>
@@ -56,8 +108,17 @@ function TabButton({ tab, isActive, onClick }: { tab: typeof TABS[0]; isActive: 
 function SidebarLogo() {
   return (
     <div style={{ padding: "4px 8px 12px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 3, height: 22 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 6,
+        }}
+      >
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 3, height: 22 }}
+        >
           {[8, 16, 11, 19, 10].map((height, index) => (
             <span
               key={index}
@@ -72,7 +133,16 @@ function SidebarLogo() {
             />
           ))}
         </div>
-        <div style={{ fontSize: 30, lineHeight: 0.95, fontWeight: 800, letterSpacing: "-0.06em", fontFamily: "var(--font-brand)", color: "var(--text-hi)" }}>
+        <div
+          style={{
+            fontSize: 30,
+            lineHeight: 0.95,
+            fontWeight: 800,
+            letterSpacing: "-0.06em",
+            fontFamily: "var(--font-brand)",
+            color: "var(--text-hi)",
+          }}
+        >
           Talkis
         </div>
       </div>
@@ -86,7 +156,9 @@ function formatUpdateVersion(version: string): string {
 
 function AppUpdateFooter(): ReactElement | null {
   const [version, setVersion] = useState<string | null>(null);
-  const [updateState, setUpdateState] = useState<AppUpdateState>({ status: "idle" });
+  const [updateState, setUpdateState] = useState<AppUpdateState>({
+    status: "idle",
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -98,7 +170,10 @@ function AppUpdateFooter(): ReactElement | null {
         }
       })
       .catch((error) => {
-        void logError("SETTINGS_APP", `Failed to load app version: ${error instanceof Error ? error.message : String(error)}`);
+        void logError(
+          "SETTINGS_APP",
+          `Failed to load app version: ${error instanceof Error ? error.message : String(error)}`,
+        );
       });
 
     return () => {
@@ -121,10 +196,15 @@ function AppUpdateFooter(): ReactElement | null {
     return null;
   }
 
-  const showUpdateButton = !import.meta.env.DEV
-    && Boolean(updateState.version)
-    && (updateState.status === "available" || updateState.status === "installing" || updateState.status === "error");
-  const updateVersion = updateState.version ? formatUpdateVersion(updateState.version) : "";
+  const showUpdateButton =
+    !import.meta.env.DEV &&
+    Boolean(updateState.version) &&
+    (updateState.status === "available" ||
+      updateState.status === "installing" ||
+      updateState.status === "error");
+  const updateVersion = updateState.version
+    ? formatUpdateVersion(updateState.version)
+    : "";
   const installing = updateState.status === "installing";
 
   return (
@@ -143,7 +223,10 @@ function AppUpdateFooter(): ReactElement | null {
             disabled={installing}
             onClick={() => {
               void installAvailableAppUpdate().catch((error) => {
-                void logError("SETTINGS_APP", `Failed to install app update: ${error instanceof Error ? error.message : String(error)}`);
+                void logError(
+                  "SETTINGS_APP",
+                  `Failed to install app update: ${error instanceof Error ? error.message : String(error)}`,
+                );
               });
             }}
             style={{
@@ -161,15 +244,33 @@ function AppUpdateFooter(): ReactElement | null {
             }}
           >
             {installing ? (
-              <Loader2 size={13} strokeWidth={2} style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }} />
+              <Loader2
+                size={13}
+                strokeWidth={2}
+                style={{
+                  animation: "spin 0.9s linear infinite",
+                  flexShrink: 0,
+                }}
+              />
             ) : (
               <Download size={13} strokeWidth={2} style={{ flexShrink: 0 }} />
             )}
-            <span>{installing ? "Устанавливаем..." : `Установить обновление ${updateVersion}`}</span>
+            <span>
+              {installing
+                ? "Устанавливаем..."
+                : `Установить обновление ${updateVersion}`}
+            </span>
           </button>
 
           {updateState.status === "error" && (
-            <div style={{ fontSize: 10, lineHeight: 1.35, color: "var(--danger)", textAlign: "center" }}>
+            <div
+              style={{
+                fontSize: 10,
+                lineHeight: 1.35,
+                color: "var(--danger)",
+                textAlign: "center",
+              }}
+            >
               Не удалось установить обновление
             </div>
           )}
@@ -194,10 +295,16 @@ function AppUpdateFooter(): ReactElement | null {
 
 export function SettingsApp() {
   const [activeTab, setActiveTab] = useState<Tab>(resolveInitialTab);
-  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const [focusedFileResultId, setFocusedFileResultId] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get("resultId"),
+  );
+  const [themePreference, setThemePreference] =
+    useState<ThemePreference>("system");
   const [navigationNonce, setNavigationNonce] = useState(0);
   const [showPermissions, setShowPermissions] = useState<boolean | null>(null);
-  const [initialHistory, setInitialHistory] = useState<HistoryEntry[] | null>(null);
+  const [initialHistory, setInitialHistory] = useState<HistoryEntry[] | null>(
+    null,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -222,46 +329,45 @@ export function SettingsApp() {
   }, [themePreference]);
 
   useEffect(() => {
-    // In dev mode, never show the permission onboarding screen.
-    // Permissions can be granted via System Settings and the app works
-    // without the onboarding flow (hotkey, recording, paste all function).
-    if (import.meta.env.DEV) {
-      getHistory()
-        .then((history) => {
-          setInitialHistory(history);
-          setShowPermissions(false);
-        })
-        .catch(() => {
-          setInitialHistory([]);
-          setShowPermissions(false);
-        });
-      return;
-    }
-
     Promise.all([getPermissionsPassed(), checkAllPermissions(), getHistory()])
       .then(([passed, permissions, history]) => {
-        const hasAllPermissions = permissions.microphone === "granted" && permissions.accessibility === "granted";
+        const hasRequiredPermissions =
+          permissions.microphone === "granted" &&
+          permissions.accessibility === "granted";
         setInitialHistory(history);
-        setShowPermissions(!(passed && hasAllPermissions));
+        setShowPermissions(!(passed && hasRequiredPermissions));
         setLoadError(null);
       })
       .catch((error) => {
-        void logError("SETTINGS_APP", `Failed to load initial state: ${error instanceof Error ? error.message : String(error)}`);
+        void logError(
+          "SETTINGS_APP",
+          `Failed to load initial state: ${error instanceof Error ? error.message : String(error)}`,
+        );
         setInitialHistory([]);
         setShowPermissions(false);
-        setLoadError("Не удалось загрузить состояние приложения. Некоторые данные могут быть недоступны.");
+        setLoadError(
+          "Не удалось загрузить состояние приложения. Некоторые данные могут быть недоступны.",
+        );
       });
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<SettingsNavigatePayload>(SETTINGS_NAVIGATE_EVENT, ({ payload }) => {
-      setActiveTab(payload.tab);
-      setNavigationNonce((current) => current + 1);
+    const unlisten = listen<SettingsNavigatePayload>(
+      SETTINGS_NAVIGATE_EVENT,
+      ({ payload }) => {
+        setActiveTab(payload.tab);
+        setFocusedFileResultId(
+          payload.tab === "file" ? payload.resultId || null : null,
+        );
+        setNavigationNonce((current) => current + 1);
 
-      requestAnimationFrame(() => {
-        document.querySelector("main")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      });
-    });
+        requestAnimationFrame(() => {
+          document
+            .querySelector("main")
+            ?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        });
+      },
+    );
 
     return () => {
       unlisten.then((dispose) => dispose());
@@ -275,9 +381,18 @@ export function SettingsApp() {
 
   if (showPermissions === null || initialHistory === null) {
     return (
-      <div className="app-root" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div
+        className="app-root"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <div className="card" style={{ width: 420, textAlign: "center" }}>
-          <div style={{ fontSize: 14, color: "var(--text-mid)" }}>Загружаем настройки…</div>
+          <div style={{ fontSize: 14, color: "var(--text-mid)" }}>
+            Загружаем настройки…
+          </div>
         </div>
       </div>
     );
@@ -285,7 +400,15 @@ export function SettingsApp() {
 
   return (
     <div className="app-root">
-      <div style={{ display: "flex", flexDirection: "column", height: "100vh", position: "relative", zIndex: 1 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100vh",
+          position: "relative",
+          zIndex: 1,
+        }}
+      >
         <TitleBar />
 
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
@@ -306,7 +429,12 @@ export function SettingsApp() {
 
             <nav style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {TABS.map((t) => (
-                <TabButton key={t.id} tab={t} isActive={activeTab === t.id} onClick={() => setActiveTab(t.id)} />
+                <TabButton
+                  key={t.id}
+                  tab={t}
+                  isActive={activeTab === t.id}
+                  onClick={() => setActiveTab(t.id)}
+                />
               ))}
             </nav>
 
@@ -316,27 +444,67 @@ export function SettingsApp() {
             </div>
           </aside>
 
-          <main style={{ flex: 1, padding: "18px 24px 24px", overflowY: "auto", overflowX: "hidden", position: "relative", background: "var(--main-bg)" }}>
-            <div style={{ maxWidth: 920, margin: "0 auto", minWidth: 0, overflowX: "hidden" }}>
+          <main
+            style={{
+              flex: 1,
+              padding: "18px 24px 24px",
+              overflowY: "auto",
+              overflowX: "hidden",
+              position: "relative",
+              background: "var(--main-bg)",
+            }}
+          >
+            <div
+              style={{
+                maxWidth: 920,
+                margin: "0 auto",
+                minWidth: 0,
+                overflowX: "hidden",
+              }}
+            >
               {loadError && (
-                <div className="card" style={{ marginBottom: 14, padding: "12px 14px", background: "var(--danger-soft)", border: "1px solid var(--danger-border)", color: "var(--danger)" }}>
+                <div
+                  className="card"
+                  style={{
+                    marginBottom: 14,
+                    padding: "12px 14px",
+                    background: "var(--danger-soft)",
+                    border: "1px solid var(--danger-border)",
+                    color: "var(--danger)",
+                  }}
+                >
                   {loadError}
                 </div>
               )}
-              <div key={navigationNonce} style={{ animation: "slide-down 0.18s ease" }}>
-                <div style={{ display: activeTab === "main" ? "block" : "none" }}>
+              <div
+                key={navigationNonce}
+                style={{ animation: "slide-down 0.18s ease" }}
+              >
+                <div
+                  style={{ display: activeTab === "main" ? "block" : "none" }}
+                >
                   <MainTab initialHistory={initialHistory} />
                 </div>
-                <div style={{ display: activeTab === "file" ? "block" : "none" }}>
-                  <FileTranscriptionTab />
+                <div
+                  style={{ display: activeTab === "file" ? "block" : "none" }}
+                >
+                  <FileTranscriptionTab focusedEntryId={focusedFileResultId} />
                 </div>
-                <div style={{ display: activeTab === "settings" ? "block" : "none" }}>
+                <div
+                  style={{
+                    display: activeTab === "settings" ? "block" : "none",
+                  }}
+                >
                   <SettingsTab />
                 </div>
-                <div style={{ display: activeTab === "model" ? "block" : "none" }}>
+                <div
+                  style={{ display: activeTab === "model" ? "block" : "none" }}
+                >
                   <SettingsTabs type="model" />
                 </div>
-                <div style={{ display: activeTab === "style" ? "block" : "none" }}>
+                <div
+                  style={{ display: activeTab === "style" ? "block" : "none" }}
+                >
                   <SettingsTabs type="style" />
                 </div>
               </div>
@@ -345,7 +513,9 @@ export function SettingsApp() {
         </div>
       </div>
 
-      {showPermissions && <PermissionScreen onComplete={handlePermissionsComplete} />}
+      {showPermissions && (
+        <PermissionScreen onComplete={handlePermissionsComplete} />
+      )}
     </div>
   );
 }

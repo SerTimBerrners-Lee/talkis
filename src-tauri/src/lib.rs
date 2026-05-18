@@ -1,4 +1,5 @@
 mod ai;
+mod call_capture;
 mod commands;
 mod hotkey_capture;
 mod local_stt;
@@ -108,6 +109,11 @@ pub fn run() {
             ai::transcribe_and_clean,
             ai::transcribe_only,
             ai::transcribe_file_path,
+            call_capture::list_call_capture_targets,
+            call_capture::start_call_capture,
+            call_capture::stop_call_capture,
+            call_capture::get_call_capture_status,
+            call_capture::get_call_capture_duration_ms,
             media::prepare_media_for_transcription,
             ai::test_api_connection,
             ai::list_stt_models,

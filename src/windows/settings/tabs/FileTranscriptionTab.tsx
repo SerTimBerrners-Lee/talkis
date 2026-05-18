@@ -1,12 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, JSX } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Check, Clipboard, FileAudio, Loader2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Clipboard,
+  FileAudio,
+  Loader2,
+  X,
+} from "lucide-react";
 
-import { addHistoryEntry, getSettings, HistoryEntry, saveSettings, updateHistoryEntry, type AppSettings, type SpeakerTranscriptSegment } from "../../../lib/store";
+import {
+  addHistoryEntry,
+  getHistory,
+  getSettings,
+  HistoryEntry,
+  saveSettings,
+  updateHistoryEntry,
+  type AppSettings,
+  type SpeakerTranscriptSegment,
+} from "../../../lib/store";
 import { HISTORY_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
 import { formatErrorMessage } from "../../../lib/utils";
 import {
@@ -27,44 +43,80 @@ interface SelectedTranscriptionFile {
   name: string;
   size: number | null;
 }
+interface FileTranscriptionTabProps {
+  focusedEntryId?: string | null;
+}
 const RESULT_PREVIEW_LIMIT = 250;
 const DIARIZATION_MODEL_ID = "sherpa-diarization-pyannote-titanet-int8";
 const LOCAL_WHISPER_MODEL_ID = "whisper-large-v3-turbo";
 const LOCAL_WHISPER_ENDPOINT = "http://127.0.0.1:8000";
 const RECOMMENDED_LOCAL_WHISPER_LABEL = "Whisper Large V3 Turbo";
 const DIARIZATION_WHISPER_OPTIONS = [
-  { id: "whisper-large-v3-turbo", model: "whisper-large-v3-turbo", label: "Whisper Large V3 Turbo" },
-  { id: "whisper-large-v3", model: "whisper-large-v3", label: "Whisper Large V3" },
-  { id: "whisper-large-v2", model: "whisper-large-v2", label: "Whisper Large V2" },
+  {
+    id: "whisper-large-v3-turbo",
+    model: "whisper-large-v3-turbo",
+    label: "Whisper Large V3 Turbo",
+  },
+  {
+    id: "whisper-large-v3",
+    model: "whisper-large-v3",
+    label: "Whisper Large V3",
+  },
+  {
+    id: "whisper-large-v2",
+    model: "whisper-large-v2",
+    label: "Whisper Large V2",
+  },
   { id: "whisper-medium", model: "whisper-medium", label: "Whisper Medium" },
   { id: "whisper-small", model: "whisper-small", label: "Whisper Small" },
   { id: "whisper-base", model: "whisper-base", label: "Whisper Base" },
   { id: "whisper-tiny", model: "whisper-tiny", label: "Whisper Tiny" },
 ] as const;
-const STRONG_DIARIZATION_WHISPER_IDS = new Set(["whisper-large-v3-turbo", "whisper-large-v3", "whisper-large-v2", "whisper-medium"]);
+const STRONG_DIARIZATION_WHISPER_IDS = new Set([
+  "whisper-large-v3-turbo",
+  "whisper-large-v3",
+  "whisper-large-v2",
+  "whisper-medium",
+]);
 
 function isModelDownloaded(settings: AppSettings, modelId: string): boolean {
   return settings.localModels?.[modelId]?.status === "downloaded";
 }
 
-function getDiarizationWhisperOption(settings: AppSettings): (typeof DIARIZATION_WHISPER_OPTIONS)[number] | null {
+function getDiarizationWhisperOption(
+  settings: AppSettings,
+): (typeof DIARIZATION_WHISPER_OPTIONS)[number] | null {
   const currentModel = (settings.whisperModel || "").trim().toLowerCase();
-  const currentOption = DIARIZATION_WHISPER_OPTIONS.find((option) => (
-    option.model.toLowerCase() === currentModel && isModelDownloaded(settings, option.id)
-  ));
+  const currentOption = DIARIZATION_WHISPER_OPTIONS.find(
+    (option) =>
+      option.model.toLowerCase() === currentModel &&
+      isModelDownloaded(settings, option.id),
+  );
 
   if (currentOption && STRONG_DIARIZATION_WHISPER_IDS.has(currentOption.id)) {
     return currentOption;
   }
 
-  const strongestDownloadedOption = DIARIZATION_WHISPER_OPTIONS.find((option) => (
-    STRONG_DIARIZATION_WHISPER_IDS.has(option.id) && isModelDownloaded(settings, option.id)
-  ));
+  const strongestDownloadedOption = DIARIZATION_WHISPER_OPTIONS.find(
+    (option) =>
+      STRONG_DIARIZATION_WHISPER_IDS.has(option.id) &&
+      isModelDownloaded(settings, option.id),
+  );
 
-  return strongestDownloadedOption || currentOption || DIARIZATION_WHISPER_OPTIONS.find((option) => isModelDownloaded(settings, option.id)) || null;
+  return (
+    strongestDownloadedOption ||
+    currentOption ||
+    DIARIZATION_WHISPER_OPTIONS.find((option) =>
+      isModelDownloaded(settings, option.id),
+    ) ||
+    null
+  );
 }
 
-function statusLabel(status: ProcessingState, progress: FileTranscriptionProgress | null): string {
+function statusLabel(
+  status: ProcessingState,
+  progress: FileTranscriptionProgress | null,
+): string {
   if (status === "reading") return "Читаем файл";
   if (status === "converting") return "Извлекаем и сжимаем аудио";
   if (status === "uploading") return "Отправляем на транскрибацию";
@@ -93,8 +145,17 @@ function formatTimestamp(seconds: number): string {
 
 function formatSpeakerTranscript(segments: SpeakerTranscriptSegment[]): string {
   return segments
-    .map((segment) => `[${formatTimestamp(segment.start)}] ${segment.speakerLabel}: ${segment.text.trim()}`)
+    .map(
+      (segment) =>
+        `[${formatTimestamp(segment.start)}] ${segment.speakerLabel}: ${segment.text.trim()}`,
+    )
     .join("\n");
+}
+
+function resultSourceLabel(entry: HistoryEntry): string {
+  if (entry.source === "call") return "Созвон";
+  if (entry.source === "file") return "Файл";
+  return "Голос";
 }
 
 function requirementStatusColor(isReady: boolean): string {
@@ -102,20 +163,31 @@ function requirementStatusColor(isReady: boolean): string {
 }
 
 function isSpeakerSetupReady(settings: AppSettings): boolean {
-  return getDiarizationWhisperOption(settings) !== null
-    && settings.localModels?.[DIARIZATION_MODEL_ID]?.status === "downloaded";
+  return (
+    getDiarizationWhisperOption(settings) !== null &&
+    settings.localModels?.[DIARIZATION_MODEL_ID]?.status === "downloaded"
+  );
 }
 
 function isSpeakerSetupRepairError(error: unknown): boolean {
   const normalized = formatErrorMessage(error).toLowerCase();
-  return normalized.includes("sherpa-onnx установлен")
-    && (normalized.includes("diarization binary") || normalized.includes("binary для разметки говорящих"));
+  return (
+    normalized.includes("sherpa-onnx установлен") &&
+    (normalized.includes("diarization binary") ||
+      normalized.includes("binary для разметки говорящих"))
+  );
 }
 
-async function refreshSpeakerInstalledModels(settings: AppSettings): Promise<AppSettings> {
+async function refreshSpeakerInstalledModels(
+  settings: AppSettings,
+): Promise<AppSettings> {
   let result: { success: boolean; models: string[]; message: string };
   try {
-    result = await invoke<{ success: boolean; models: string[]; message: string }>("list_stt_models", {
+    result = await invoke<{
+      success: boolean;
+      models: string[];
+      message: string;
+    }>("list_stt_models", {
       req: {
         api_key: settings.apiKey || "",
         whisper_api_key: settings.whisperApiKey || null,
@@ -176,14 +248,22 @@ async function refreshSpeakerInstalledModels(settings: AppSettings): Promise<App
   return { ...settings, localModels: nextLocalModels };
 }
 
-export function FileTranscriptionTab(): JSX.Element {
+export function FileTranscriptionTab({
+  focusedEntryId = null,
+}: FileTranscriptionTabProps = {}): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultSectionRef = useRef<HTMLElement | null>(null);
   const isProcessingRef = useRef(false);
   const nativeDropAtRef = useRef(0);
-  const processFilePathRef = useRef<(filePath: string) => Promise<void>>(async () => {});
-  const [selectedFile, setSelectedFile] = useState<SelectedTranscriptionFile | null>(null);
+  const processFilePathRef = useRef<(filePath: string) => Promise<void>>(
+    async () => {},
+  );
+  const [selectedFile, setSelectedFile] =
+    useState<SelectedTranscriptionFile | null>(null);
   const [status, setStatus] = useState<ProcessingState>("idle");
-  const [progress, setProgress] = useState<FileTranscriptionProgress | null>(null);
+  const [progress, setProgress] = useState<FileTranscriptionProgress | null>(
+    null,
+  );
   const [resultEntry, setResultEntry] = useState<HistoryEntry | null>(null);
   const [error, setError] = useState("");
   const [convertedInfo, setConvertedInfo] = useState("");
@@ -198,24 +278,32 @@ export function FileTranscriptionTab(): JSX.Element {
   const [speakerSetupInstalling, setSpeakerSetupInstalling] = useState(false);
   const [speakerSetupMessage, setSpeakerSetupMessage] = useState("");
   const [speakerSetupError, setSpeakerSetupError] = useState("");
-  const [pendingSpeakerFilePath, setPendingSpeakerFilePath] = useState<string | null>(null);
-  const [speakerSetupIntent, setSpeakerSetupIntent] = useState<SpeakerSetupIntent | null>(null);
+  const [pendingSpeakerFilePath, setPendingSpeakerFilePath] = useState<
+    string | null
+  >(null);
+  const [speakerSetupIntent, setSpeakerSetupIntent] =
+    useState<SpeakerSetupIntent | null>(null);
   const [speakerSetupForceRepair, setSpeakerSetupForceRepair] = useState(false);
 
-  const isProcessing = status === "reading"
-    || status === "converting"
-    || status === "uploading"
-    || status === "preparing"
-    || status === "diarizing"
-    || status === "assembling"
-    || status === "transcribing";
+  const isProcessing =
+    status === "reading" ||
+    status === "converting" ||
+    status === "uploading" ||
+    status === "preparing" ||
+    status === "diarizing" ||
+    status === "assembling" ||
+    status === "transcribing";
   const progressPercent = getFileTranscriptionPercent(status, progress);
 
   const syncSpeakerSetupState = (settings: AppSettings): void => {
     const localWhisperOption = getDiarizationWhisperOption(settings);
-    setDiarizationInstalled(settings.localModels?.[DIARIZATION_MODEL_ID]?.status === "downloaded");
+    setDiarizationInstalled(
+      settings.localModels?.[DIARIZATION_MODEL_ID]?.status === "downloaded",
+    );
     setLocalWhisperDownloaded(localWhisperOption !== null);
-    setLocalWhisperLabel(localWhisperOption?.label || RECOMMENDED_LOCAL_WHISPER_LABEL);
+    setLocalWhisperLabel(
+      localWhisperOption?.label || RECOMMENDED_LOCAL_WHISPER_LABEL,
+    );
   };
 
   useEffect(() => {
@@ -226,11 +314,13 @@ export function FileTranscriptionTab(): JSX.Element {
     getSettings({ reload: true })
       .then(async (settings) => {
         const syncedSettings = await refreshSpeakerInstalledModels(settings);
-        const cloudSpeakerReady = await canUseCloudSpeakerDiarization(syncedSettings);
+        const cloudSpeakerReady =
+          await canUseCloudSpeakerDiarization(syncedSettings);
         syncSpeakerSetupState(syncedSettings);
         if (
-          syncedSettings.fileSpeakerDiarization
-          && ((!syncedSettings.useOwnKey && !cloudSpeakerReady) || (syncedSettings.useOwnKey && !isSpeakerSetupReady(syncedSettings)))
+          syncedSettings.fileSpeakerDiarization &&
+          ((!syncedSettings.useOwnKey && !cloudSpeakerReady) ||
+            (syncedSettings.useOwnKey && !isSpeakerSetupReady(syncedSettings)))
         ) {
           setSpeakerDiarization(false);
           void saveSettings({ fileSpeakerDiarization: false });
@@ -251,6 +341,87 @@ export function FileTranscriptionTab(): JSX.Element {
     setResultExpanded(false);
   };
 
+  const showHistoryEntryResult = (
+    entry: HistoryEntry,
+    scrollToResult = false,
+  ): void => {
+    setSelectedFile({
+      name: entry.fileName || "Файл",
+      size: entry.fileSize ?? null,
+    });
+    setError("");
+    setConvertedInfo("");
+    setProgress(null);
+    setCopied(false);
+    setResultExpanded(entry.mode === "speakers");
+    setResultEntry(entry);
+    setStatus("done");
+
+    if (scrollToResult) {
+      requestAnimationFrame(() => {
+        resultSectionRef.current?.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        });
+      });
+    }
+  };
+
+  useEffect(() => {
+    const unlistenPromise = listen<HistoryEntry>(
+      HISTORY_UPDATED_EVENT,
+      ({ payload }) => {
+        if (
+          isProcessingRef.current ||
+          (payload.source !== "file" && payload.source !== "call") ||
+          payload.status !== "completed"
+        ) {
+          return;
+        }
+
+        showHistoryEntryResult(payload);
+      },
+    );
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!focusedEntryId) {
+      return;
+    }
+
+    let mounted = true;
+
+    const showFocusedEntry = async (): Promise<void> => {
+      try {
+        const history = await getHistory();
+        const entry = history.find((item) => item.id === focusedEntryId);
+
+        if (!mounted || !entry) {
+          return;
+        }
+
+        showHistoryEntryResult(entry, true);
+      } catch (caughtError) {
+        if (!mounted) {
+          return;
+        }
+
+        setError(toFileTranscriptionErrorMessage(caughtError));
+        setStatus("error");
+      }
+    };
+
+    void showFocusedEntry();
+
+    return () => {
+      mounted = false;
+    };
+  }, [focusedEntryId]);
+
   const processFile = async (file: File): Promise<void> => {
     setSelectedFile({ name: file.name, size: file.size });
     resetResult();
@@ -258,7 +429,9 @@ export function FileTranscriptionTab(): JSX.Element {
 
     try {
       if (speakerDiarization) {
-        throw new Error("Разделение по говорящим доступно для файлов, выбранных через системный диалог или перетаскиванием в окно Talkis.");
+        throw new Error(
+          "Разделение по говорящим доступно для файлов, выбранных через системный диалог или перетаскиванием в окно Talkis.",
+        );
       }
       const settings = await getSettings();
       const startedAt = Date.now();
@@ -296,15 +469,23 @@ export function FileTranscriptionTab(): JSX.Element {
     }
   };
 
-  const processFilePath = async (filePath: string, speakerMode = speakerDiarization): Promise<void> => {
+  const processFilePath = async (
+    filePath: string,
+    speakerMode = speakerDiarization,
+  ): Promise<void> => {
     const fileName = fileNameFromPath(filePath);
     setSelectedFile({ name: fileName, size: null });
     resetResult();
     setStatus("idle");
 
     try {
-      const settings = await refreshSpeakerInstalledModels(await getSettings({ reload: true }));
-      const cloudSpeakerReady = await canUseCloudSpeakerDiarization(settings, true);
+      const settings = await refreshSpeakerInstalledModels(
+        await getSettings({ reload: true }),
+      );
+      const cloudSpeakerReady = await canUseCloudSpeakerDiarization(
+        settings,
+        true,
+      );
       syncSpeakerSetupState(settings);
       if (speakerMode && !settings.useOwnKey && !cloudSpeakerReady) {
         setSpeakerDiarization(false);
@@ -410,7 +591,20 @@ export function FileTranscriptionTab(): JSX.Element {
         filters: [
           {
             name: "Аудио и видео",
-            extensions: ["mp3", "wav", "m4a", "mp4", "mov", "webm", "ogg", "flac", "mpeg", "mpga", "avi", "mkv"],
+            extensions: [
+              "mp3",
+              "wav",
+              "m4a",
+              "mp4",
+              "mov",
+              "webm",
+              "ogg",
+              "flac",
+              "mpeg",
+              "mpga",
+              "avi",
+              "mkv",
+            ],
           },
         ],
       });
@@ -468,8 +662,14 @@ export function FileTranscriptionTab(): JSX.Element {
       const nextLocalModels = { ...(settings.localModels || {}) };
 
       if (!getDiarizationWhisperOption(settings)) {
-        setSpeakerSetupMessage(`Скачиваем ${RECOMMENDED_LOCAL_WHISPER_LABEL}...`);
-        const whisperResult = await invoke<{ success: boolean; message: string; whisper_endpoint?: string | null }>("install_stt_model", {
+        setSpeakerSetupMessage(
+          `Скачиваем ${RECOMMENDED_LOCAL_WHISPER_LABEL}...`,
+        );
+        const whisperResult = await invoke<{
+          success: boolean;
+          message: string;
+          whisper_endpoint?: string | null;
+        }>("install_stt_model", {
           req: {
             api_key: settings.apiKey || "",
             whisper_api_key: settings.whisperApiKey || null,
@@ -493,9 +693,19 @@ export function FileTranscriptionTab(): JSX.Element {
         settings = await getSettings({ reload: true });
       }
 
-      if (speakerSetupForceRepair || settings.localModels?.[DIARIZATION_MODEL_ID]?.status !== "downloaded") {
-        setSpeakerSetupMessage(speakerSetupForceRepair ? "Восстанавливаем runtime для разметки..." : "Скачиваем компоненты для разметки говорящих...");
-        const speakerResult = await invoke<{ success: boolean; message: string }>("install_stt_model", {
+      if (
+        speakerSetupForceRepair ||
+        settings.localModels?.[DIARIZATION_MODEL_ID]?.status !== "downloaded"
+      ) {
+        setSpeakerSetupMessage(
+          speakerSetupForceRepair
+            ? "Восстанавливаем runtime для разметки..."
+            : "Скачиваем компоненты для разметки говорящих...",
+        );
+        const speakerResult = await invoke<{
+          success: boolean;
+          message: string;
+        }>("install_stt_model", {
           req: {
             api_key: settings.apiKey || "",
             whisper_api_key: settings.whisperApiKey || null,
@@ -524,7 +734,11 @@ export function FileTranscriptionTab(): JSX.Element {
 
       const finalSettings = await getSettings({ reload: true });
       syncSpeakerSetupState(finalSettings);
-      setSpeakerSetupMessage(speakerSetupIntent === "toggle" ? "Готово." : "Готово. Продолжаем обработку файла...");
+      setSpeakerSetupMessage(
+        speakerSetupIntent === "toggle"
+          ? "Готово."
+          : "Готово. Продолжаем обработку файла...",
+      );
       setSpeakerSetupError("");
       setError("");
       setSpeakerSetupModalOpen(false);
@@ -551,15 +765,20 @@ export function FileTranscriptionTab(): JSX.Element {
     }
   };
 
-  const renameSpeaker = async (speakerId: string, label: string): Promise<void> => {
+  const renameSpeaker = async (
+    speakerId: string,
+    label: string,
+  ): Promise<void> => {
     if (!resultEntry?.segments || !resultEntry.speakers) return;
 
-    const nextSpeakers = resultEntry.speakers.map((speaker) => (
-      speaker.id === speakerId ? { ...speaker, label } : speaker
-    ));
-    const nextSegments = resultEntry.segments.map((segment) => (
-      segment.speakerId === speakerId ? { ...segment, speakerLabel: label } : segment
-    ));
+    const nextSpeakers = resultEntry.speakers.map((speaker) =>
+      speaker.id === speakerId ? { ...speaker, label } : speaker,
+    );
+    const nextSegments = resultEntry.segments.map((segment) =>
+      segment.speakerId === speakerId
+        ? { ...segment, speakerLabel: label }
+        : segment,
+    );
     const nextText = formatSpeakerTranscript(nextSegments);
     const nextEntry: HistoryEntry = {
       ...resultEntry,
@@ -582,8 +801,13 @@ export function FileTranscriptionTab(): JSX.Element {
       return;
     }
 
-    const settings = await refreshSpeakerInstalledModels(await getSettings({ reload: true }));
-    const cloudSpeakerReady = await canUseCloudSpeakerDiarization(settings, true);
+    const settings = await refreshSpeakerInstalledModels(
+      await getSettings({ reload: true }),
+    );
+    const cloudSpeakerReady = await canUseCloudSpeakerDiarization(
+      settings,
+      true,
+    );
     syncSpeakerSetupState(settings);
 
     if (!settings.useOwnKey) {
@@ -593,7 +817,11 @@ export function FileTranscriptionTab(): JSX.Element {
         return;
       }
 
-      setError(toFileTranscriptionErrorMessage(new Error("Cloud speaker diarization unavailable")));
+      setError(
+        toFileTranscriptionErrorMessage(
+          new Error("Cloud speaker diarization unavailable"),
+        ),
+      );
       setSpeakerDiarization(false);
       await saveSettings({ fileSpeakerDiarization: false });
       return;
@@ -614,9 +842,10 @@ export function FileTranscriptionTab(): JSX.Element {
 
   const resultText = resultEntry?.cleaned ?? "";
   const shouldCollapseResult = resultText.length > RESULT_PREVIEW_LIMIT;
-  const visibleResult = shouldCollapseResult && !resultExpanded
-    ? `${resultText.slice(0, RESULT_PREVIEW_LIMIT).trimEnd()}...`
-    : resultText;
+  const visibleResult =
+    shouldCollapseResult && !resultExpanded
+      ? `${resultText.slice(0, RESULT_PREVIEW_LIMIT).trimEnd()}...`
+      : resultText;
   const speakerSetupActionLabel = "Скачать";
   const closeSpeakerSetupModal = (): void => {
     if (speakerSetupInstalling) return;
@@ -631,10 +860,20 @@ export function FileTranscriptionTab(): JSX.Element {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <section style={{ display: "grid", gap: 4 }}>
         <div style={{ display: "grid", gap: 4 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-hi)", margin: "0 0 4px", letterSpacing: "-0.03em" }}>
-            Транскрибация файла
+          <h2
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: "var(--text-hi)",
+              margin: "0 0 4px",
+              letterSpacing: "-0.03em",
+            }}
+          >
+            Транскрибация
           </h2>
-          <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
+          <div
+            style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}
+          >
             Голый текст без дополнительного форматирования.
           </div>
         </div>
@@ -678,13 +917,23 @@ export function FileTranscriptionTab(): JSX.Element {
           padding: 24,
           borderWidth: 2,
           borderStyle: "dashed",
-          borderColor: isDragOver ? "var(--border-strong)" : "var(--border-dashed)",
+          borderColor: isDragOver
+            ? "var(--border-strong)"
+            : "var(--border-dashed)",
           background: isDragOver ? "var(--surface-hi)" : "var(--surface)",
           cursor: isProcessing ? "default" : "pointer",
           transition: "background 0.18s ease, border-color 0.18s ease",
         }}
       >
-        <div style={{ display: "grid", justifyItems: "center", gap: 14, maxWidth: 520, textAlign: "center" }}>
+        <div
+          style={{
+            display: "grid",
+            justifyItems: "center",
+            gap: 14,
+            maxWidth: 520,
+            textAlign: "center",
+          }}
+        >
           <div
             style={{
               width: 54,
@@ -697,44 +946,116 @@ export function FileTranscriptionTab(): JSX.Element {
               border: "1px solid var(--border-subtle)",
             }}
           >
-            {isProcessing ? <Loader2 size={24} strokeWidth={1.8} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileAudio size={25} strokeWidth={1.8} />}
+            {isProcessing ? (
+              <Loader2
+                size={24}
+                strokeWidth={1.8}
+                style={{ animation: "spin 0.9s linear infinite" }}
+              />
+            ) : (
+              <FileAudio size={25} strokeWidth={1.8} />
+            )}
           </div>
 
           <div style={{ display: "grid", gap: 4 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}>
+            <div
+              style={{ fontSize: 15, fontWeight: 700, color: "var(--text-hi)" }}
+            >
               {selectedFile ? selectedFile.name : "Перетащите аудио или видео"}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.6 }}>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--text-mid)",
+                lineHeight: 1.6,
+              }}
+            >
               {selectedFile
                 ? `${selectedFile.size !== null ? `${formatFileSize(selectedFile.size)} · ` : ""}${statusLabel(status, progress)}${isProcessing ? ` · ${progressPercent}%` : ""}`
                 : "Нажмите на область или перетащите файл. MP3, WAV, M4A, MP4, MOV, WEBM и другие форматы"}
             </div>
             {convertedInfo && (
-              <div style={{ fontSize: 12, color: "var(--text-low)", lineHeight: 1.5 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-low)",
+                  lineHeight: 1.5,
+                }}
+              >
                 {convertedInfo}
               </div>
             )}
           </div>
 
           {isProcessing && (
-            <div style={{ width: "min(320px, 100%)", height: 4, borderRadius: 999, overflow: "hidden", background: "var(--progress-track)" }}>
-              <div style={{ width: `${progressPercent}%`, height: "100%", borderRadius: 999, background: "var(--accent)", transition: "width 0.24s ease" }} />
+            <div
+              style={{
+                width: "min(320px, 100%)",
+                height: 4,
+                borderRadius: 999,
+                overflow: "hidden",
+                background: "var(--progress-track)",
+              }}
+            >
+              <div
+                style={{
+                  width: `${progressPercent}%`,
+                  height: "100%",
+                  borderRadius: 999,
+                  background: "var(--accent)",
+                  transition: "width 0.24s ease",
+                }}
+              />
             </div>
           )}
 
           {error && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--danger)", fontSize: 13, lineHeight: 1.5, textAlign: "left" }}>
-              <AlertCircle size={16} strokeWidth={2} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                color: "var(--danger)",
+                fontSize: 13,
+                lineHeight: 1.5,
+                textAlign: "left",
+              }}
+            >
+              <AlertCircle
+                size={16}
+                strokeWidth={2}
+                style={{ flexShrink: 0, marginTop: 2 }}
+              />
               <span>{error}</span>
             </div>
           )}
         </div>
       </section>
 
-      <section className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, background: "var(--surface)" }}>
+      <section
+        className="card"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 14,
+          background: "var(--surface)",
+        }}
+      >
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-hi)", marginBottom: 3 }}>Разделить по говорящим</div>
-          <div style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.5 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "var(--text-hi)",
+              marginBottom: 3,
+            }}
+          >
+            Разделить по говорящим
+          </div>
+          <div
+            style={{ fontSize: 12, color: "var(--text-mid)", lineHeight: 1.5 }}
+          >
             Протокол с таймкодами и метками Гость 1, Гость 2.
           </div>
         </div>
@@ -742,14 +1063,18 @@ export function FileTranscriptionTab(): JSX.Element {
           type="button"
           role="switch"
           aria-checked={speakerDiarization}
-          onClick={() => { void toggleSpeakerDiarization(); }}
+          onClick={() => {
+            void toggleSpeakerDiarization();
+          }}
           disabled={isProcessing}
           style={{
             width: 44,
             height: 26,
             borderRadius: 999,
             border: "none",
-            background: speakerDiarization ? "var(--accent)" : "var(--switch-track)",
+            background: speakerDiarization
+              ? "var(--accent)"
+              : "var(--switch-track)",
             padding: 3,
             cursor: isProcessing ? "not-allowed" : "pointer",
             flexShrink: 0,
@@ -766,16 +1091,29 @@ export function FileTranscriptionTab(): JSX.Element {
               height: 20,
               borderRadius: "50%",
               background: "var(--accent-contrast)",
-              transform: speakerDiarization ? "translateX(18px)" : "translateX(0)",
+              transform: speakerDiarization
+                ? "translateX(18px)"
+                : "translateX(0)",
               transition: "transform 0.16s ease",
             }}
           />
         </button>
       </section>
 
-      <section style={{ display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-hi)" }}>Результат</div>
+      <section ref={resultSectionRef} style={{ display: "grid", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{ fontSize: 14, fontWeight: 700, color: "var(--text-hi)" }}
+          >
+            Результат
+          </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {resultEntry && (
@@ -787,7 +1125,11 @@ export function FileTranscriptionTab(): JSX.Element {
                 }}
                 style={{ minHeight: 32, padding: "0 12px" }}
               >
-                {copied ? <Check size={13} strokeWidth={2.2} /> : <Clipboard size={13} strokeWidth={2} />}
+                {copied ? (
+                  <Check size={13} strokeWidth={2.2} />
+                ) : (
+                  <Clipboard size={13} strokeWidth={2} />
+                )}
                 {copied ? "Скопировано" : "Скопировать"}
               </button>
             )}
@@ -820,8 +1162,19 @@ export function FileTranscriptionTab(): JSX.Element {
                       key={speaker.id}
                       className="input"
                       value={speaker.label}
-                      onChange={(event) => { void renameSpeaker(speaker.id, event.target.value || speaker.label); }}
-                      style={{ width: 140, height: 34, padding: "7px 10px", fontSize: 12, fontWeight: 650 }}
+                      onChange={(event) => {
+                        void renameSpeaker(
+                          speaker.id,
+                          event.target.value || speaker.label,
+                        );
+                      }}
+                      style={{
+                        width: 140,
+                        height: 34,
+                        padding: "7px 10px",
+                        fontSize: 12,
+                        fontWeight: 650,
+                      }}
                       aria-label={`Имя ${speaker.label}`}
                     />
                   ))}
@@ -829,70 +1182,146 @@ export function FileTranscriptionTab(): JSX.Element {
               ) : null}
               <div style={{ display: "grid", gap: 8 }}>
                 {resultEntry.segments.map((segment, index) => (
-                  <div key={`${segment.start}-${index}`} style={{ display: "grid", gridTemplateColumns: "84px minmax(0, 1fr)", gap: 10, alignItems: "start", padding: "10px 0", borderBottom: "1px solid var(--border-subtle)" }}>
-                    <div style={{ fontSize: 12, color: "var(--text-low)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+                  <div
+                    key={`${segment.start}-${index}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "84px minmax(0, 1fr)",
+                      gap: 10,
+                      alignItems: "start",
+                      padding: "10px 0",
+                      borderBottom: "1px solid var(--border-subtle)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-low)",
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
                       {formatTimestamp(segment.start)}
                     </div>
                     <div style={{ display: "grid", gap: 3 }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-hi)" }}>{segment.speakerLabel}</div>
-                      <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65, overflowWrap: "anywhere" }}>{segment.text}</div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "var(--text-hi)",
+                        }}
+                      >
+                        {segment.speakerLabel}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "var(--text-mid)",
+                          lineHeight: 1.65,
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {segment.text}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-          <table className="b-table" style={{ background: "transparent" }}>
-            <thead>
-              <tr>
-                <th style={{ width: 92 }}>Время</th>
-                <th style={{ paddingLeft: 8 }}>Текст</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ whiteSpace: "nowrap", verticalAlign: "top", color: "var(--text-low)" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                    <span>
-                      {new Date(resultEntry.timestamp).toLocaleTimeString("ru-RU", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                    <span style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.02em" }}>Файл</span>
-                  </div>
-                </td>
-                <td style={{ verticalAlign: "top", paddingLeft: 8 }}>
-                  <div style={{ display: "grid", gap: 2, color: "var(--text-mid)", lineHeight: 1.7, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                    <span>{visibleResult}</span>
-                    {shouldCollapseResult && (
-                      <button
-                        type="button"
-                        onClick={() => setResultExpanded((current) => !current)}
+            <table className="b-table" style={{ background: "transparent" }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 92 }}>Время</th>
+                  <th style={{ paddingLeft: 8 }}>Текст</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td
+                    style={{
+                      whiteSpace: "nowrap",
+                      verticalAlign: "top",
+                      color: "var(--text-low)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 3,
+                      }}
+                    >
+                      <span>
+                        {new Date(resultEntry.timestamp).toLocaleTimeString(
+                          "ru-RU",
+                          {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          },
+                        )}
+                      </span>
+                      <span
                         style={{
-                          marginLeft: 0,
-                          padding: 0,
-                          border: "none",
-                          background: "transparent",
-                          color: "var(--text-hi)",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          textDecoration: "none",
-                          justifySelf: "start",
+                          fontSize: 10,
+                          opacity: 0.55,
+                          letterSpacing: "0.02em",
                         }}
                       >
-                        {resultExpanded ? "Скрыть" : "Раскрыть"}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                        {resultSourceLabel(resultEntry)}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ verticalAlign: "top", paddingLeft: 8 }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 2,
+                        color: "var(--text-mid)",
+                        lineHeight: 1.7,
+                        overflowWrap: "anywhere",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      <span>{visibleResult}</span>
+                      {shouldCollapseResult && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setResultExpanded((current) => !current)
+                          }
+                          style={{
+                            marginLeft: 0,
+                            padding: 0,
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--text-hi)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            textDecoration: "none",
+                            justifySelf: "start",
+                          }}
+                        >
+                          {resultExpanded ? "Скрыть" : "Раскрыть"}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           )
         ) : (
-          <div style={{ padding: "22px 16px", borderRadius: 12, border: "1px dashed var(--border-dashed)", color: "var(--text-low)", fontSize: 13 }}>
+          <div
+            style={{
+              padding: "22px 16px",
+              borderRadius: 12,
+              border: "1px dashed var(--border-dashed)",
+              color: "var(--text-low)",
+              fontSize: 13,
+            }}
+          >
             После обработки здесь появится текст.
           </div>
         )}
@@ -925,37 +1354,104 @@ export function FileTranscriptionTab(): JSX.Element {
             }}
             onClick={(event) => event.stopPropagation()}
           >
-            <div id="speaker-setup-title" style={{ fontSize: 17, fontWeight: 750, color: "var(--text-hi)", marginBottom: 8 }}>
+            <div
+              id="speaker-setup-title"
+              style={{
+                fontSize: 17,
+                fontWeight: 750,
+                color: "var(--text-hi)",
+                marginBottom: 8,
+              }}
+            >
               Нужна локальная подготовка
             </div>
-            <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--text-mid)", marginBottom: 16 }}>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--text-mid)",
+                marginBottom: 16,
+              }}
+            >
               {localWhisperDownloaded
                 ? `Для разделения по говорящим Talkis использует ${localWhisperLabel} для распознавания с таймкодами и подготовит локальные компоненты для разметки говорящих.`
                 : `Для разделения по говорящим Talkis подготовит ${RECOMMENDED_LOCAL_WHISPER_LABEL} для распознавания с таймкодами и локальные компоненты для разметки говорящих.`}
             </div>
 
             <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: requirementStatusColor(localWhisperDownloaded), lineHeight: 1.45 }}>
-                {localWhisperDownloaded ? <Check size={15} strokeWidth={2.2} /> : <AlertCircle size={15} strokeWidth={2} />}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12,
+                  color: requirementStatusColor(localWhisperDownloaded),
+                  lineHeight: 1.45,
+                }}
+              >
+                {localWhisperDownloaded ? (
+                  <Check size={15} strokeWidth={2.2} />
+                ) : (
+                  <AlertCircle size={15} strokeWidth={2} />
+                )}
                 <span>
                   {localWhisperDownloaded
                     ? `${localWhisperLabel} готова для разметки`
                     : `${RECOMMENDED_LOCAL_WHISPER_LABEL} будет скачан`}
                 </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: requirementStatusColor(diarizationInstalled), lineHeight: 1.45 }}>
-                {diarizationInstalled ? <Check size={15} strokeWidth={2.2} /> : <AlertCircle size={15} strokeWidth={2} />}
-                <span>{diarizationInstalled ? "Компоненты для разметки" : "Компоненты для разметки говорящих будут скачаны"}</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 12,
+                  color: requirementStatusColor(diarizationInstalled),
+                  lineHeight: 1.45,
+                }}
+              >
+                {diarizationInstalled ? (
+                  <Check size={15} strokeWidth={2.2} />
+                ) : (
+                  <AlertCircle size={15} strokeWidth={2} />
+                )}
+                <span>
+                  {diarizationInstalled
+                    ? "Компоненты для разметки"
+                    : "Компоненты для разметки говорящих будут скачаны"}
+                </span>
               </div>
             </div>
 
             {(speakerSetupMessage || speakerSetupError) && (
-              <div style={{ fontSize: 12, lineHeight: 1.6, padding: "8px 10px", borderRadius: 8, background: speakerSetupError ? "var(--danger-soft)" : "var(--control-muted)", color: speakerSetupError ? "var(--error-bright)" : "var(--text-mid)", border: `1px solid ${speakerSetupError ? "var(--danger-border)" : "var(--border-subtle)"}`, marginBottom: 16 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background: speakerSetupError
+                    ? "var(--danger-soft)"
+                    : "var(--control-muted)",
+                  color: speakerSetupError
+                    ? "var(--error-bright)"
+                    : "var(--text-mid)",
+                  border: `1px solid ${speakerSetupError ? "var(--danger-border)" : "var(--border-subtle)"}`,
+                  marginBottom: 16,
+                }}
+              >
                 {speakerSetupError || speakerSetupMessage}
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
               <button
                 type="button"
                 disabled={speakerSetupInstalling}
@@ -977,7 +1473,9 @@ export function FileTranscriptionTab(): JSX.Element {
               <button
                 type="button"
                 disabled={speakerSetupInstalling}
-                onClick={() => { void installSpeakerSetup(); }}
+                onClick={() => {
+                  void installSpeakerSetup();
+                }}
                 style={{
                   padding: "10px 14px",
                   borderRadius: 10,
@@ -993,7 +1491,13 @@ export function FileTranscriptionTab(): JSX.Element {
                   gap: 8,
                 }}
               >
-                {speakerSetupInstalling ? <Loader2 size={15} strokeWidth={2} style={{ animation: "spin 0.9s linear infinite" }} /> : null}
+                {speakerSetupInstalling ? (
+                  <Loader2
+                    size={15}
+                    strokeWidth={2}
+                    style={{ animation: "spin 0.9s linear infinite" }}
+                  />
+                ) : null}
                 {speakerSetupActionLabel}
               </button>
             </div>

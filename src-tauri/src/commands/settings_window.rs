@@ -1,5 +1,4 @@
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 use crate::logger;
 
@@ -40,14 +39,6 @@ fn create_settings_window(app: &AppHandle, url: &str) -> Result<tauri::WebviewWi
 
     let win = builder.build().map_err(|e| e.to_string())?;
 
-    #[cfg(target_os = "macos")]
-    if let Err(err) = apply_vibrancy(&win, NSVisualEffectMaterial::HudWindow, None, None) {
-        logger::log_error(
-            "WINDOW",
-            &format!("Failed to apply vibrancy to settings window: {}", err),
-        );
-    }
-
     show_and_focus_window(&win);
     Ok(win)
 }
@@ -64,19 +55,31 @@ pub async fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn open_settings_tab(app: AppHandle, tab: String) -> Result<(), String> {
+pub async fn open_settings_tab(
+    app: AppHandle,
+    tab: String,
+    result_id: Option<String>,
+) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("settings") {
         show_and_focus_window(&win);
         app.emit_to(
             "settings",
             SETTINGS_NAVIGATE_EVENT,
-            serde_json::json!({ "tab": tab }),
+            serde_json::json!({ "tab": tab, "resultId": result_id }),
         )
         .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    let url = format!("index.html?window=settings&tab={}", tab);
+    let url = match result_id {
+        Some(result_id) if !result_id.is_empty() => {
+            format!(
+                "index.html?window=settings&tab={}&resultId={}",
+                tab, result_id
+            )
+        }
+        _ => format!("index.html?window=settings&tab={}", tab),
+    };
     create_settings_window(&app, &url)?;
     Ok(())
 }
