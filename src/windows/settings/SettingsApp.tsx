@@ -245,10 +245,10 @@ function AppUpdateFooter(): ReactElement | null {
           >
             {installing ? (
               <Loader2
+                className="loading-soft-icon"
                 size={13}
                 strokeWidth={2}
                 style={{
-                  animation: "spin 0.9s linear infinite",
                   flexShrink: 0,
                 }}
               />

@@ -5,12 +5,10 @@ import { AppSettings, getSettings } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
 import { formatErrorMessage } from "../../../lib/utils";
 import {
-  IDLE_WIDGET_HEIGHT,
-  IDLE_WIDGET_WIDTH,
+  CALL_STACK_WIDGET_HEIGHT,
+  CALL_STACK_WIDGET_WIDTH,
   MIN_AUDIO_BLOB_BYTES,
   MIN_RECORDING_DURATION_MS,
-  RECORDING_WIDGET_HEIGHT,
-  RECORDING_WIDGET_WIDTH,
 } from "../widgetConstants";
 import type { WidgetNoticeTone } from "../widgetConstants";
 import { createRecordingRuntimeController } from "../services/recordingRuntime";
@@ -32,6 +30,9 @@ interface UseWidgetRecordingParams {
   showNotice: (message: string, tone?: WidgetNoticeTone) => void;
   hideNotice: () => void;
   stopAndProcessRef: MutableRefObject<() => Promise<void>>;
+  onRecordingProcessing?: () => void;
+  onRecordingStart?: () => void;
+  onRecordingStartFailed?: () => void;
 }
 
 interface UseWidgetRecordingResult {
@@ -86,6 +87,9 @@ export function useWidgetRecording({
   showNotice,
   hideNotice,
   stopAndProcessRef,
+  onRecordingProcessing,
+  onRecordingStart,
+  onRecordingStartFailed,
 }: UseWidgetRecordingParams): UseWidgetRecordingResult {
   const runtimeRef = useRef(createRecordingRuntimeController());
   const lowMicMonitorCleanupRef = useRef<(() => void) | null>(null);
@@ -212,9 +216,10 @@ export function useWidgetRecording({
     }
 
     try {
+      onRecordingStart?.();
       // Update widget state to recording (via dispatch)
       machineRef.current = { ...machineRef.current, widgetState: "recording" };
-      void resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
+      void resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
 
       recordingSettingsRef.current = activeSettings;
       const audioConstraints = getAudioConstraints(activeSettings.micId);
@@ -241,6 +246,7 @@ export function useWidgetRecording({
             "RECORDING",
             `Mic access denied: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
           );
+          onRecordingStartFailed?.();
           showError("Нет доступа к микрофону. Разрешите доступ в настройках macOS.");
           return;
         }
@@ -267,6 +273,7 @@ export function useWidgetRecording({
       logInfo("RECORDING", "Recording started successfully");
       dispatch({ type: "RECORDING_STARTED", timestamp: Date.now() });
     } catch (error) {
+      onRecordingStartFailed?.();
       stopLowMicMonitor();
       runtimeRef.current.dispose();
       recordingSettingsRef.current = null;
@@ -276,7 +283,7 @@ export function useWidgetRecording({
         `Ошибка запуска записи: ${error instanceof Error ? error.message : "Неизвестная ошибка"}`,
       );
     }
-  }, [dispatch, hideNotice, machineRef, resizeWidget, setStream, settings, showError, startLowMicMonitor, stopLowMicMonitor]);
+  }, [dispatch, hideNotice, machineRef, onRecordingStart, onRecordingStartFailed, resizeWidget, setStream, settings, showError, startLowMicMonitor, stopLowMicMonitor]);
 
   // ── Stop and process ────────────────────────────────────────────────────
   const stopAndProcess = useCallback(async () => {
@@ -301,8 +308,9 @@ export function useWidgetRecording({
     await runtimeRef.current.stop();
     stopLowMicMonitor();
     setStream(null);
+    onRecordingProcessing?.();
 
-    await resizeWidget(RECORDING_WIDGET_WIDTH, RECORDING_WIDGET_HEIGHT);
+    await resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
     dispatch({ type: "SET_PROCESSING" });
 
     try {
@@ -322,7 +330,7 @@ export function useWidgetRecording({
         recordingSettingsRef.current = null;
         runtimeRef.current.reset();
         dispatch({ type: "PROCESSING_COMPLETE" });
-        await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
+        await resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
         return;
       }
 
@@ -336,14 +344,14 @@ export function useWidgetRecording({
         recordingSettingsRef.current = null;
         runtimeRef.current.reset();
         dispatch({ type: "PROCESSING_COMPLETE" });
-        await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
+        await resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
         return;
       }
 
       recordingSettingsRef.current = null;
       runtimeRef.current.reset();
       dispatch({ type: "PROCESSING_COMPLETE" });
-      await resizeWidget(IDLE_WIDGET_WIDTH, IDLE_WIDGET_HEIGHT);
+      await resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
     } catch (error) {
       const errorMessage = formatErrorMessage(error);
       logError("API", `Processing error: ${errorMessage}`);
@@ -354,7 +362,7 @@ export function useWidgetRecording({
       runtimeRef.current.reset();
       showError(message);
     }
-  }, [dispatch, machineRef, resizeWidget, setStream, settings, showError, stopLowMicMonitor]);
+  }, [dispatch, machineRef, onRecordingProcessing, resizeWidget, setStream, settings, showError, stopLowMicMonitor]);
 
   // ── Keep stopAndProcessRef current ──────────────────────────────────────
   useEffect(() => {

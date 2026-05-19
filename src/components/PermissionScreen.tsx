@@ -12,8 +12,8 @@ import {
 } from "../lib/permissions";
 import { logError } from "../lib/logger";
 import {
-  IDLE_WIDGET_HEIGHT,
-  IDLE_WIDGET_WIDTH,
+  CALL_STACK_WIDGET_HEIGHT,
+  CALL_STACK_WIDGET_WIDTH,
 } from "../windows/widget/widgetConstants";
 
 interface PermissionRowProps {
@@ -338,8 +338,8 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
     }
 
     await invoke("widget_resize", {
-      width: IDLE_WIDGET_WIDTH,
-      height: IDLE_WIDGET_HEIGHT,
+      width: CALL_STACK_WIDGET_WIDTH,
+      height: CALL_STACK_WIDGET_HEIGHT,
     });
     onComplete();
   };

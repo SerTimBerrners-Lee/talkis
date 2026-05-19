@@ -8,6 +8,8 @@ interface RecordingRuntimeState {
 
 export interface RecordingRuntimeController {
   start(stream: MediaStream): RecorderCodec;
+  pause(): boolean;
+  resume(): boolean;
   stop(): Promise<void>;
   hasRecorder(): boolean;
   hasAudioChunks(): boolean;
@@ -79,6 +81,31 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       state.recorder = recorder;
 
       return codec;
+    },
+    pause() {
+      if (!state.recorder || state.recorder.state !== "recording") {
+        return false;
+      }
+
+      try {
+        state.recorder.requestData();
+        state.recorder.pause();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    resume() {
+      if (!state.recorder || state.recorder.state !== "paused") {
+        return false;
+      }
+
+      try {
+        state.recorder.resume();
+        return true;
+      } catch {
+        return false;
+      }
     },
     async stop() {
       if (!state.recorder) {

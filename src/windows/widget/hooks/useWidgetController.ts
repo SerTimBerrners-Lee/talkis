@@ -6,7 +6,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppSettings, getSettings, getWidgetPosition, saveWidgetPosition } from "../../../lib/store";
 import { logError, logInfo } from "../../../lib/logger";
 import { formatErrorMessage } from "../../../lib/utils";
-import { IDLE_WIDGET_HEIGHT, IDLE_WIDGET_WIDTH, WidgetNoticeState, WidgetState } from "../widgetConstants";
+import {
+  CALL_STACK_WIDGET_HEIGHT,
+  CALL_STACK_WIDGET_WIDTH,
+  WidgetNoticeState,
+  WidgetState,
+} from "../widgetConstants";
 import { resolveInitialWidgetPosition } from "../widgetPositioning";
 import { useWidgetHotkey } from "./useWidgetHotkey";
 import { useWidgetNotice } from "./useWidgetNotice";
@@ -19,6 +24,12 @@ import {
   WidgetMachineState,
 } from "../services/widgetMachine";
 
+interface WidgetControllerOptions {
+  onVoiceRecordingProcessing?: () => void;
+  onVoiceRecordingStart?: () => void;
+  onVoiceRecordingStartFailed?: () => void;
+}
+
 interface WidgetControllerState {
   state: WidgetState;
   stream: MediaStream | null;
@@ -27,7 +38,11 @@ interface WidgetControllerState {
   toggleManualRecording: () => void;
 }
 
-export function useWidgetController(): WidgetControllerState {
+export function useWidgetController({
+  onVoiceRecordingProcessing,
+  onVoiceRecordingStart,
+  onVoiceRecordingStartFailed,
+}: WidgetControllerOptions = {}): WidgetControllerState {
   const widgetWindow = getCurrentWindow();
 
   // ── Centralized machine state ───────────────────────────────────────────
@@ -49,8 +64,8 @@ export function useWidgetController(): WidgetControllerState {
   const moveSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const positionReadyRef = useRef(false);
   const widgetSizeRef = useRef<{ width: number; height: number }>({
-    width: IDLE_WIDGET_WIDTH,
-    height: IDLE_WIDGET_HEIGHT,
+    width: CALL_STACK_WIDGET_WIDTH,
+    height: CALL_STACK_WIDGET_HEIGHT,
   });
   const stopAndProcessRef = useRef<() => Promise<void>>(async () => {});
 
@@ -258,6 +273,9 @@ export function useWidgetController(): WidgetControllerState {
     showNotice,
     hideNotice,
     stopAndProcessRef,
+    onRecordingProcessing: onVoiceRecordingProcessing,
+    onRecordingStart: onVoiceRecordingStart,
+    onRecordingStartFailed: onVoiceRecordingStartFailed,
   });
 
   useEffect(() => {

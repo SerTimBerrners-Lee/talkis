@@ -948,9 +948,9 @@ export function FileTranscriptionTab({
           >
             {isProcessing ? (
               <Loader2
+                className="loading-soft-icon"
                 size={24}
                 strokeWidth={1.8}
-                style={{ animation: "spin 0.9s linear infinite" }}
               />
             ) : (
               <FileAudio size={25} strokeWidth={1.8} />
@@ -1493,9 +1493,9 @@ export function FileTranscriptionTab({
               >
                 {speakerSetupInstalling ? (
                   <Loader2
+                    className="loading-soft-icon"
                     size={15}
                     strokeWidth={2}
-                    style={{ animation: "spin 0.9s linear infinite" }}
                   />
                 ) : null}
                 {speakerSetupActionLabel}

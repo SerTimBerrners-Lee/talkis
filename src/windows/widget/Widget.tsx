@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -26,7 +26,7 @@ import {
   toFileTranscriptionErrorMessage,
   transcribeFilePathOnly,
 } from "../../lib/fileTranscription";
-import { logError } from "../../lib/logger";
+import { logError, logInfo } from "../../lib/logger";
 import { startAppUpdateScheduler } from "../../lib/updater";
 import {
   startCallCapture,
@@ -39,12 +39,16 @@ import { createRecordingRuntimeController } from "./services/recordingRuntime";
 import {
   ACTIVE_WIDGET_SHELL_HEIGHT,
   ACTIVE_WIDGET_SHELL_WIDTH,
+  CALL_BUBBLE_GAP,
+  CALL_BUBBLE_SIZE,
+  CALL_STACK_WIDGET_HEIGHT,
+  CALL_STACK_WIDGET_WIDTH,
+  FILE_DROP_STACK_WIDGET_HEIGHT,
+  FILE_DROP_STACK_WIDGET_WIDTH,
   FILE_DROP_WIDGET_HEIGHT,
   FILE_DROP_WIDGET_WIDTH,
   IDLE_HOVER_WIDGET_HEIGHT,
   IDLE_HOVER_WIDGET_WIDTH,
-  IDLE_WIDGET_HEIGHT,
-  IDLE_WIDGET_WIDTH,
   IDLE_HOVER_SCALE,
   WIDGET_SHELL_HEIGHT,
   WIDGET_SHELL_WIDTH,
@@ -112,8 +116,35 @@ export function Widget() {
   const widgetWindow = getCurrentWindow();
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragTriggeredRef = useRef(false);
+  const callMicRuntimeRef = useRef(createRecordingRuntimeController());
+  const callMicPausedForVoiceRef = useRef(false);
+  const callStateRef = useRef<WidgetCallState>("idle");
+  const pauseCallMicForVoice = useCallback(() => {
+    if (callStateRef.current !== "recording") {
+      return;
+    }
+
+    callMicPausedForVoiceRef.current = true;
+    if (callMicRuntimeRef.current.pause()) {
+      logInfo("CALL_CAPTURE", "Paused call mic while voice recording");
+    }
+  }, []);
+  const resumeCallMicForVoice = useCallback(() => {
+    if (!callMicPausedForVoiceRef.current) {
+      return;
+    }
+
+    callMicPausedForVoiceRef.current = false;
+    if (callMicRuntimeRef.current.resume()) {
+      logInfo("CALL_CAPTURE", "Resumed call mic after voice recording");
+    }
+  }, []);
   const { state, stream, lockedRecording, toggleManualRecording } =
-    useWidgetController();
+    useWidgetController({
+      onVoiceRecordingProcessing: resumeCallMicForVoice,
+      onVoiceRecordingStart: pauseCallMicForVoice,
+      onVoiceRecordingStartFailed: resumeCallMicForVoice,
+    });
   const stateRef = useRef(state);
   const fileDropStateRef = useRef<WidgetFileDropState>("idle");
   const fileResetTimerRef = useRef<number | null>(null);
@@ -124,7 +155,6 @@ export function Widget() {
   const fileProcessRef = useRef<(filePath: string) => Promise<void>>(
     async () => {},
   );
-  const callMicRuntimeRef = useRef(createRecordingRuntimeController());
   const [latestCopyText, setLatestCopyText] = useState<string | null>(null);
   const [pendingFileResultId, setPendingFileResultId] = useState<string | null>(
     null,
@@ -156,8 +186,13 @@ export function Widget() {
   }, [fileDropState]);
 
   useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
     return startAppUpdateScheduler({
-      canRunUpdate: () => stateRef.current === "idle",
+      canRunUpdate: () =>
+        stateRef.current === "idle" && callStateRef.current === "idle",
     });
   }, []);
 
@@ -186,8 +221,8 @@ export function Widget() {
 
     fileDropExpandedRef.current = active;
     await invoke("widget_resize", {
-      width: active ? FILE_DROP_WIDGET_WIDTH : IDLE_WIDGET_WIDTH,
-      height: active ? FILE_DROP_WIDGET_HEIGHT : IDLE_WIDGET_HEIGHT,
+      width: active ? FILE_DROP_STACK_WIDGET_WIDTH : CALL_STACK_WIDGET_WIDTH,
+      height: active ? FILE_DROP_STACK_WIDGET_HEIGHT : CALL_STACK_WIDGET_HEIGHT,
     }).catch((error) => {
       logError(
         "WIDGET_FILE",
@@ -257,6 +292,9 @@ export function Widget() {
         audio: micConstraints,
       });
       callMicRuntimeRef.current.start(micStream);
+      if (callMicPausedForVoiceRef.current) {
+        callMicRuntimeRef.current.pause();
+      }
 
       const session = await startCallCapture({
         targetId: "system-output",
@@ -269,6 +307,7 @@ export function Widget() {
       const message = error instanceof Error ? error.message : String(error);
       logError("CALL_CAPTURE", `Call capture start failed: ${message}`);
       callMicRuntimeRef.current.dispose();
+      callMicPausedForVoiceRef.current = false;
       setCallError(message);
       setCallState("error");
       window.setTimeout(() => {
@@ -307,6 +346,7 @@ export function Widget() {
         onProgress: setFileProgress,
       });
       callMicRuntimeRef.current.reset();
+      callMicPausedForVoiceRef.current = false;
       setLatestCopyText(getCopyableText(entry));
       setCallSession(null);
       setCallSettings(null);
@@ -320,6 +360,7 @@ export function Widget() {
       const message = error instanceof Error ? error.message : String(error);
       logError("CALL_CAPTURE", `Call capture stop/process failed: ${message}`);
       callMicRuntimeRef.current.dispose();
+      callMicPausedForVoiceRef.current = false;
       setCallError(toFileTranscriptionErrorMessage(error));
       setCallState("error");
       setFileStatus(null);
@@ -572,6 +613,30 @@ export function Widget() {
     await invoke("open_settings");
   };
 
+  const fileDropActive = fileDropState !== "idle";
+  const stackWidth = fileDropActive
+    ? FILE_DROP_STACK_WIDGET_WIDTH
+    : CALL_STACK_WIDGET_WIDTH;
+  const stackHeight = fileDropActive
+    ? FILE_DROP_STACK_WIDGET_HEIGHT
+    : CALL_STACK_WIDGET_HEIGHT;
+  const callBubbleDisabled =
+    callState === "idle" && (state !== "idle" || fileDropActive);
+  const handleCallBubbleClick = () => {
+    if (dragTriggeredRef.current) {
+      return;
+    }
+
+    if (callState === "recording") {
+      void stopCallListening();
+      return;
+    }
+
+    if (!callBubbleDisabled && callState === "idle") {
+      void startCallListening();
+    }
+  };
+
   return (
     <div
       style={{
@@ -585,49 +650,43 @@ export function Widget() {
         justifyContent: "center",
       }}
     >
-      {callState !== "idle" && (
-        <CallRecordingPill
-          state={callState}
-          error={callError}
-          onStop={() => {
-            void stopCallListening();
-          }}
-          onPointerDown={handleDragPointerDown}
-          onPointerMove={handleDragPointerMove}
-          onPointerUp={handleDragPointerUp}
-          onPointerCancel={handleDragPointerUp}
-        />
-      )}
-      {callState === "idle" && fileDropState !== "idle" && (
-        <FileDropPill
-          state={fileDropState}
-          fileName={fileDropName}
-          status={fileStatus}
-          progress={fileProgress}
-          onOpenResult={openLatestFileResult}
-          onPointerDown={handleDragPointerDown}
-          onPointerMove={handleDragPointerMove}
-          onPointerUp={handleDragPointerUp}
-          onPointerCancel={handleDragPointerUp}
-        />
-      )}
-      {callState === "idle" && fileDropState === "idle" && state === "idle" && (
-        <IdlePill
-          latestCopyText={latestCopyText}
-          onToggleRecording={toggleManualRecording}
-          onStartCallListening={() => {
-            void startCallListening();
-          }}
-          onClick={openLatestFileResult}
-          onPointerDown={handleDragPointerDown}
-          onPointerMove={handleDragPointerMove}
-          onPointerUp={handleDragPointerUp}
-          onPointerCancel={handleDragPointerUp}
-        />
-      )}
-      {callState === "idle" &&
-        fileDropState === "idle" &&
-        state === "recording" && (
+      <div
+        style={{
+          width: stackWidth,
+          height: stackHeight,
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: CALL_BUBBLE_GAP,
+          pointerEvents: "none",
+        }}
+      >
+        {fileDropActive && (
+          <FileDropPill
+            state={fileDropState}
+            fileName={fileDropName}
+            status={fileStatus}
+            progress={fileProgress}
+            onOpenResult={openLatestFileResult}
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={handleDragPointerUp}
+          />
+        )}
+        {!fileDropActive && state === "idle" && (
+          <IdlePill
+            latestCopyText={latestCopyText}
+            onToggleRecording={toggleManualRecording}
+            onClick={openLatestFileResult}
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={handleDragPointerUp}
+          />
+        )}
+        {!fileDropActive && state === "recording" && (
           <RecordingPill
             stream={stream}
             locked={lockedRecording}
@@ -638,9 +697,7 @@ export function Widget() {
             onPointerCancel={handleDragPointerUp}
           />
         )}
-      {callState === "idle" &&
-        fileDropState === "idle" &&
-        state === "processing" && (
+        {!fileDropActive && state === "processing" && (
           <ProcessingPill
             onPointerDown={handleDragPointerDown}
             onPointerMove={handleDragPointerMove}
@@ -648,6 +705,23 @@ export function Widget() {
             onPointerCancel={handleDragPointerUp}
           />
         )}
+        <div
+          style={{
+            pointerEvents: "none",
+          }}
+        >
+          <CallBubble
+            state={callState}
+            error={callError}
+            disabled={callBubbleDisabled}
+            onClick={handleCallBubbleClick}
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={handleDragPointerUp}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -731,9 +805,9 @@ function FileDropPill({
         >
           {isProcessing ? (
             <Loader2
+              className="loading-soft-icon"
               size={20}
               strokeWidth={2}
-              style={{ animation: "spin 0.9s linear infinite" }}
             />
           ) : isSuccess ? (
             <Check size={20} strokeWidth={2.4} />
@@ -759,10 +833,11 @@ function FileDropPill({
   );
 }
 
-function CallRecordingPill({
+function CallBubble({
   state,
   error,
-  onStop,
+  disabled,
+  onClick,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -770,21 +845,32 @@ function CallRecordingPill({
 }: DragHandlers & {
   state: WidgetCallState;
   error: string;
-  onStop: () => void;
+  disabled: boolean;
+  onClick: () => void;
 }) {
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
   const isSuccess = state === "success";
   const isError = state === "error";
-  const widgetState = isProcessing ? "processing" : "long";
-  const mark = isSuccess ? "success" : isError ? "error" : "phone";
+  const copyIconColor = "rgba(255,255,255,0.72)";
   const title = isError
     ? error || "Ошибка созвона"
     : isProcessing
       ? "Транскрибируем разговор"
       : isSuccess
         ? "Созвон готов"
-        : "Завершить и транскрибировать";
+        : isRecording
+          ? "Завершить и транскрибировать"
+          : "Запись разговора";
+  const iconColor = disabled
+    ? "rgba(255,255,255,0.28)"
+    : isRecording || isError
+      ? "#ff4d4d"
+      : isSuccess
+        ? "#fff"
+        : copyIconColor;
+  const background = "#050505";
+  const iconSize = 12;
 
   return (
     <ActiveWidgetShell
@@ -792,44 +878,54 @@ function CallRecordingPill({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      width={IDLE_HOVER_WIDGET_WIDTH}
-      height={IDLE_HOVER_WIDGET_HEIGHT}
+      onClick={onClick}
+      cursor={disabled ? "grab" : "pointer"}
+      width={CALL_BUBBLE_SIZE}
+      height={CALL_BUBBLE_SIZE}
     >
-      <WidgetCoreShell
-        width={ACTIVE_WIDGET_SHELL_WIDTH}
-        height={ACTIVE_WIDGET_SHELL_HEIGHT}
+      <div
+        aria-label={title}
+        title={title}
+        role="button"
+        style={{
+          width: CALL_BUBBLE_SIZE,
+          height: CALL_BUBBLE_SIZE,
+          borderRadius: 999,
+          background,
+          border: "none",
+          color: iconColor,
+          display: "grid",
+          placeItems: "center",
+          boxShadow: "none",
+          opacity: disabled ? 0.72 : 1,
+          transform: isRecording ? "scale(1.02)" : "scale(1)",
+          transition:
+            "background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease, transform 0.16s ease",
+          WebkitFontSmoothing: "antialiased",
+        }}
       >
-        <FlowRecordingWidget state={widgetState} longMark={mark} />
-      </WidgetCoreShell>
-      {isRecording && (
-        <button
-          type="button"
-          aria-label="Транскрибировать разговор"
-          title={title}
-          onPointerDown={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onStop();
-          }}
-          style={{
-            position: "absolute",
-            left: 8,
-            top: "50%",
-            width: 20,
-            height: 20,
-            border: "none",
-            borderRadius: 999,
-            background: "transparent",
-            color: "transparent",
-            padding: 0,
-            transform: "translateY(-50%)",
-            pointerEvents: "auto",
-            cursor: "pointer",
-          }}
-        />
-      )}
+        {isProcessing ? (
+          <Loader2
+            className="loading-soft-icon"
+            size={iconSize}
+            strokeWidth={2.2}
+          />
+        ) : isSuccess ? (
+          <Check size={iconSize} strokeWidth={2.6} />
+        ) : isError ? (
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              lineHeight: 1,
+            }}
+          >
+            !
+          </span>
+        ) : (
+          <PhoneCall size={iconSize} strokeWidth={isRecording ? 2.4 : 2} />
+        )}
+      </div>
     </ActiveWidgetShell>
   );
 }
@@ -844,7 +940,6 @@ interface DragHandlers {
 function IdlePill({
   latestCopyText,
   onToggleRecording,
-  onStartCallListening,
   onClick,
   onPointerDown,
   onPointerMove,
@@ -853,7 +948,6 @@ function IdlePill({
 }: DragHandlers & {
   latestCopyText: string | null;
   onToggleRecording: () => void;
-  onStartCallListening: () => void;
   onClick: () => void;
 }) {
   const widgetWindow = getCurrentWindow();
@@ -989,43 +1083,6 @@ function IdlePill({
               boxShadow: "none",
             }}
           />
-        </button>
-        <button
-          type="button"
-          aria-label="Запись разговора"
-          title="Запись разговора"
-          onPointerDown={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onStartCallListening();
-          }}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            width: 14,
-            height: 14,
-            border: "none",
-            borderRadius: 999,
-            padding: 0,
-            background: "transparent",
-            color: "rgba(255,255,255,0.72)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: controlsVisible ? 1 : 0,
-            transform: controlsVisible
-              ? "translate(-50%, -50%) scale(1)"
-              : "translate(-50%, -50%) scale(0.84)",
-            transition: "opacity 0.14s ease, transform 0.14s ease",
-            pointerEvents: controlsVisible ? "auto" : "none",
-            cursor: "pointer",
-            WebkitFontSmoothing: "antialiased",
-          }}
-        >
-          <PhoneCall size={13} strokeWidth={2} />
         </button>
         {canCopy && (
           <button
@@ -1262,6 +1319,7 @@ function ActiveWidgetShell({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        position: "relative",
         pointerEvents: "auto",
         transformOrigin: "center center",
         transition: "transform 0.18s ease",

@@ -2103,7 +2103,7 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
                                 >
                                   {adapterStatus.status === "testing" ? (
                                     <>
-                                      <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid color-mix(in srgb, var(--accent-contrast) 35%, transparent)", borderTopColor: "var(--accent-contrast)", borderRadius: 999, animation: "spin 0.8s linear infinite" }} />
+                                      <span className="loading-soft-ring" />
                                       Проверяем...
                                     </>
                                   ) : (

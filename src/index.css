@@ -447,6 +447,30 @@ select {
   to { transform: rotate(360deg); }
 }
 
+@keyframes loading-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-soft-icon,
+.loading-soft-ring {
+  animation: loading-spinner-rotate 1.35s linear infinite;
+  opacity: 0.86;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.loading-soft-ring {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, currentColor 34%, transparent);
+  border-top-color: currentColor;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
 @keyframes voice-logo-pulse {
   0%, 100% { transform: scaleY(1); opacity: 1; }
   50% { transform: scaleY(0.58); opacity: 0.7; }
