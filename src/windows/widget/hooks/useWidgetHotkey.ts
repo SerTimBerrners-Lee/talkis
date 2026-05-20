@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import type { ShortcutEvent } from "@tauri-apps/plugin-global-shortcut";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -54,6 +55,12 @@ export function useWidgetHotkey({
     registeredHotkeyRef.current = null;
   }, [registeredHotkeyRef]);
 
+  const activateWidgetForHotkey = useCallback(() => {
+    invoke("activate_widget_for_hotkey").catch((error) => {
+      logError("HOTKEY", `Failed to activate widget for hotkey: ${error}`);
+    });
+  }, []);
+
   const handleHotkeyPress = useCallback(
     (event: ShortcutEvent) => {
       if (isHotkeyCaptureActiveRef.current) {
@@ -69,12 +76,13 @@ export function useWidgetHotkey({
       }
 
       if (event.state === "Pressed") {
+        activateWidgetForHotkey();
         dispatch({ type: "HOTKEY_PRESSED" });
       } else {
         dispatch({ type: "HOTKEY_RELEASED" });
       }
     },
-    [dispatch, machineRef],
+    [activateWidgetForHotkey, dispatch, machineRef],
   );
 
   const attemptHotkeyRegistration = useCallback(async (rawHotkey: string): Promise<HotkeyRegistrationResultPayload> => {

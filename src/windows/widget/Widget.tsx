@@ -30,6 +30,7 @@ import {
 } from "../../lib/fileTranscription";
 import { logError, logInfo } from "../../lib/logger";
 import { startAppUpdateScheduler } from "../../lib/updater";
+import { scaleWidgetDimension } from "../../lib/widgetScale";
 import {
   saveFailedCallCaptureEntry,
   saveCallCaptureMicTrack,
@@ -144,7 +145,7 @@ export function Widget() {
       logInfo("CALL_CAPTURE", "Resumed call mic after voice recording");
     }
   }, []);
-  const { state, stream, lockedRecording, toggleManualRecording } =
+  const { state, stream, lockedRecording, widgetScale, resizeWidget, toggleManualRecording } =
     useWidgetController({
       onVoiceRecordingProcessing: resumeCallMicForVoice,
       onVoiceRecordingStart: pauseCallMicForVoice,
@@ -255,10 +256,10 @@ export function Widget() {
     }
 
     fileDropExpandedRef.current = active;
-    await invoke("widget_resize", {
-      width: active ? FILE_DROP_STACK_WIDGET_WIDTH : CALL_STACK_WIDGET_WIDTH,
-      height: active ? FILE_DROP_STACK_WIDGET_HEIGHT : CALL_STACK_WIDGET_HEIGHT,
-    }).catch((error) => {
+    await resizeWidget(
+      active ? FILE_DROP_STACK_WIDGET_WIDTH : CALL_STACK_WIDGET_WIDTH,
+      active ? FILE_DROP_STACK_WIDGET_HEIGHT : CALL_STACK_WIDGET_HEIGHT,
+    ).catch((error) => {
       logError(
         "WIDGET_FILE",
         `Resize failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -696,6 +697,8 @@ export function Widget() {
   const stackHeight = fileDropActive
     ? FILE_DROP_STACK_WIDGET_HEIGHT
     : CALL_STACK_WIDGET_HEIGHT;
+  const scaledStackWidth = scaleWidgetDimension(stackWidth, widgetScale);
+  const scaledStackHeight = scaleWidgetDimension(stackHeight, widgetScale);
   const displayCallState: WidgetCallState =
     retryProcessingSource === "call" && callState === "idle"
       ? "processing"
@@ -741,74 +744,86 @@ export function Widget() {
     >
       <div
         style={{
-          width: stackWidth,
-          height: stackHeight,
-          display: "flex",
-          flexDirection: "row",
+          width: scaledStackWidth,
+          height: scaledStackHeight,
+          display: "grid",
           alignItems: "center",
           justifyContent: "center",
-          gap: CALL_BUBBLE_GAP,
           pointerEvents: "none",
         }}
       >
-        {fileDropActive && (
-          <FileDropPill
-            state={fileDropState}
-            fileName={fileDropName}
-            status={fileStatus}
-            progress={fileProgress}
-            onOpenResult={openLatestFileResult}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
-        {!fileDropActive && displayWidgetState === "idle" && (
-          <IdlePill
-            latestCopyText={latestCopyText}
-            onToggleRecording={toggleManualRecording}
-            onClick={openLatestFileResult}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
-        {!fileDropActive && displayWidgetState === "recording" && (
-          <RecordingPill
-            stream={stream}
-            locked={lockedRecording}
-            onToggleRecording={toggleManualRecording}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
-        {!fileDropActive && displayWidgetState === "processing" && (
-          <ProcessingPill
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
-        )}
         <div
           style={{
+            width: stackWidth,
+            height: stackHeight,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: CALL_BUBBLE_GAP,
             pointerEvents: "none",
+            zoom: widgetScale,
           }}
         >
-          <CallBubble
-            state={displayCallState}
-            error={callError}
-            disabled={callBubbleDisabled}
-            onClick={handleCallBubbleClick}
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-          />
+          {fileDropActive && (
+            <FileDropPill
+              state={fileDropState}
+              fileName={fileDropName}
+              status={fileStatus}
+              progress={fileProgress}
+              onOpenResult={openLatestFileResult}
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+              onPointerCancel={handleDragPointerUp}
+            />
+          )}
+          {!fileDropActive && displayWidgetState === "idle" && (
+            <IdlePill
+              latestCopyText={latestCopyText}
+              onToggleRecording={toggleManualRecording}
+              onClick={openLatestFileResult}
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+              onPointerCancel={handleDragPointerUp}
+            />
+          )}
+          {!fileDropActive && displayWidgetState === "recording" && (
+            <RecordingPill
+              stream={stream}
+              locked={lockedRecording}
+              onToggleRecording={toggleManualRecording}
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+              onPointerCancel={handleDragPointerUp}
+            />
+          )}
+          {!fileDropActive && displayWidgetState === "processing" && (
+            <ProcessingPill
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+              onPointerCancel={handleDragPointerUp}
+            />
+          )}
+          <div
+            style={{
+              pointerEvents: "none",
+            }}
+          >
+            <CallBubble
+              state={displayCallState}
+              error={callError}
+              disabled={callBubbleDisabled}
+              onClick={handleCallBubbleClick}
+              onPointerDown={handleDragPointerDown}
+              onPointerMove={handleDragPointerMove}
+              onPointerUp={handleDragPointerUp}
+              onPointerCancel={handleDragPointerUp}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -1047,7 +1062,8 @@ function IdlePill({
 
   useEffect(() => {
     let disposed = false;
-    const hoverMarginPx = 2;
+    const enterMarginPx = 8;
+    const leaveMarginPx = 16;
 
     const updateHoverState = async () => {
       try {
@@ -1061,11 +1077,12 @@ function IdlePill({
           return;
         }
 
+        const margin = isHovered ? leaveMarginPx : enterMarginPx;
         const hovered =
-          cursor.x >= position.x - hoverMarginPx &&
-          cursor.x <= position.x + size.width + hoverMarginPx &&
-          cursor.y >= position.y - hoverMarginPx &&
-          cursor.y <= position.y + size.height + hoverMarginPx;
+          cursor.x >= position.x - margin &&
+          cursor.x <= position.x + size.width + margin &&
+          cursor.y >= position.y - margin &&
+          cursor.y <= position.y + size.height + margin;
 
         setIsHovered(hovered);
       } catch (error) {
@@ -1085,7 +1102,7 @@ function IdlePill({
       disposed = true;
       window.clearInterval(interval);
     };
-  }, [widgetWindow]);
+  }, [isHovered, widgetWindow]);
 
   const copyLatestText = async () => {
     if (!latestCopyText) {

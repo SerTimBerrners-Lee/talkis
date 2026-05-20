@@ -103,6 +103,7 @@ pub fn run() {
             settings_window::open_settings,
             settings_window::open_settings_tab,
             widget::widget_resize,
+            widget::activate_widget_for_hotkey,
             widget::show_widget_notice,
             widget::hide_widget_notice,
             paste::paste_text,
