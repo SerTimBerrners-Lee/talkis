@@ -10,7 +10,9 @@ import {
   requestMicrophonePermission,
   requestSystemAudioPermission,
 } from "../lib/permissions";
+import { getSettings } from "../lib/store";
 import { logError } from "../lib/logger";
+import { scaleWidgetDimension } from "../lib/widgetScale";
 import {
   CALL_STACK_WIDGET_HEIGHT,
   CALL_STACK_WIDGET_WIDTH,
@@ -337,9 +339,12 @@ export function PermissionScreen({ onComplete }: PermissionScreenProps) {
       return;
     }
 
+    const settings = await getSettings({ reload: true }).catch(() => null);
+    const widgetScale = settings?.widgetScale ?? 1;
     await invoke("widget_resize", {
-      width: CALL_STACK_WIDGET_WIDTH,
-      height: CALL_STACK_WIDGET_HEIGHT,
+      width: scaleWidgetDimension(CALL_STACK_WIDGET_WIDTH, widgetScale),
+      height: scaleWidgetDimension(CALL_STACK_WIDGET_HEIGHT, widgetScale),
+      growthOffsetRatio: 0,
     });
     onComplete();
   };

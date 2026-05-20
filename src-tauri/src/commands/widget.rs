@@ -14,11 +14,11 @@ pub const WIDGET_WIDTH: f64 = 109.0;
 pub const WIDGET_HEIGHT: f64 = 34.0;
 const WIDGET_EXPANDED_OFFSET_RATIO: f64 = 0.20;
 
-fn centered_resize_offset(current: f64, target: f64) -> f64 {
+fn centered_resize_offset(current: f64, target: f64, expanded_offset_ratio: f64) -> f64 {
     let centered = (current - target) / 2.0;
 
     if target > current {
-        centered - (target - current) * WIDGET_EXPANDED_OFFSET_RATIO
+        centered - (target - current) * expanded_offset_ratio
     } else {
         centered
     }
@@ -97,7 +97,49 @@ fn position_widget_notice_window(
 }
 
 #[cfg(target_os = "macos")]
-fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
+fn order_widget_window_front(app: &AppHandle) -> Result<(), String> {
+    use objc2_app_kit::NSWindowCollectionBehavior;
+    use std::sync::mpsc;
+
+    let handle = app.clone();
+    let (tx, rx) = mpsc::channel::<Result<(), String>>();
+
+    app.run_on_main_thread(move || {
+        let result = (|| -> Result<(), String> {
+            let Some(win) = handle.get_webview_window("widget") else {
+                return Ok(());
+            };
+
+            unsafe {
+                let ns_win: &objc2_app_kit::NSWindow =
+                    &*win.ns_window().map_err(|e| e.to_string())?.cast();
+                ns_win.setCollectionBehavior(
+                    ns_win.collectionBehavior()
+                        | NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::FullScreenAuxiliary
+                        | NSWindowCollectionBehavior::Stationary,
+                );
+                ns_win.orderFrontRegardless();
+            }
+
+            Ok(())
+        })();
+
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+
+    rx.recv()
+        .map_err(|e| format!("Failed to receive widget activation result: {}", e))?
+}
+
+#[cfg(target_os = "macos")]
+fn resize_widget_window(
+    app: &AppHandle,
+    width: f64,
+    height: f64,
+    expanded_offset_ratio: f64,
+) -> Result<(), String> {
     use std::sync::mpsc;
 
     let handle = app.clone();
@@ -118,10 +160,14 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
                 // resize anchor drifts away from the visible widget center.
                 let target_width = width;
                 let target_height = height;
-                let next_x =
-                    frame.origin.x + centered_resize_offset(frame.size.width, target_width);
-                let next_y =
-                    frame.origin.y + centered_resize_offset(frame.size.height, target_height);
+                let next_x = frame.origin.x
+                    + centered_resize_offset(frame.size.width, target_width, expanded_offset_ratio);
+                let next_y = frame.origin.y
+                    + centered_resize_offset(
+                        frame.size.height,
+                        target_height,
+                        expanded_offset_ratio,
+                    );
                 let next_frame = objc2_foundation::NSRect::new(
                     objc2_foundation::NSPoint::new(next_x, next_y),
                     objc2_foundation::NSSize::new(target_width, target_height),
@@ -162,7 +208,12 @@ fn calculate_default_widget_position(
 }
 
 #[cfg(not(target_os = "macos"))]
-fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
+fn resize_widget_window(
+    app: &AppHandle,
+    width: f64,
+    height: f64,
+    expanded_offset_ratio: f64,
+) -> Result<(), String> {
     use crate::logger;
 
     if let Some(win) = app.get_webview_window("widget") {
@@ -180,8 +231,10 @@ fn resize_widget_window(app: &AppHandle, width: f64, height: f64) -> Result<(), 
         if let (Some(position), Some(size)) = (current_position, current_size) {
             let target_width = width * scale_factor;
             let target_height = height * scale_factor;
-            let x = position.x as f64 + centered_resize_offset(size.width as f64, target_width);
-            let y = position.y as f64 + centered_resize_offset(size.height as f64, target_height);
+            let x = position.x as f64
+                + centered_resize_offset(size.width as f64, target_width, expanded_offset_ratio);
+            let y = position.y as f64
+                + centered_resize_offset(size.height as f64, target_height, expanded_offset_ratio);
 
             if let Err(err) = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                 x: x.round() as i32,
@@ -242,6 +295,30 @@ pub async fn hide_widget_notice(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn widget_resize(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
-    resize_widget_window(&app, width, height)
+pub async fn widget_resize(
+    app: AppHandle,
+    width: f64,
+    height: f64,
+    growth_offset_ratio: Option<f64>,
+) -> Result<(), String> {
+    let expanded_offset_ratio = growth_offset_ratio
+        .unwrap_or(WIDGET_EXPANDED_OFFSET_RATIO)
+        .clamp(0.0, 1.0);
+    resize_widget_window(&app, width, height, expanded_offset_ratio)
+}
+
+#[tauri::command]
+pub async fn activate_widget_for_hotkey(app: AppHandle) -> Result<(), String> {
+    let win = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window not found".to_string())?;
+
+    let _ = win.unminimize();
+    win.show().map_err(|e| e.to_string())?;
+    let _ = win.set_always_on_top(true);
+
+    #[cfg(target_os = "macos")]
+    order_widget_window_front(&app)?;
+
+    Ok(())
 }

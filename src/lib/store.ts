@@ -1,5 +1,7 @@
 import { load } from "@tauri-apps/plugin-store";
 
+import { DEFAULT_WIDGET_SCALE, normalizeWidgetScale } from "./widgetScale";
+
 export interface HistoryEntry {
   id: string;
   timestamp: string;
@@ -84,6 +86,8 @@ export interface AppSettings {
   /** Model name for LLM cleanup (e.g. "gpt-4o-mini", "deepseek-chat") */
   llmModel: string;
   hotkey: string;
+  /** Floating widget visual scale. 1 = 100%. */
+  widgetScale: number;
   theme: ThemePreference;
   language: string;
   doubleTapTimeout: number;
@@ -335,6 +339,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   whisperModel: "whisper-1",
   llmModel: "gpt-4o-mini",
   hotkey: DEFAULT_HOTKEY,
+  widgetScale: DEFAULT_WIDGET_SCALE,
   theme: "system",
   language: "ru",
   doubleTapTimeout: 400,
@@ -476,6 +481,10 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
       typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
     llmModel: typeof raw.llmModel === "string" ? raw.llmModel : undefined,
     hotkey,
+    widgetScale:
+      raw.widgetScale === undefined
+        ? undefined
+        : normalizeWidgetScale(raw.widgetScale),
     theme: parseTheme(raw.theme),
     language: typeof raw.language === "string" ? raw.language : undefined,
     doubleTapTimeout:
@@ -611,6 +620,10 @@ export async function saveSettings(
     }
 
     nextSettings.hotkey = normalized.normalized;
+  }
+
+  if (settings.widgetScale !== undefined) {
+    nextSettings.widgetScale = normalizeWidgetScale(settings.widgetScale);
   }
 
   await store.set("settings", nextSettings);

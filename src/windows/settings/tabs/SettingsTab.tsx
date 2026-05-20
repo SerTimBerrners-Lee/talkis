@@ -16,6 +16,13 @@ import {
 } from "../../../lib/store";
 import { applyThemePreference } from "../../../lib/theme";
 import {
+  formatWidgetScalePercent,
+  normalizeWidgetScale,
+  WIDGET_SCALE_MAX,
+  WIDGET_SCALE_MIN,
+  WIDGET_SCALE_STEP,
+} from "../../../lib/widgetScale";
+import {
   HOTKEY_CAPTURE_STATE_EVENT,
   HOTKEY_CHANGE_REQUEST_EVENT,
   HOTKEY_REGISTRATION_RESULT_EVENT,
@@ -583,6 +590,7 @@ export function SettingsTab() {
   const autostartDisabled = !autostartLoaded || autostartPending;
   const localModelsDir = (settings.localModelsDir || "").trim();
   const effectiveLocalModelsDir = localModelsDir || defaultLocalModelsDir;
+  const widgetScale = normalizeWidgetScale(settings.widgetScale);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -784,6 +792,51 @@ export function SettingsTab() {
           <div style={{ fontSize: 12, color: "var(--text-low)", whiteSpace: "nowrap" }}>
             Текущая: {formatHotkeyLabel(settings.hotkey || DEFAULT_HOTKEY)}
           </div>
+        </div>
+      </div>
+
+      <div className="card" style={SETTINGS_CARD_STYLE}>
+        <div style={{ display: "grid", gridTemplateColumns: SETTING_ROW_COLUMNS, alignItems: "center", gap: SETTING_ROW_GAP }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-hi)", margin: 0 }}>Размер виджета</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 56px", alignItems: "center", gap: 12, justifySelf: "end", width: "100%" }}>
+            <input
+              type="range"
+              min={WIDGET_SCALE_MIN}
+              max={WIDGET_SCALE_MAX}
+              step={WIDGET_SCALE_STEP}
+              value={widgetScale}
+              onChange={(event) => {
+                void update({ widgetScale: normalizeWidgetScale(Number(event.currentTarget.value)) });
+              }}
+              aria-label="Размер виджета"
+              style={{
+                width: "100%",
+                accentColor: "var(--accent)",
+                cursor: "pointer",
+              }}
+            />
+            <div
+              style={{
+                height: CONTROL_HEIGHT,
+                borderRadius: CONTROL_RADIUS,
+                background: "var(--control-muted)",
+                color: "var(--text-hi)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: CONTROL_FONT_SIZE,
+                fontWeight: 700,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {formatWidgetScalePercent(widgetScale)}
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: "var(--text-mid)", lineHeight: 1.65 }}>
+          Масштаб плавающего виджета.
         </div>
       </div>
 

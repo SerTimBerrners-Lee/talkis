@@ -7,6 +7,11 @@ import { AppSettings, getSettings, getWidgetPosition, saveWidgetPosition } from 
 import { logError, logInfo } from "../../../lib/logger";
 import { formatErrorMessage } from "../../../lib/utils";
 import {
+  DEFAULT_WIDGET_SCALE,
+  normalizeWidgetScale,
+  scaleWidgetDimension,
+} from "../../../lib/widgetScale";
+import {
   CALL_STACK_WIDGET_HEIGHT,
   CALL_STACK_WIDGET_WIDTH,
   WidgetNoticeState,
@@ -30,11 +35,21 @@ interface WidgetControllerOptions {
   onVoiceRecordingStartFailed?: () => void;
 }
 
+interface ResizeWidgetOptions {
+  growthOffsetRatio?: number;
+}
+
 interface WidgetControllerState {
   state: WidgetState;
   stream: MediaStream | null;
   notice: WidgetNoticeState | null;
   lockedRecording: boolean;
+  widgetScale: number;
+  resizeWidget: (
+    width: number,
+    height: number,
+    options?: ResizeWidgetOptions,
+  ) => Promise<void>;
   toggleManualRecording: () => void;
 }
 
@@ -52,6 +67,7 @@ export function useWidgetController({
   const [widgetState, setWidgetState] = useState<WidgetState>("idle");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [lockedRecording, setLockedRecording] = useState(false);
+  const [widgetScale, setWidgetScale] = useState(DEFAULT_WIDGET_SCALE);
 
   // Settings
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -63,9 +79,14 @@ export function useWidgetController({
   const releaseStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const positionReadyRef = useRef(false);
-  const widgetSizeRef = useRef<{ width: number; height: number }>({
+  const widgetScaleRef = useRef(DEFAULT_WIDGET_SCALE);
+  const widgetBaseSizeRef = useRef<{ width: number; height: number }>({
     width: CALL_STACK_WIDGET_WIDTH,
     height: CALL_STACK_WIDGET_HEIGHT,
+  });
+  const widgetSizeRef = useRef<{ width: number; height: number }>({
+    width: scaleWidgetDimension(CALL_STACK_WIDGET_WIDTH, DEFAULT_WIDGET_SCALE),
+    height: scaleWidgetDimension(CALL_STACK_WIDGET_HEIGHT, DEFAULT_WIDGET_SCALE),
   });
   const stopAndProcessRef = useRef<() => Promise<void>>(async () => {});
 
@@ -225,20 +246,64 @@ export function useWidgetController({
   }, [widgetWindow]);
 
   // ── Widget resize ───────────────────────────────────────────────────────
-  const resizeWidget = useCallback(async (width: number, height: number) => {
+  const resizeWidget = useCallback(async (
+    width: number,
+    height: number,
+    options: ResizeWidgetOptions = {},
+  ) => {
     try {
+      const scale = normalizeWidgetScale(widgetScaleRef.current);
+      const scaledWidth = scaleWidgetDimension(width, scale);
+      const scaledHeight = scaleWidgetDimension(height, scale);
+      const currentBaseSize = widgetBaseSizeRef.current;
       const currentSize = widgetSizeRef.current;
 
-      if (currentSize.width === width && currentSize.height === height) {
+      if (
+        currentBaseSize.width === width &&
+        currentBaseSize.height === height &&
+        currentSize.width === scaledWidth &&
+        currentSize.height === scaledHeight
+      ) {
         return;
       }
 
-      await invoke("widget_resize", { width, height });
-      widgetSizeRef.current = { width, height };
+      const resizePayload: {
+        width: number;
+        height: number;
+        growthOffsetRatio?: number;
+      } = {
+        width: scaledWidth,
+        height: scaledHeight,
+      };
+
+      if (options.growthOffsetRatio !== undefined) {
+        resizePayload.growthOffsetRatio = options.growthOffsetRatio;
+      }
+
+      await invoke("widget_resize", resizePayload);
+      widgetBaseSizeRef.current = { width, height };
+      widgetSizeRef.current = { width: scaledWidth, height: scaledHeight };
     } catch (error) {
       logError("WIDGET", `Resize failed: ${formatErrorMessage(error)}`);
     }
-  }, [widgetWindow]);
+  }, []);
+
+  useEffect(() => {
+    if (!settings) {
+      return;
+    }
+
+    const nextScale = normalizeWidgetScale(settings.widgetScale);
+    setWidgetScale(nextScale);
+
+    if (widgetScaleRef.current === nextScale) {
+      return;
+    }
+
+    widgetScaleRef.current = nextScale;
+    const baseSize = widgetBaseSizeRef.current;
+    void resizeWidget(baseSize.width, baseSize.height, { growthOffsetRatio: 0 });
+  }, [resizeWidget, settings?.widgetScale]);
 
   // ── Notice ──────────────────────────────────────────────────────────────
   const machineStateRefForNotice = useRef(machineRef);
@@ -321,6 +386,8 @@ export function useWidgetController({
     stream,
     notice: null,
     lockedRecording,
+    widgetScale,
+    resizeWidget,
     toggleManualRecording,
   };
 }
