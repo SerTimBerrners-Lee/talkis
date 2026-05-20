@@ -50,7 +50,7 @@ pub fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWind
 
     #[cfg(target_os = "linux")]
     {
-        builder = builder.transparent(false).skip_taskbar(false);
+        builder = builder.transparent(true).skip_taskbar(true);
     }
 
     #[cfg(not(target_os = "linux"))]
