@@ -247,7 +247,7 @@ export function useWidgetRecording({
             `Mic access denied: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
           );
           onRecordingStartFailed?.();
-          showError("Нет доступа к микрофону. Разрешите доступ в настройках macOS.");
+          showError("Нет доступа к микрофону. Разрешите доступ в системных настройках.");
           return;
         }
       }
@@ -320,6 +320,7 @@ export function useWidgetRecording({
       }
 
       const blob = runtimeRef.current.getAudioBlob();
+      logInfo("RECORDING", `Recorded audio blob: type=${blob.type || "[unknown]"}, size=${blob.size}`);
       const durationMs = Date.now() - machine.recordingStartTimestamp;
 
       if (durationMs < MIN_RECORDING_DURATION_MS || blob.size < MIN_AUDIO_BLOB_BYTES) {

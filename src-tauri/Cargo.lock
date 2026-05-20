@@ -4713,6 +4713,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "url",
+ "webkit2gtk",
  "whisper-rs",
  "window-vibrancy 0.7.1",
 ]

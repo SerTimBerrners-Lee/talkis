@@ -4,6 +4,7 @@ mod commands;
 mod hotkey_capture;
 mod local_stt;
 mod logger;
+mod media_permissions;
 mod media;
 mod paste;
 mod prompt_config;
@@ -47,6 +48,7 @@ pub fn run() {
             let _ = widget::ensure_widget_notice_window(app.handle());
 
             if let Some(win) = app.get_webview_window("widget") {
+                media_permissions::allow_microphone_requests(&win);
                 let _ = win.set_resizable(false);
 
                 #[cfg(target_os = "macos")]

@@ -5,7 +5,15 @@ import { disable as disableAutostart, enable as enableAutostart, isEnabled as is
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Check, ChevronDown, Monitor, Moon, Search, Sun, type LucideIcon } from "lucide-react";
 
-import { getSettings, saveSettings, AppSettings, DEFAULT_HOTKEY, formatHotkeyLabel } from "../../../lib/store";
+import {
+  getSettings,
+  saveSettings,
+  AppSettings,
+  DEFAULT_HOTKEY,
+  formatHotkeyLabel,
+  isMacPlatform,
+  normalizeHotkey,
+} from "../../../lib/store";
 import { applyThemePreference } from "../../../lib/theme";
 import {
   HOTKEY_CAPTURE_STATE_EVENT,
@@ -20,6 +28,7 @@ import { logError, logInfo } from "../../../lib/logger";
 import { LANGUAGES } from "../../../config/languages";
 
 type HotkeyFeedbackTone = "idle" | "success" | "error";
+type FrontendHotkeyCaptureEvent = Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">;
 
 const SETTING_ROW_COLUMNS = "minmax(0, 1fr) 280px";
 const SETTING_ROW_GAP = 16;
@@ -39,7 +48,51 @@ const THEME_OPTIONS: Array<{ id: AppSettings["theme"]; label: string; Icon: Luci
   { id: "dark", label: "Темная", Icon: Moon },
 ];
 
+function hotkeyMainKeyFromKeyboardEvent(event: FrontendHotkeyCaptureEvent): string | null {
+  if (event.key === " ") return "Space";
+
+  const key = event.key.trim();
+  const lower = key.toLowerCase();
+
+  if (!key || lower === "control" || lower === "alt" || lower === "shift" || lower === "meta") {
+    return null;
+  }
+
+  if (lower === "escape") return "Escape";
+  if (lower === "enter") return "Enter";
+  if (lower === "tab") return "Tab";
+  if (lower === "backspace") return "Backspace";
+  if (lower === "delete") return "Delete";
+  if (lower === "insert") return "Insert";
+  if (lower === "home") return "Home";
+  if (lower === "end") return "End";
+  if (lower === "pageup") return "PageUp";
+  if (lower === "pagedown") return "PageDown";
+  if (lower === "arrowup") return "Up";
+  if (lower === "arrowdown") return "Down";
+  if (lower === "arrowleft") return "Left";
+  if (lower === "arrowright") return "Right";
+  if (/^f(?:[1-9]|1[0-2])$/i.test(key)) return key.toUpperCase();
+  if (/^[a-z0-9]$/i.test(key)) return key.toUpperCase();
+
+  return null;
+}
+
+function buildFrontendHotkeyCandidate(event: FrontendHotkeyCaptureEvent): string | null {
+  const parts: string[] = [];
+  if (event.ctrlKey) parts.push("Control");
+  if (event.altKey) parts.push("Alt");
+  if (event.shiftKey) parts.push("Shift");
+  if (event.metaKey) parts.push("Command");
+
+  const mainKey = hotkeyMainKeyFromKeyboardEvent(event);
+  if (mainKey) parts.push(mainKey);
+
+  return parts.length > 0 ? parts.join("+") : null;
+}
+
 export function SettingsTab() {
+  const usesNativeHotkeyCapture = isMacPlatform();
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   // Language picker state
@@ -182,33 +235,8 @@ export function SettingsTab() {
           return;
         }
 
-        const candidate = payload.hotkey?.trim();
         await invoke("stop_native_hotkey_capture").catch(() => null);
-        await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
-
-        if (!candidate) {
-          setIsHotkeyCaptureActive(false);
-          setHotkeyDraft(null);
-          setHotkeyFeedbackTone("error");
-          setHotkeyFeedback("Не удалось распознать комбинацию.");
-          return;
-        }
-
-        pendingHotkeyRef.current = candidate;
-        setIsHotkeyCaptureActive(false);
-        setIsHotkeySubmitting(true);
-        setHotkeyDraft(candidate);
-        setHotkeyFeedbackTone("idle");
-        setHotkeyFeedback("Проверяем, свободна ли эта комбинация...");
-
-        emit(HOTKEY_CHANGE_REQUEST_EVENT, { hotkey: candidate }).catch((error) => {
-          pendingHotkeyRef.current = null;
-          setIsHotkeySubmitting(false);
-          setHotkeyDraft(null);
-          setHotkeyFeedbackTone("error");
-          setHotkeyFeedback("Не удалось отправить новую комбинацию на проверку.");
-          void logError("SETTINGS", `Failed to emit hotkey change request: ${error instanceof Error ? error.message : String(error)}`);
-        });
+        await applyCapturedHotkey(payload.hotkey?.trim() || null);
       },
     );
 
@@ -220,6 +248,48 @@ export function SettingsTab() {
       clearHotkeyFeedbackResetTimer();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isHotkeyCaptureActive || usesNativeHotkeyCapture) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.key === "Escape" && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+        void stopHotkeyCapture("Ввод отменен. Текущая комбинация сохранена.");
+        return;
+      }
+
+      const candidate = buildFrontendHotkeyCandidate(event);
+      if (!candidate) {
+        setHotkeyDraft(null);
+        setHotkeyFeedbackTone("idle");
+        setHotkeyFeedback("Нажмите сочетание с основной клавишей.");
+        return;
+      }
+
+      const normalized = normalizeHotkey(candidate);
+      setHotkeyDraft(candidate);
+
+      if (!normalized.valid) {
+        setHotkeyFeedbackTone("error");
+        setHotkeyFeedback(normalized.error || "Неверная комбинация.");
+        return;
+      }
+
+      void applyCapturedHotkey(normalized.normalized || candidate);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.setTimeout(() => hotkeyButtonRef.current?.focus(), 0);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [isHotkeyCaptureActive, usesNativeHotkeyCapture]);
 
   useEffect(() => {
     if (!settings) return;
@@ -273,7 +343,7 @@ export function SettingsTab() {
         if (uniqueMics.length === 0) {
           if (needsPermission) {
             setMicStatus("permission-needed");
-            setMicMessage("Список микрофонов появится после доступа к микрофону в macOS.");
+            setMicMessage("Список микрофонов появится после разрешения доступа к микрофону.");
             return;
           }
 
@@ -325,6 +395,43 @@ export function SettingsTab() {
     return s;
   };
 
+  const applyCapturedHotkey = async (candidate: string | null): Promise<void> => {
+    await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
+
+    if (!candidate) {
+      setIsHotkeyCaptureActive(false);
+      setHotkeyDraft(null);
+      setHotkeyFeedbackTone("error");
+      setHotkeyFeedback("Не удалось распознать комбинацию.");
+      return;
+    }
+
+    const normalized = normalizeHotkey(candidate);
+    if (!normalized.valid || !normalized.normalized) {
+      setIsHotkeyCaptureActive(false);
+      setHotkeyDraft(null);
+      setHotkeyFeedbackTone("error");
+      setHotkeyFeedback(normalized.error || "Неверная комбинация.");
+      return;
+    }
+
+    pendingHotkeyRef.current = normalized.normalized;
+    setIsHotkeyCaptureActive(false);
+    setIsHotkeySubmitting(true);
+    setHotkeyDraft(normalized.normalized);
+    setHotkeyFeedbackTone("idle");
+    setHotkeyFeedback("Проверяем, свободна ли эта комбинация...");
+
+    emit(HOTKEY_CHANGE_REQUEST_EVENT, { hotkey: normalized.normalized }).catch((error) => {
+      pendingHotkeyRef.current = null;
+      setIsHotkeySubmitting(false);
+      setHotkeyDraft(null);
+      setHotkeyFeedbackTone("error");
+      setHotkeyFeedback("Не удалось отправить новую комбинацию на проверку.");
+      void logError("SETTINGS", `Failed to emit hotkey change request: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  };
+
   const startHotkeyCapture = async (): Promise<void> => {
     if (isHotkeySubmitting || isHotkeyCaptureActive) {
       return;
@@ -335,11 +442,15 @@ export function SettingsTab() {
     setIsHotkeyCaptureActive(true);
     setHotkeyDraft(null);
     setHotkeyFeedbackTone("idle");
-    setHotkeyFeedback("Запускаем запись новой комбинации...");
+    setHotkeyFeedback(usesNativeHotkeyCapture ? "Запускаем запись новой комбинации..." : "Нажмите новое сочетание.");
 
     try {
       await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: true });
-      await invoke("start_native_hotkey_capture");
+      if (usesNativeHotkeyCapture) {
+        await invoke("start_native_hotkey_capture");
+      } else {
+        window.setTimeout(() => hotkeyButtonRef.current?.focus(), 0);
+      }
     } catch (error) {
       await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);
       setIsHotkeyCaptureActive(false);
@@ -355,10 +466,12 @@ export function SettingsTab() {
     setIsHotkeyCaptureActive(false);
     setHotkeyDraft(null);
 
-    try {
-      await invoke("stop_native_hotkey_capture");
-    } catch (error) {
-      void logError("SETTINGS", `Failed to stop native hotkey capture: ${error instanceof Error ? error.message : String(error)}`);
+    if (usesNativeHotkeyCapture) {
+      try {
+        await invoke("stop_native_hotkey_capture");
+      } catch (error) {
+        void logError("SETTINGS", `Failed to stop native hotkey capture: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
 
     await emit(HOTKEY_CAPTURE_STATE_EVENT, { active: false }).catch(() => null);

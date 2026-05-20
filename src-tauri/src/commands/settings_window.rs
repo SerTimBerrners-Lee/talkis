@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::logger;
+use crate::{logger, media_permissions};
 
 const SETTINGS_NAVIGATE_EVENT: &str = "settings-navigate";
 
@@ -38,6 +38,7 @@ fn create_settings_window(app: &AppHandle, url: &str) -> Result<tauri::WebviewWi
     }
 
     let win = builder.build().map_err(|e| e.to_string())?;
+    media_permissions::allow_microphone_requests(&win);
 
     show_and_focus_window(&win);
     Ok(win)

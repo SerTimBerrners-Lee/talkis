@@ -367,8 +367,9 @@ export function Widget() {
       const micBlob = callMicRuntimeRef.current.hasAudioChunks()
         ? callMicRuntimeRef.current.getAudioBlob()
         : null;
+      const micFileName = micBlob?.type.includes("wav") ? "call-mic.wav" : "call-mic.webm";
       const micFile = micBlob
-        ? new File([micBlob], "call-mic.webm", {
+        ? new File([micBlob], micFileName, {
             type: micBlob.type || "audio/webm",
           })
         : null;

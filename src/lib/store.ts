@@ -18,6 +18,8 @@ export interface HistoryEntry {
   status?: "completed" | "failed";
   errorMessage?: string;
   audioBase64?: string;
+  audioMimeType?: string;
+  audioFileName?: string;
   language?: string;
   style?: AppSettings["style"];
   /** Total processing time in milliseconds (STT + LLM) */
@@ -146,12 +148,19 @@ const MAIN_KEY_ALIASES: Record<string, string> = {
   right: "Right",
 };
 const FUNCTION_KEY_PATTERN = /^F(?:[1-9]|1[0-2])$/;
-export const DEFAULT_HOTKEY = "Command+Shift+Space";
+const DEFAULT_MAC_HOTKEY = "Command+Shift+Space";
+const DEFAULT_DESKTOP_HOTKEY = "Control+Alt+Space";
 
-function isMacPlatform(): boolean {
+export function isMacPlatform(): boolean {
   if (typeof navigator === "undefined") return false;
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 }
+
+export function getDefaultHotkey(): string {
+  return isMacPlatform() ? DEFAULT_MAC_HOTKEY : DEFAULT_DESKTOP_HOTKEY;
+}
+
+export const DEFAULT_HOTKEY = getDefaultHotkey();
 
 export function formatHotkeyLabel(hotkey: string): string {
   const parts = hotkey.split("+").map((part) => part.trim());
@@ -442,6 +451,12 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
           return acc;
         }, {})
       : undefined;
+  const normalizedHotkey =
+    typeof raw.hotkey === "string" ? normalizeHotkey(raw.hotkey).normalized : undefined;
+  const hotkey =
+    !isMacPlatform() && normalizedHotkey === DEFAULT_MAC_HOTKEY
+      ? DEFAULT_DESKTOP_HOTKEY
+      : normalizedHotkey;
 
   return {
     apiKey: typeof raw.apiKey === "string" ? raw.apiKey : undefined,
@@ -460,10 +475,7 @@ function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
     whisperModel:
       typeof raw.whisperModel === "string" ? raw.whisperModel : undefined,
     llmModel: typeof raw.llmModel === "string" ? raw.llmModel : undefined,
-    hotkey:
-      typeof raw.hotkey === "string"
-        ? normalizeHotkey(raw.hotkey).normalized
-        : undefined,
+    hotkey,
     theme: parseTheme(raw.theme),
     language: typeof raw.language === "string" ? raw.language : undefined,
     doubleTapTimeout:

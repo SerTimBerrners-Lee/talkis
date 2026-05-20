@@ -107,9 +107,13 @@ const PROXY_BASE_URL = "https://proxy.talkis.ru";
 
 async function transcribeViaProxy({
   audioBase64,
+  audioMimeType,
+  audioFileName,
   settings,
 }: {
   audioBase64: string;
+  audioMimeType: string;
+  audioFileName: string;
   settings: AppSettings;
 }): Promise<{ raw: string; cleaned: string }> {
   logInfo("API", `Sending to proxy, audio_size: ${audioBase64.length} chars`);
@@ -120,10 +124,10 @@ async function transcribeViaProxy({
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  const blob = new Blob([bytes], { type: "audio/webm" });
+  const blob = new Blob([bytes], { type: audioMimeType });
 
   const form = new FormData();
-  form.append("file", blob, "recording.webm");
+  form.append("file", blob, audioFileName);
   form.append("language", settings.language || "ru");
   form.append("style", settings.style || "classic");
 
@@ -159,9 +163,13 @@ async function transcribeViaProxy({
 
 async function transcribeViaBackend({
   audioBase64,
+  audioMimeType,
+  audioFileName,
   settings,
 }: {
   audioBase64: string;
+  audioMimeType: string;
+  audioFileName: string;
   settings: AppSettings;
 }): Promise<{ raw: string; cleaned: string }> {
   logInfo("API", `Sending to backend, audio_size: ${audioBase64.length} chars`);
@@ -179,6 +187,8 @@ async function transcribeViaBackend({
       llm_endpoint: null,
       whisper_model: settings.whisperModel || null,
       llm_model: "none",
+      file_name: audioFileName,
+      mime_type: audioMimeType,
     },
   });
 
@@ -187,14 +197,18 @@ async function transcribeViaBackend({
 
 async function transcribeAudio({
   audioBase64,
+  audioMimeType,
+  audioFileName,
   settings,
 }: {
   audioBase64: string;
+  audioMimeType: string;
+  audioFileName: string;
   settings: AppSettings;
 }): Promise<{ raw: string; cleaned: string }> {
   // Subscription mode: send to proxy
   if (!settings.useOwnKey && settings.deviceToken?.trim()) {
-    return transcribeViaProxy({ audioBase64, settings });
+    return transcribeViaProxy({ audioBase64, audioMimeType, audioFileName, settings });
   }
 
   if (!settings.useOwnKey) {
@@ -202,7 +216,7 @@ async function transcribeAudio({
   }
 
   // Own key mode: send to Rust backend
-  return transcribeViaBackend({ audioBase64, settings });
+  return transcribeViaBackend({ audioBase64, audioMimeType, audioFileName, settings });
 }
 
 async function pasteCleanedText(text: string): Promise<void> {
@@ -234,11 +248,15 @@ export async function processRecordingBlob({
   const buffer = await blob.arrayBuffer();
   const base64Audio = arrayBufferToBase64(buffer);
   const durationSeconds = Math.floor((Date.now() - recordingStartTimestamp) / 1000);
+  const audioMimeType = blob.type || "audio/webm";
+  const audioFileName = audioMimeType.includes("wav") ? "recording.wav" : "recording.webm";
 
   try {
     const apiStart = Date.now();
     const result = await transcribeAudio({
       audioBase64: base64Audio,
+      audioMimeType,
+      audioFileName,
       settings,
     });
 
@@ -293,6 +311,8 @@ export async function processRecordingBlob({
       status: "failed",
       errorMessage: userFacingErrorMessage,
       audioBase64: base64Audio,
+      audioMimeType,
+      audioFileName,
       language: settings.language,
       style: settings.style || "classic",
     };
@@ -321,6 +341,8 @@ export async function retryHistoryEntry(
   try {
     const result = await transcribeAudio({
       audioBase64: entry.audioBase64,
+      audioMimeType: entry.audioMimeType || "audio/webm",
+      audioFileName: entry.audioFileName || "recording.webm",
       settings: retrySettings,
     });
 
@@ -335,6 +357,8 @@ export async function retryHistoryEntry(
       status: "completed",
       errorMessage: undefined,
       audioBase64: undefined,
+      audioMimeType: undefined,
+      audioFileName: undefined,
     };
 
     await saveAndEmitHistoryEntry(updatedEntry, "update");

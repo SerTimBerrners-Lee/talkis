@@ -1,6 +1,8 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
+use crate::media_permissions;
+
 const NOTICE_WINDOW_LABEL: &str = "widget-notice";
 const NOTICE_EVENT: &str = "widget-notice:update";
 pub const NOTICE_WIDTH: f64 = 212.0;
@@ -59,6 +61,7 @@ pub fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWind
     }
 
     let win = builder.build().map_err(|e| e.to_string())?;
+    media_permissions::allow_microphone_requests(&win);
 
     Ok(win)
 }
