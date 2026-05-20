@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 
 import { HISTORY_UPDATED_EVENT } from "./hotkeyEvents";
-import { logError } from "./logger";
+import { logError, logInfo } from "./logger";
 import {
   addHistoryEntry,
   updateHistoryEntry,
@@ -10,6 +10,7 @@ import {
   type HistoryEntry,
 } from "./store";
 import {
+  type FileTranscriptionResult,
   transcribeFilePathOnly,
   transcribeFileOnly,
   type FileTranscriptionProgress,
@@ -149,8 +150,110 @@ function formatTrackTranscript(track: CallCaptureTrack, text: string): string {
   return `${callTrackTitle(track)}:\n${text.trim()}`;
 }
 
+function micPlainText(part: string): string {
+  return part.replace(/^Вы:\s*/i, "").trim();
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatTimestamp(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+function formatSpeakerTranscript(
+  segments: NonNullable<FileTranscriptionResult["segments"]>,
+): string {
+  return segments
+    .map(
+      (segment) =>
+        `[${formatTimestamp(segment.start)}] ${segment.speakerLabel}: ${segment.text.trim()}`,
+    )
+    .join("\n");
+}
+
+function orderedSpeakerIds(result: FileTranscriptionResult): string[] {
+  const orderedIds: string[] = [];
+  const seen = new Set<string>();
+
+  result.speakers?.forEach((speaker) => {
+    if (seen.has(speaker.id)) return;
+    seen.add(speaker.id);
+    orderedIds.push(speaker.id);
+  });
+
+  result.segments?.forEach((segment) => {
+    if (seen.has(segment.speakerId)) return;
+    seen.add(segment.speakerId);
+    orderedIds.push(segment.speakerId);
+  });
+
+  return orderedIds;
+}
+
+function normalizeCallSpeakerResult(
+  result: FileTranscriptionResult,
+  source: "system" | "micFallback",
+): FileTranscriptionResult {
+  if (!result.segments?.length) {
+    return result;
+  }
+
+  const firstMicSpeakerId =
+    source === "micFallback" ? result.segments[0]?.speakerId : null;
+  const labelsById = new Map<string, string>();
+  let guestIndex = 1;
+
+  orderedSpeakerIds(result).forEach((speakerId) => {
+    if (speakerId === firstMicSpeakerId) {
+      labelsById.set(speakerId, "Вы");
+      return;
+    }
+
+    labelsById.set(speakerId, `Гость ${guestIndex}`);
+    guestIndex += 1;
+  });
+
+  const speakers = orderedSpeakerIds(result).map((speakerId) => ({
+    id: speakerId,
+    label: labelsById.get(speakerId) || "Гость 1",
+  }));
+  const segments = result.segments.map((segment) => ({
+    ...segment,
+    speakerLabel:
+      labelsById.get(segment.speakerId) || segment.speakerLabel || "Гость 1",
+  }));
+
+  return {
+    ...result,
+    text: formatSpeakerTranscript(segments),
+    speakers,
+    segments,
+  };
+}
+
+function addSpeakerResultToHistoryDraft(
+  result: FileTranscriptionResult,
+  speakersById: Map<string, NonNullable<HistoryEntry["speakers"]>[number]>,
+  speakerSegments: NonNullable<HistoryEntry["segments"]>,
+  source: "system" | "micFallback",
+): string | null {
+  if (!result.segments?.length) {
+    return null;
+  }
+
+  const normalized = normalizeCallSpeakerResult(result, source);
+
+  normalized.speakers?.forEach((speaker) => {
+    speakersById.set(speaker.id, speaker);
+  });
+  speakerSegments.push(...(normalized.segments || []));
+  return normalized.text;
 }
 
 interface TranscribeCallCaptureSessionParams {
@@ -187,6 +290,9 @@ async function buildCallCaptureHistoryEntry({
   >();
   let mode: HistoryEntry["mode"] = "plain";
   let requiredSystemDiarizationFailed = false;
+  let micPlainPart: string | null = null;
+  let micPathTrack: CallCaptureTrack | null = null;
+  let usedMicDiarizationFallback = false;
 
   const failedTracks: string[] = [];
 
@@ -197,7 +303,7 @@ async function buildCallCaptureHistoryEntry({
         settings,
         onStatus,
       });
-      parts.push(`Вы:\n${micResult.text.trim()}`);
+      micPlainPart = `Вы:\n${micResult.text.trim()}`;
     } catch (error) {
       const message = errorMessage(error);
       failedTracks.push(`микрофон: ${message}`);
@@ -211,6 +317,10 @@ async function buildCallCaptureHistoryEntry({
   for (const track of orderedTracks.filter(
     (track) => !(track.kind === "mic" && micFile),
   )) {
+    if (track.kind === "mic") {
+      micPathTrack = track;
+    }
+
     const shouldDiarizeSystemTrack =
       track.kind === "system" && settings.fileSpeakerDiarization === true;
 
@@ -223,13 +333,15 @@ async function buildCallCaptureHistoryEntry({
         speakerDiarization: shouldDiarizeSystemTrack,
       });
 
-      if (result.segments?.length) {
+      const speakerText = addSpeakerResultToHistoryDraft(
+        result,
+        speakersById,
+        speakerSegments,
+        "system",
+      );
+      if (speakerText) {
         mode = "speakers";
-        result.speakers?.forEach((speaker) => {
-          speakersById.set(speaker.id, speaker);
-        });
-        speakerSegments.push(...result.segments);
-        parts.push(result.text);
+        parts.push(speakerText);
         continue;
       }
 
@@ -237,7 +349,11 @@ async function buildCallCaptureHistoryEntry({
         throw new Error("Разделение говорящих не вернуло сегменты.");
       }
 
-      parts.push(formatTrackTranscript(track, result.text));
+      if (track.kind === "mic") {
+        micPlainPart = formatTrackTranscript(track, result.text);
+      } else {
+        parts.push(formatTrackTranscript(track, result.text));
+      }
     } catch (error) {
       const message = errorMessage(error);
       failedTracks.push(`${callTrackTitle(track).toLowerCase()}: ${message}`);
@@ -251,7 +367,61 @@ async function buildCallCaptureHistoryEntry({
   }
 
   if (requiredSystemDiarizationFailed) {
-    throw new Error(failedTracks.join("; "));
+    if (micPathTrack && settings.fileSpeakerDiarization === true) {
+      try {
+        const micSpeakerResult = await transcribeFilePathOnly({
+          filePath: micPathTrack.path,
+          settings,
+          onStatus,
+          onProgress,
+          speakerDiarization: true,
+        });
+
+        const speakerText = addSpeakerResultToHistoryDraft(
+          micSpeakerResult,
+          speakersById,
+          speakerSegments,
+          "micFallback",
+        );
+        if (speakerText) {
+          mode = "speakers";
+          parts.push(speakerText);
+          usedMicDiarizationFallback = true;
+          requiredSystemDiarizationFailed = false;
+          void logInfo(
+            "CALL_CAPTURE",
+            "System track had no diarizable speech; used mic track diarization fallback.",
+          );
+        }
+      } catch (error) {
+        const message = errorMessage(error);
+        failedTracks.push(`микрофон: ${message}`);
+        void logError(
+          "CALL_CAPTURE",
+          `Mic track diarization fallback failed: ${message}`,
+        );
+      }
+    }
+
+    if (requiredSystemDiarizationFailed) {
+      throw new Error(failedTracks.join("; "));
+    }
+  }
+
+  if (micPlainPart && !usedMicDiarizationFallback) {
+    parts.unshift(micPlainPart);
+
+    if (speakerSegments.length > 0) {
+      const selfSpeakerId = "call_self";
+      speakersById.set(selfSpeakerId, { id: selfSpeakerId, label: "Вы" });
+      speakerSegments.unshift({
+        start: 0,
+        end: 0,
+        speakerId: selfSpeakerId,
+        speakerLabel: "Вы",
+        text: micPlainText(micPlainPart),
+      });
+    }
   }
 
   const text = parts
@@ -278,7 +448,13 @@ async function buildCallCaptureHistoryEntry({
     processingTime: startedAt ? Date.now() - startedAt : undefined,
     mode,
     speakers:
-      speakersById.size > 0 ? Array.from(speakersById.values()) : undefined,
+      speakersById.size > 0
+        ? Array.from(speakersById.values()).sort((left, right) => {
+            if (left.label === "Вы") return -1;
+            if (right.label === "Вы") return 1;
+            return 0;
+          })
+        : undefined,
     segments: speakerSegments.length > 0 ? speakerSegments : undefined,
     callSessionId: session.id,
     callTracks: session.tracks.map((track) => ({

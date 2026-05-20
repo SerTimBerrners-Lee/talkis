@@ -42,6 +42,9 @@ use objc2_core_foundation::{CFArray, CFBoolean, CFDictionary, CFRetained, CFStri
 use objc2_foundation::{NSArray, NSNumber, NSString, NSUUID};
 
 static SESSIONS: OnceLock<Mutex<HashMap<String, StoredCallCaptureSession>>> = OnceLock::new();
+const CALL_SYSTEM_CAPTURE_SAMPLE_RATE: u32 = 16_000;
+const CALL_SYSTEM_CAPTURE_CHANNELS: u16 = 1;
+const CALL_SYSTEM_CAPTURE_BITS_PER_SAMPLE: u16 = 16;
 
 fn sessions() -> &'static Mutex<HashMap<String, StoredCallCaptureSession>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -132,8 +135,63 @@ struct MacosCallCaptureState {
 
 #[cfg(target_os = "macos")]
 struct MacosAudioWriterState {
-    writer: Mutex<hound::WavWriter<BufWriter<File>>>,
+    writer: Mutex<MacosSystemAudioWriter>,
     stream_description: AudioStreamBasicDescription,
+}
+
+#[cfg(target_os = "macos")]
+struct MacosSystemAudioWriter {
+    writer: hound::WavWriter<BufWriter<File>>,
+    source_sample_rate: f64,
+    source_frames_seen: u64,
+    next_output_source_frame: f64,
+    max_abs_sample: f32,
+    frames_above_noise_floor: u64,
+}
+
+#[cfg(target_os = "macos")]
+impl MacosSystemAudioWriter {
+    fn new(writer: hound::WavWriter<BufWriter<File>>, source_sample_rate: u32) -> Self {
+        Self {
+            writer,
+            source_sample_rate: source_sample_rate.max(1) as f64,
+            source_frames_seen: 0,
+            next_output_source_frame: 0.0,
+            max_abs_sample: 0.0,
+            frames_above_noise_floor: 0,
+        }
+    }
+
+    fn write_source_frame(&mut self, sample: f32) {
+        let output_step = self.source_sample_rate / CALL_SYSTEM_CAPTURE_SAMPLE_RATE as f64;
+        let source_frame = self.source_frames_seen as f64;
+        let normalized = sample.clamp(-1.0, 1.0);
+        let abs_sample = normalized.abs();
+        self.max_abs_sample = self.max_abs_sample.max(abs_sample);
+        if abs_sample > 0.001 {
+            self.frames_above_noise_floor = self.frames_above_noise_floor.saturating_add(1);
+        }
+        let sample = (normalized * i16::MAX as f32).round() as i16;
+
+        while self.next_output_source_frame <= source_frame {
+            let _ = self.writer.write_sample(sample);
+            self.next_output_source_frame += output_step;
+        }
+
+        self.source_frames_seen = self.source_frames_seen.saturating_add(1);
+    }
+
+    fn finalize(self) -> Result<(), hound::Error> {
+        self.writer.finalize()
+    }
+
+    fn max_dbfs(&self) -> f32 {
+        if self.max_abs_sample <= 0.0 {
+            -120.0
+        } else {
+            20.0 * self.max_abs_sample.log10()
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -208,8 +266,8 @@ fn build_session(
             kind: CallCaptureTrackKind::System,
             label: "Созвон".to_string(),
             path: dir.join("system.wav").to_string_lossy().to_string(),
-            channels: 2,
-            sample_rate,
+            channels: CALL_SYSTEM_CAPTURE_CHANNELS,
+            sample_rate: CALL_SYSTEM_CAPTURE_SAMPLE_RATE,
         });
     }
 
@@ -491,6 +549,14 @@ fn stop_platform_capture(stored: &mut StoredCallCaptureSession) -> Result<(), St
                 Box::from_raw(state.callback_state_ptr as *mut MacosAudioWriterState);
             match writer_state.writer.into_inner() {
                 Ok(writer) => {
+                    logger::log_info(
+                        "CALL_CAPTURE",
+                        &format!(
+                            "System audio capture level: max={:.1} dBFS, frames_above_noise_floor={}",
+                            writer.max_dbfs(),
+                            writer.frames_above_noise_floor
+                        ),
+                    );
                     if let Err(err) = writer.finalize() {
                         logger::log_error(
                             "CALL_CAPTURE",
@@ -732,6 +798,7 @@ unsafe extern "C-unwind" fn macos_system_audio_io_proc(
     let is_float = (stream.mFormatFlags & kAudioFormatFlagIsFloat) != 0;
     let is_signed_int = (stream.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0;
     let is_non_interleaved = (stream.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
+    let channels = stream.mChannelsPerFrame.max(1) as usize;
 
     if is_float && stream.mBitsPerChannel == 32 {
         if is_non_interleaved {
@@ -742,6 +809,9 @@ unsafe extern "C-unwind" fn macos_system_audio_io_proc(
                 .unwrap_or(0);
 
             for index in 0..min_samples {
+                let mut mono = 0.0f32;
+                let mut channel_count = 0usize;
+
                 for buffer in buffers {
                     if buffer.mData.is_null() {
                         continue;
@@ -752,7 +822,14 @@ unsafe extern "C-unwind" fn macos_system_audio_io_proc(
                             buffer.mDataByteSize as usize / std::mem::size_of::<f32>(),
                         )
                     };
-                    let _ = writer.write_sample(samples[index]);
+                    if let Some(sample) = samples.get(index) {
+                        mono += *sample;
+                        channel_count += 1;
+                    }
+                }
+
+                if channel_count > 0 {
+                    writer.write_source_frame(mono / channel_count as f32);
                 }
             }
         } else {
@@ -766,24 +843,69 @@ unsafe extern "C-unwind" fn macos_system_audio_io_proc(
                         buffer.mDataByteSize as usize / std::mem::size_of::<f32>(),
                     )
                 };
-                for sample in samples {
-                    let _ = writer.write_sample(*sample);
+                for frame in samples.chunks(channels) {
+                    if frame.is_empty() {
+                        continue;
+                    }
+                    let mono = frame.iter().copied().sum::<f32>() / frame.len() as f32;
+                    writer.write_source_frame(mono);
                 }
             }
         }
     } else if is_signed_int && stream.mBitsPerChannel == 16 {
-        for buffer in buffers {
-            if buffer.mData.is_null() {
-                continue;
+        if is_non_interleaved {
+            let min_samples = buffers
+                .iter()
+                .map(|buffer| buffer.mDataByteSize as usize / std::mem::size_of::<i16>())
+                .min()
+                .unwrap_or(0);
+
+            for index in 0..min_samples {
+                let mut mono = 0.0f32;
+                let mut channel_count = 0usize;
+
+                for buffer in buffers {
+                    if buffer.mData.is_null() {
+                        continue;
+                    }
+                    let samples = unsafe {
+                        std::slice::from_raw_parts(
+                            buffer.mData.cast::<i16>(),
+                            buffer.mDataByteSize as usize / std::mem::size_of::<i16>(),
+                        )
+                    };
+                    if let Some(sample) = samples.get(index) {
+                        mono += *sample as f32 / i16::MAX as f32;
+                        channel_count += 1;
+                    }
+                }
+
+                if channel_count > 0 {
+                    writer.write_source_frame(mono / channel_count as f32);
+                }
             }
-            let samples = unsafe {
-                std::slice::from_raw_parts(
-                    buffer.mData.cast::<i16>(),
-                    buffer.mDataByteSize as usize / std::mem::size_of::<i16>(),
-                )
-            };
-            for sample in samples {
-                let _ = writer.write_sample(*sample);
+        } else {
+            for buffer in buffers {
+                if buffer.mData.is_null() {
+                    continue;
+                }
+                let samples = unsafe {
+                    std::slice::from_raw_parts(
+                        buffer.mData.cast::<i16>(),
+                        buffer.mDataByteSize as usize / std::mem::size_of::<i16>(),
+                    )
+                };
+                for frame in samples.chunks(channels) {
+                    if frame.is_empty() {
+                        continue;
+                    }
+                    let mono = frame
+                        .iter()
+                        .map(|sample| *sample as f32 / i16::MAX as f32)
+                        .sum::<f32>()
+                        / frame.len() as f32;
+                    writer.write_source_frame(mono);
+                }
             }
         }
     }
@@ -808,10 +930,13 @@ fn start_macos_system_audio_capture(
     let output_device = read_default_output_device()?;
     let output_uid = read_audio_cf_string(output_device, kAudioDevicePropertyDeviceUID)?;
     let empty_processes = NSArray::<NSNumber>::from_slice(&[]);
+    let output_uid_ns = NSString::from_str(&output_uid);
     let tap_description = unsafe {
-        CATapDescription::initStereoGlobalTapButExcludeProcesses(
+        CATapDescription::initExcludingProcesses_andDeviceUID_withStream(
             CATapDescription::alloc(),
             &empty_processes,
+            &output_uid_ns,
+            0,
         )
     };
     let tap_name = NSString::from_str("Talkis Call Capture");
@@ -861,29 +986,24 @@ fn start_macos_system_audio_capture(
     }
 
     let path = system_track_path(session)?;
-    let channels = stream_description
+    let source_channels = stream_description
         .mChannelsPerFrame
         .max(1)
         .min(u16::MAX as u32) as u16;
-    let sample_rate = stream_description.mSampleRate.max(1.0).round() as u32;
+    let source_sample_rate = stream_description.mSampleRate.max(1.0).round() as u32;
     let is_float = (stream_description.mFormatFlags & kAudioFormatFlagIsFloat) != 0;
-    let bits_per_sample = if is_float {
+    let source_bits_per_sample = if is_float {
         32
     } else {
         stream_description.mBitsPerChannel.max(16).min(32) as u16
     };
-    let sample_format = if is_float {
-        hound::SampleFormat::Float
-    } else {
-        hound::SampleFormat::Int
-    };
     let writer = match hound::WavWriter::create(
         &path,
         hound::WavSpec {
-            channels,
-            sample_rate,
-            bits_per_sample,
-            sample_format,
+            channels: CALL_SYSTEM_CAPTURE_CHANNELS,
+            sample_rate: CALL_SYSTEM_CAPTURE_SAMPLE_RATE,
+            bits_per_sample: CALL_SYSTEM_CAPTURE_BITS_PER_SAMPLE,
+            sample_format: hound::SampleFormat::Int,
         },
     ) {
         Ok(writer) => writer,
@@ -896,7 +1016,7 @@ fn start_macos_system_audio_capture(
         }
     };
     let callback_state = Box::new(MacosAudioWriterState {
-        writer: Mutex::new(writer),
+        writer: Mutex::new(MacosSystemAudioWriter::new(writer, source_sample_rate)),
         stream_description,
     });
     let callback_state_ptr = Box::into_raw(callback_state);
@@ -936,8 +1056,16 @@ fn start_macos_system_audio_capture(
     logger::log_info(
         "CALL_CAPTURE",
         &format!(
-            "Started macOS system audio capture session={}, tap={}, aggregate={}, format={}Hz/{}ch/{}bit",
-            session.id, tap_id, aggregate_device_id, sample_rate, channels, bits_per_sample
+            "Started macOS system audio capture session={}, tap={}, aggregate={}, source={}Hz/{}ch/{}bit, stored={}Hz/{}ch/{}bit",
+            session.id,
+            tap_id,
+            aggregate_device_id,
+            source_sample_rate,
+            source_channels,
+            source_bits_per_sample,
+            CALL_SYSTEM_CAPTURE_SAMPLE_RATE,
+            CALL_SYSTEM_CAPTURE_CHANNELS,
+            CALL_SYSTEM_CAPTURE_BITS_PER_SAMPLE
         ),
     );
 
