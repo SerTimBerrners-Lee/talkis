@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri_plugin_shell::ShellExt;
 
 const MAX_TRANSCRIPTION_BYTES: u64 = 25 * 1024 * 1024;
-pub const MAX_FILE_TRANSCRIPTION_INPUT_BYTES: u64 = 1024 * 1024 * 1024;
+pub const MAX_FILE_TRANSCRIPTION_INPUT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const FILE_TRANSCRIPTION_SEGMENT_SECONDS: u32 = 600;
 
 #[derive(Deserialize)]
@@ -227,7 +227,7 @@ pub async fn prepare_media_file_chunks_for_transcription(
 
     if metadata.len() > MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
         return Err(
-            "Файл слишком большой. Максимальный размер для локальной подготовки: 1 ГБ.".to_string(),
+            "Файл слишком большой. Максимальный размер для локальной подготовки: 8 ГБ.".to_string(),
         );
     }
 
@@ -335,7 +335,7 @@ pub async fn prepare_media_file_for_proxy_transcription(
 
     if metadata.len() > MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
         return Err(
-            "Файл слишком большой. Максимальный размер для локальной подготовки: 1 ГБ.".to_string(),
+            "Файл слишком большой. Максимальный размер для локальной подготовки: 8 ГБ.".to_string(),
         );
     }
 
@@ -405,7 +405,7 @@ pub async fn prepare_media_file_for_diarization(
 
     if metadata.len() > MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
         return Err(
-            "Файл слишком большой. Максимальный размер для локальной подготовки: 1 ГБ.".to_string(),
+            "Файл слишком большой. Максимальный размер для локальной подготовки: 8 ГБ.".to_string(),
         );
     }
 

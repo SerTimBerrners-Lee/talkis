@@ -7,6 +7,7 @@ export const HOTKEY_REGISTRATION_RESULT_EVENT = "hotkey-registration-result";
 export const NATIVE_HOTKEY_CAPTURE_EVENT = "native-hotkey-capture";
 export const HOTKEY_CAPTURE_STATE_EVENT = "hotkey-capture-state";
 export const SETTINGS_NAVIGATE_EVENT = "settings-navigate";
+export const WIDGET_RETRY_PROCESSING_EVENT = "widget-retry-processing";
 
 export interface HotkeyChangeRequestPayload {
   hotkey: string;
@@ -32,4 +33,10 @@ export interface HotkeyCaptureStatePayload {
 export interface SettingsNavigatePayload {
   tab: "main" | "file" | "settings" | "model" | "style";
   resultId?: string | null;
+}
+
+export interface WidgetRetryProcessingPayload {
+  active: boolean;
+  source: "voice" | "call";
+  entryId?: string;
 }

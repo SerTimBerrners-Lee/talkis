@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Check,
   Copy,
+  Loader2,
   Pencil,
   RotateCcw,
   Trash2,
@@ -26,7 +27,10 @@ import {
   HISTORY_DELETED_EVENT,
   HISTORY_UPDATED_EVENT,
   SETTINGS_UPDATED_EVENT,
+  WIDGET_RETRY_PROCESSING_EVENT,
+  type WidgetRetryProcessingPayload,
 } from "../../../lib/hotkeyEvents";
+import { retryCallCaptureHistoryEntry } from "../../../lib/callCapture";
 import { retryHistoryEntry } from "../../widget/services/transcriptionPipeline";
 
 interface MainTabProps {
@@ -394,11 +398,23 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
   };
 
   const retryEntry = async (entry: HistoryEntry) => {
+    const source = getHistorySource(entry);
     setRetryingId(entry.id);
+    if (source === "voice" || source === "call") {
+      await emit<WidgetRetryProcessingPayload>(WIDGET_RETRY_PROCESSING_EVENT, {
+        active: true,
+        source,
+        entryId: entry.id,
+      });
+    }
 
     try {
       const settings = await getSettings();
-      await retryHistoryEntry(entry, settings, { shouldPaste: false });
+      if (source === "call") {
+        await retryCallCaptureHistoryEntry(entry, settings);
+      } else {
+        await retryHistoryEntry(entry, settings, { shouldPaste: false });
+      }
       setRetrySucceededId(entry.id);
       setTimeout(() => {
         setRetrySucceededId((current) =>
@@ -423,6 +439,13 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
         ),
       );
     } finally {
+      if (source === "voice" || source === "call") {
+        await emit<WidgetRetryProcessingPayload>(WIDGET_RETRY_PROCESSING_EVENT, {
+          active: false,
+          source,
+          entryId: entry.id,
+        });
+      }
       setRetryingId((current) => (current === entry.id ? null : current));
     }
   };
@@ -845,7 +868,9 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                   }}
                                 >
                                   {item.status === "failed" &&
-                                  source === "voice" ? (
+                                  (source === "voice" ||
+                                    (source === "call" &&
+                                      Boolean(item.callTracks?.length))) ? (
                                     <button
                                       onClick={() => retryEntry(item)}
                                       className="btn"
@@ -861,14 +886,15 @@ export function MainTab({ initialHistory = [] }: MainTabProps) {
                                       }}
                                       title="Отправить повторно"
                                     >
-                                      <RotateCcw
-                                        size={12}
-                                        strokeWidth={2}
-                                        style={{
-                                          opacity:
-                                            retryingId === item.id ? 0.45 : 1,
-                                        }}
-                                      />
+                                      {retryingId === item.id ? (
+                                        <Loader2
+                                          className="loading-soft-icon"
+                                          size={12}
+                                          strokeWidth={2}
+                                        />
+                                      ) : (
+                                        <RotateCcw size={12} strokeWidth={2} />
+                                      )}
                                     </button>
                                   ) : (
                                     <button

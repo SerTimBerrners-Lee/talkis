@@ -11,6 +11,8 @@ import {
   HISTORY_CLEARED_EVENT,
   HISTORY_DELETED_EVENT,
   HISTORY_UPDATED_EVENT,
+  WIDGET_RETRY_PROCESSING_EVENT,
+  type WidgetRetryProcessingPayload,
 } from "../../lib/hotkeyEvents";
 import {
   addHistoryEntry,
@@ -29,6 +31,8 @@ import {
 import { logError, logInfo } from "../../lib/logger";
 import { startAppUpdateScheduler } from "../../lib/updater";
 import {
+  saveFailedCallCaptureEntry,
+  saveCallCaptureMicTrack,
   startCallCapture,
   stopCallCapture,
   transcribeCallCaptureSession,
@@ -70,6 +74,7 @@ type WidgetCallState =
   | "processing"
   | "success"
   | "error";
+type WidgetRetryProcessingSource = WidgetRetryProcessingPayload["source"];
 
 const WIDGET_WAVES = [
   {
@@ -147,6 +152,9 @@ export function Widget() {
     });
   const stateRef = useRef(state);
   const fileDropStateRef = useRef<WidgetFileDropState>("idle");
+  const retryProcessingSourceRef = useRef<WidgetRetryProcessingSource | null>(
+    null,
+  );
   const fileResetTimerRef = useRef<number | null>(null);
   const fileDragLeaveTimerRef = useRef<number | null>(null);
   const fileCloseTimerRef = useRef<number | null>(null);
@@ -176,6 +184,8 @@ export function Widget() {
   const [callSettings, setCallSettings] = useState<Awaited<
     ReturnType<typeof getSettings>
   > | null>(null);
+  const [retryProcessingSource, setRetryProcessingSource] =
+    useState<WidgetRetryProcessingSource | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -186,13 +196,38 @@ export function Widget() {
   }, [fileDropState]);
 
   useEffect(() => {
+    retryProcessingSourceRef.current = retryProcessingSource;
+  }, [retryProcessingSource]);
+
+  useEffect(() => {
+    let mounted = true;
+    const unlistenPromise = listen<WidgetRetryProcessingPayload>(
+      WIDGET_RETRY_PROCESSING_EVENT,
+      ({ payload }) => {
+        if (!mounted) {
+          return;
+        }
+
+        setRetryProcessingSource(payload.active ? payload.source : null);
+      },
+    );
+
+    return () => {
+      mounted = false;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
     callStateRef.current = callState;
   }, [callState]);
 
   useEffect(() => {
     return startAppUpdateScheduler({
       canRunUpdate: () =>
-        stateRef.current === "idle" && callStateRef.current === "idle",
+        stateRef.current === "idle" &&
+        callStateRef.current === "idle" &&
+        retryProcessingSourceRef.current === null,
     });
   }, []);
 
@@ -322,6 +357,8 @@ export function Widget() {
       return;
     }
 
+    let stoppedSession: CallCaptureSession | null = null;
+    let sessionForFailure: CallCaptureSession = callSession;
     try {
       setCallState("processing");
       setFileStatus("preparing");
@@ -335,12 +372,35 @@ export function Widget() {
             type: micBlob.type || "audio/webm",
           })
         : null;
-      const stoppedSession = await stopCallCapture(callSession.id);
+      let micFileForTranscription = micFile;
+      if (micBlob) {
+        try {
+          const micTrack = await saveCallCaptureMicTrack(callSession.id, micBlob);
+          micFileForTranscription = null;
+          sessionForFailure = {
+            ...sessionForFailure,
+            tracks: [
+              micTrack,
+              ...sessionForFailure.tracks.filter(
+                (track) => track.kind !== "mic",
+              ),
+            ],
+          };
+        } catch (saveError) {
+          logError(
+            "CALL_CAPTURE",
+            `Failed to persist call mic track: ${
+              saveError instanceof Error ? saveError.message : String(saveError)
+            }`,
+          );
+        }
+      }
+      stoppedSession = await stopCallCapture(callSession.id);
       const settings = callSettings ?? (await getSettings({ reload: true }));
       const entry = await transcribeCallCaptureSession({
         session: stoppedSession,
         settings,
-        micFile,
+        micFile: micFileForTranscription,
         startedAt: callStartedAt,
         onStatus: setFileStatus,
         onProgress: setFileProgress,
@@ -359,18 +419,34 @@ export function Widget() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logError("CALL_CAPTURE", `Call capture stop/process failed: ${message}`);
+      const userFacingMessage =
+        "Не удалось обработать запись. Попробуйте повторить попытку.";
+
+      try {
+        await saveFailedCallCaptureEntry({
+          session: stoppedSession ?? sessionForFailure,
+          errorMessage: userFacingMessage,
+          startedAt: callStartedAt,
+        });
+      } catch (historyError) {
+        logError(
+          "CALL_CAPTURE",
+          `Failed to save failed call history entry: ${
+            historyError instanceof Error
+              ? historyError.message
+              : String(historyError)
+          }`,
+        );
+      }
+
       callMicRuntimeRef.current.dispose();
       callMicPausedForVoiceRef.current = false;
-      setCallError(toFileTranscriptionErrorMessage(error));
-      setCallState("error");
+      setCallError("");
+      setCallState("idle");
       setFileStatus(null);
       setFileProgress(null);
-      window.setTimeout(() => {
-        setCallState("idle");
-        setCallSession(null);
-        setCallSettings(null);
-        setCallError("");
-      }, 3200);
+      setCallSession(null);
+      setCallSettings(null);
     }
   };
 
@@ -620,8 +696,17 @@ export function Widget() {
   const stackHeight = fileDropActive
     ? FILE_DROP_STACK_WIDGET_HEIGHT
     : CALL_STACK_WIDGET_HEIGHT;
+  const displayCallState: WidgetCallState =
+    retryProcessingSource === "call" && callState === "idle"
+      ? "processing"
+      : callState;
+  const displayWidgetState =
+    retryProcessingSource === "voice" && state === "idle" && !fileDropActive
+      ? "processing"
+      : state;
   const callBubbleDisabled =
-    callState === "idle" && (state !== "idle" || fileDropActive);
+    displayCallState === "idle" &&
+    (displayWidgetState !== "idle" || fileDropActive);
   const handleCallBubbleClick = () => {
     if (dragTriggeredRef.current) {
       return;
@@ -629,6 +714,10 @@ export function Widget() {
 
     if (callState === "recording") {
       void stopCallListening();
+      return;
+    }
+
+    if (displayCallState !== "idle") {
       return;
     }
 
@@ -675,7 +764,7 @@ export function Widget() {
             onPointerCancel={handleDragPointerUp}
           />
         )}
-        {!fileDropActive && state === "idle" && (
+        {!fileDropActive && displayWidgetState === "idle" && (
           <IdlePill
             latestCopyText={latestCopyText}
             onToggleRecording={toggleManualRecording}
@@ -686,7 +775,7 @@ export function Widget() {
             onPointerCancel={handleDragPointerUp}
           />
         )}
-        {!fileDropActive && state === "recording" && (
+        {!fileDropActive && displayWidgetState === "recording" && (
           <RecordingPill
             stream={stream}
             locked={lockedRecording}
@@ -697,7 +786,7 @@ export function Widget() {
             onPointerCancel={handleDragPointerUp}
           />
         )}
-        {!fileDropActive && state === "processing" && (
+        {!fileDropActive && displayWidgetState === "processing" && (
           <ProcessingPill
             onPointerDown={handleDragPointerDown}
             onPointerMove={handleDragPointerMove}
@@ -711,7 +800,7 @@ export function Widget() {
           }}
         >
           <CallBubble
-            state={callState}
+            state={displayCallState}
             error={callError}
             disabled={callBubbleDisabled}
             onClick={handleCallBubbleClick}

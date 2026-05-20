@@ -990,7 +990,7 @@ pub async fn transcribe_file_path(
     }
     if metadata.len() > media::MAX_FILE_TRANSCRIPTION_INPUT_BYTES {
         return Err(
-            "Файл слишком большой. Максимальный размер для транскрибации: 1 ГБ.".to_string(),
+            "Файл слишком большой. Максимальный размер для транскрибации: 8 ГБ.".to_string(),
         );
     }
     if req.speaker_diarization && req.use_own_key {

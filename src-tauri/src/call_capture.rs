@@ -1,4 +1,5 @@
 use crate::logger;
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ use objc2_core_audio::{
     kAudioAggregateDeviceMainSubDeviceKey, kAudioAggregateDeviceNameKey,
     kAudioAggregateDeviceSubDeviceListKey, kAudioAggregateDeviceTapAutoStartKey,
     kAudioAggregateDeviceTapListKey, kAudioAggregateDeviceUIDKey, kAudioDevicePropertyDeviceUID,
-    kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioObjectPropertyElementMain,
+    kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyElementMain,
     kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject, kAudioSubDeviceUIDKey,
     kAudioSubTapDriftCompensationKey, kAudioSubTapUIDKey, kAudioTapPropertyFormat,
     AudioDeviceCreateIOProcID, AudioDeviceDestroyIOProcID, AudioDeviceIOProc, AudioDeviceIOProcID,
@@ -296,6 +297,54 @@ pub async fn stop_call_capture(session_id: String) -> Result<CallCaptureSession,
 }
 
 #[tauri::command]
+pub async fn save_call_capture_mic_track(
+    session_id: String,
+    audio_base64: String,
+    mime_type: Option<String>,
+) -> Result<CallCaptureTrack, String> {
+    let audio_bytes = base64::engine::general_purpose::STANDARD
+        .decode(audio_base64.as_bytes())
+        .map_err(|err| format!("Не удалось прочитать дорожку микрофона: {}", err))?;
+    let mut guard = sessions()
+        .lock()
+        .map_err(|_| "Не удалось заблокировать менеджер записи созвона.".to_string())?;
+    let stored = guard
+        .get_mut(&session_id)
+        .ok_or_else(|| "Активная запись созвона не найдена.".to_string())?;
+    let extension = mime_type
+        .as_deref()
+        .filter(|value| value.to_ascii_lowercase().contains("wav"))
+        .map(|_| "wav")
+        .unwrap_or("webm");
+    let path = PathBuf::from(&stored.session.directory).join(format!("mic.{}", extension));
+
+    fs::write(&path, audio_bytes)
+        .map_err(|err| format!("Не удалось сохранить дорожку микрофона: {}", err))?;
+
+    let track = CallCaptureTrack {
+        kind: CallCaptureTrackKind::Mic,
+        label: "Вы".to_string(),
+        path: path.to_string_lossy().to_string(),
+        channels: 1,
+        sample_rate: 48_000,
+    };
+
+    if let Some(existing) = stored
+        .session
+        .tracks
+        .iter_mut()
+        .find(|item| matches!(item.kind, CallCaptureTrackKind::Mic))
+    {
+        *existing = track.clone();
+    } else {
+        stored.session.tracks.insert(0, track.clone());
+    }
+
+    write_manifest(&stored.session)?;
+    Ok(track)
+}
+
+#[tauri::command]
 pub async fn get_call_capture_status(session_id: String) -> Result<CallCaptureSession, String> {
     sessions()
         .lock()
@@ -548,12 +597,12 @@ fn read_audio_cf_string(
 fn read_default_output_device() -> Result<AudioObjectID, String> {
     let value = read_audio_property(
         kAudioObjectSystemObject as AudioObjectID,
-        kAudioHardwarePropertyDefaultSystemOutputDevice,
+        kAudioHardwarePropertyDefaultOutputDevice,
         0 as AudioObjectID,
     )?;
 
     if value == 0 {
-        Err("CoreAudio не вернул системное output-устройство.".to_string())
+        Err("CoreAudio не вернул output-устройство.".to_string())
     } else {
         Ok(value)
     }

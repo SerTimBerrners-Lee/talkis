@@ -112,6 +112,7 @@ pub fn run() {
             call_capture::list_call_capture_targets,
             call_capture::start_call_capture,
             call_capture::stop_call_capture,
+            call_capture::save_call_capture_mic_track,
             call_capture::get_call_capture_status,
             call_capture::get_call_capture_duration_ms,
             media::prepare_media_for_transcription,

@@ -323,8 +323,13 @@ export function toFileTranscriptionErrorMessage(error: unknown): string {
     return "Файл слишком большой для транскрибации. Попробуйте более короткий фрагмент.";
   }
 
-  if (normalized.includes("1 гб") || normalized.includes("1 gb")) {
-    return "Файл слишком большой для транскрибации. Максимальный размер: 1 ГБ.";
+  if (
+    normalized.includes("1 гб") ||
+    normalized.includes("1 gb") ||
+    normalized.includes("8 гб") ||
+    normalized.includes("8 gb")
+  ) {
+    return "Файл слишком большой для транскрибации. Максимальный размер: 8 ГБ.";
   }
 
   if (normalized.includes("unsupported") || normalized.includes("не удалось извлечь аудио")) {
