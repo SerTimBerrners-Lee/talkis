@@ -108,6 +108,7 @@ pub fn run() {
             widget::activate_widget_for_hotkey,
             widget::show_widget_notice,
             widget::hide_widget_notice,
+            paste::remember_paste_target_window,
             paste::paste_text,
             ai::transcribe_and_clean,
             ai::transcribe_only,

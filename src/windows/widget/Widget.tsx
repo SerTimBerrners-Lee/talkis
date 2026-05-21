@@ -366,7 +366,7 @@ export function Widget() {
       setFileProgress(null);
       await callMicRuntimeRef.current.stop();
       const micBlob = callMicRuntimeRef.current.hasAudioChunks()
-        ? callMicRuntimeRef.current.getAudioBlob()
+        ? await callMicRuntimeRef.current.getAudioBlob()
         : null;
       const micFileName = micBlob?.type.includes("wav") ? "call-mic.wav" : "call-mic.webm";
       const micFile = micBlob
@@ -729,6 +729,11 @@ export function Widget() {
       void startCallListening();
     }
   };
+  const rememberPasteTargetWindow = useCallback(() => {
+    invoke("remember_paste_target_window").catch((error) => {
+      logError("PASTE", `Failed to remember paste target window: ${error}`);
+    });
+  }, []);
 
   return (
     <div
@@ -784,6 +789,7 @@ export function Widget() {
               latestCopyText={latestCopyText}
               onToggleRecording={toggleManualRecording}
               onClick={openLatestFileResult}
+              onRememberPasteTarget={rememberPasteTargetWindow}
               onPointerDown={handleDragPointerDown}
               onPointerMove={handleDragPointerMove}
               onPointerUp={handleDragPointerUp}
@@ -1046,6 +1052,7 @@ function IdlePill({
   latestCopyText,
   onToggleRecording,
   onClick,
+  onRememberPasteTarget,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -1054,6 +1061,7 @@ function IdlePill({
   latestCopyText: string | null;
   onToggleRecording: () => void;
   onClick: () => void;
+  onRememberPasteTarget: () => void;
 }) {
   const widgetWindow = getCurrentWindow();
   const [isHovered, setIsHovered] = useState(false);
@@ -1123,7 +1131,10 @@ function IdlePill({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      onPointerEnter={() => setIsHovered(true)}
+      onPointerEnter={() => {
+        onRememberPasteTarget();
+        setIsHovered(true);
+      }}
       onPointerLeave={() => setIsHovered(false)}
       width={IDLE_HOVER_WIDGET_WIDTH}
       height={IDLE_HOVER_WIDGET_HEIGHT}

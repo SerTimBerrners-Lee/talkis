@@ -41,10 +41,12 @@ interface UseWidgetRecordingResult {
 }
 
 function getAudioConstraints(micId: string): MediaTrackConstraints | true {
+  const platform = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+  const useMicProcessing = platform.includes("linux") || platform.includes("x11");
   const constraints: MediaTrackConstraints = {
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl: false,
+    echoCancellation: useMicProcessing,
+    noiseSuppression: useMicProcessing,
+    autoGainControl: useMicProcessing,
     channelCount: { ideal: 1 },
   };
 
@@ -74,6 +76,16 @@ async function waitForTrackReady(stream: MediaStream, timeoutMs: number): Promis
 
     const timer = setTimeout(finish, timeoutMs);
     track.addEventListener("unmute", finish, { once: true });
+  });
+}
+
+function waitForWidgetPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.setTimeout(resolve, 0);
+      });
+    });
   });
 }
 
@@ -266,6 +278,8 @@ export function useWidgetRecording({
       const codec = runtimeRef.current.start(recordingStream);
       if (codec === "webm") {
         logInfo("RECORDING", "Using webm codec");
+      } else if (codec === "wav") {
+        logInfo("RECORDING", "Using wav codec");
       } else {
         logInfo("RECORDING", "Webm not supported, using default codec");
       }
@@ -305,13 +319,14 @@ export function useWidgetRecording({
       releaseStopTimerActive: false,
     };
 
-    await runtimeRef.current.stop();
     stopLowMicMonitor();
     setStream(null);
     onRecordingProcessing?.();
-
-    await resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
     dispatch({ type: "SET_PROCESSING" });
+    void resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
+    await waitForWidgetPaint();
+
+    await runtimeRef.current.stop();
 
     try {
       if (!runtimeRef.current.hasAudioChunks()) {
@@ -319,7 +334,7 @@ export function useWidgetRecording({
         throw new Error("Аудио не записано. Попробуйте еще раз.");
       }
 
-      const blob = runtimeRef.current.getAudioBlob();
+      const blob = await runtimeRef.current.getAudioBlob();
       logInfo("RECORDING", `Recorded audio blob: type=${blob.type || "[unknown]"}, size=${blob.size}`);
       const durationMs = Date.now() - machine.recordingStartTimestamp;
 
@@ -344,6 +359,7 @@ export function useWidgetRecording({
       if (!pipelineResult.hasTranscription) {
         recordingSettingsRef.current = null;
         runtimeRef.current.reset();
+        showNotice("Речь не распознана. Попробуйте еще раз.", "info");
         dispatch({ type: "PROCESSING_COMPLETE" });
         await resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
         return;
@@ -363,7 +379,7 @@ export function useWidgetRecording({
       runtimeRef.current.reset();
       showError(message);
     }
-  }, [dispatch, machineRef, onRecordingProcessing, resizeWidget, setStream, settings, showError, stopLowMicMonitor]);
+  }, [dispatch, machineRef, onRecordingProcessing, resizeWidget, setStream, settings, showError, showNotice, stopLowMicMonitor]);
 
   // ── Keep stopAndProcessRef current ──────────────────────────────────────
   useEffect(() => {

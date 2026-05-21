@@ -130,6 +130,11 @@ struct SpeakerTurn {
 
 const PORTABLE_PYTHON_ASSETS: &[PortablePythonAsset] = &[
     PortablePythonAsset {
+        target: "x86_64-unknown-linux-gnu",
+        url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13%2B20260510-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        sha256: "e7332b4b4bb85006deb48d251c786a04c14de104c9b3a006b33457a4a604b8bc",
+    },
+    PortablePythonAsset {
         target: "aarch64-apple-darwin",
         url: "https://github.com/astral-sh/python-build-standalone/releases/download/20260510/cpython-3.12.13%2B20260510-aarch64-apple-darwin-install_only.tar.gz",
         sha256: "5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17",
@@ -742,7 +747,10 @@ fn prepare_sherpa_venv(venv_dir: &Path) -> Result<(), (u16, String)> {
                 500,
                 format!(
                     "Не удалось создать Python venv для sherpa-onnx: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
+                    command_output_message(
+                        &output,
+                        "python -m venv завершился без диагностического текста. На Debian/Ubuntu установите пакет python3.12-venv."
+                    )
                 ),
             ));
         }
@@ -764,12 +772,26 @@ fn prepare_sherpa_venv(venv_dir: &Path) -> Result<(), (u16, String)> {
             500,
             format!(
                 "Не удалось установить sherpa-onnx dependencies: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
+                command_output_message(
+                    &output,
+                    "python -m pip завершился без диагностического текста. Проверьте, что в Python venv доступен pip."
+                )
             ),
         ));
     }
 
     Ok(())
+}
+
+fn command_output_message(output: &std::process::Output, fallback: &str) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    match (stderr.is_empty(), stdout.is_empty()) {
+        (false, false) => format!("{}\n{}", stderr, stdout),
+        (false, true) => stderr,
+        (true, false) => stdout,
+        (true, true) => fallback.to_string(),
+    }
 }
 
 fn venv_bin_dir(venv_dir: &Path) -> PathBuf {
@@ -804,6 +826,7 @@ fn find_system_python() -> Option<String> {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .filter(|value| python_is_supported(value))
+        .filter(|value| python_supports_venv(value))
         .or_else(|| {
             [
                 "python3.12",
@@ -814,7 +837,7 @@ fn find_system_python() -> Option<String> {
                 "python",
             ]
             .into_iter()
-            .find(|candidate| python_is_supported(candidate))
+            .find(|candidate| python_is_supported(candidate) && python_supports_venv(candidate))
             .map(str::to_string)
         })
 }
@@ -966,6 +989,7 @@ fn portable_python_asset() -> Option<&'static PortablePythonAsset> {
 
 fn platform_target() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
         ("macos", "aarch64") => "aarch64-apple-darwin",
         ("macos", "x86_64") => "x86_64-apple-darwin",
         _ => "unsupported",
@@ -1006,6 +1030,16 @@ fn python_is_supported(name: &str) -> bool {
     };
 
     major == 3 && (10..=13).contains(&minor)
+}
+
+fn python_supports_venv(name: &str) -> bool {
+    Command::new(name)
+        .args(["-c", "import venv, ensurepip"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn python_is_supported_path(path: &Path) -> bool {

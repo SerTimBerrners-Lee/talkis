@@ -309,6 +309,9 @@ pub async fn widget_resize(
 
 #[tauri::command]
 pub async fn activate_widget_for_hotkey(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    crate::paste::remember_linux_paste_target_window();
+
     let win = app
         .get_webview_window("widget")
         .ok_or_else(|| "Widget window not found".to_string())?;

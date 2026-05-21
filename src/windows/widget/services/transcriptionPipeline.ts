@@ -103,6 +103,40 @@ function toUserFacingErrorMessage(error: unknown): string {
   return "Не удалось обработать запись. Попробуйте отправить ее повторно.";
 }
 
+function normalizeTranscriptForPlaceholderCheck(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?…\s]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function hasRecognizedSpeech(result: { raw: string; cleaned: string }): boolean {
+  const raw = result.raw.trim();
+  const cleaned = result.cleaned.trim();
+  const normalizedRaw = normalizeTranscriptForPlaceholderCheck(raw);
+  const normalizedCleaned = normalizeTranscriptForPlaceholderCheck(cleaned);
+  const placeholderPhrases = new Set([
+    "продолжение следует",
+    "продолжение следует...",
+    "to be continued",
+  ]);
+
+  if (!raw && !cleaned) {
+    return false;
+  }
+
+  if (placeholderPhrases.has(normalizedRaw) && (!cleaned || placeholderPhrases.has(normalizedCleaned))) {
+    return false;
+  }
+
+  if (!raw && placeholderPhrases.has(normalizedCleaned)) {
+    return false;
+  }
+
+  return true;
+}
+
 const PROXY_BASE_URL = "https://proxy.talkis.ru";
 
 async function transcribeViaProxy({
@@ -263,7 +297,7 @@ export async function processRecordingBlob({
     logInfo("API", `Pipeline result received: raw_type=${typeof result.raw}, cleaned_type=${typeof result.cleaned}`);
     const processingTime = Date.now() - apiStart;
 
-    if (!result.raw.trim() && !result.cleaned.trim()) {
+    if (!hasRecognizedSpeech(result)) {
       logInfo("API", "Nothing recognized, skipping history save and paste");
       return { durationSeconds, hasTranscription: false };
     }
@@ -346,7 +380,7 @@ export async function retryHistoryEntry(
       settings: retrySettings,
     });
 
-    if (!result.raw.trim() && !result.cleaned.trim()) {
+    if (!hasRecognizedSpeech(result)) {
       throw new Error("Речь не распознана. Попробуйте отправить запись еще раз.");
     }
 

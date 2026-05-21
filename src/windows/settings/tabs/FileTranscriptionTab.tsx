@@ -178,6 +178,44 @@ function isSpeakerSetupRepairError(error: unknown): boolean {
   );
 }
 
+function toSpeakerSetupErrorMessage(error: unknown): string {
+  const raw = formatErrorMessage(error);
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes("401") || normalized.includes("api-ключ")) {
+    return "Не удалось подготовить локальные компоненты: STT runtime отклонил API-ключ.";
+  }
+
+  if (normalized.includes("403")) {
+    return "Не удалось подготовить локальные компоненты: STT runtime запретил установку модели.";
+  }
+
+  if (normalized.includes("timeout") || normalized.includes("timed out")) {
+    return "Не удалось подготовить локальные компоненты: локальный STT runtime не ответил вовремя.";
+  }
+
+  if (
+    normalized.includes("ensurepip") ||
+    normalized.includes("python3.12-venv") ||
+    normalized.includes("python3-venv") ||
+    normalized.includes("no module named pip")
+  ) {
+    return "Не удалось подготовить локальные компоненты: в системе нет Python venv/pip. Установите пакет python3.12-venv и повторите скачивание.";
+  }
+
+  if (
+    normalized.includes("connect") ||
+    normalized.includes("подключиться") ||
+    normalized.includes("runtime")
+  ) {
+    return raw;
+  }
+
+  return raw.trim()
+    ? `Не удалось подготовить локальные компоненты для разделения по говорящим: ${raw}`
+    : "Не удалось подготовить локальные компоненты для разделения по говорящим.";
+}
+
 async function refreshSpeakerInstalledModels(
   settings: AppSettings,
 ): Promise<AppSettings> {
@@ -255,6 +293,8 @@ export function FileTranscriptionTab({
   const resultSectionRef = useRef<HTMLElement | null>(null);
   const isProcessingRef = useRef(false);
   const nativeDropAtRef = useRef(0);
+  const speakerDiarizationToggleRunRef = useRef(0);
+  const settingsRef = useRef<AppSettings | null>(null);
   const processFilePathRef = useRef<(filePath: string) => Promise<void>>(
     async () => {},
   );
@@ -311,25 +351,50 @@ export function FileTranscriptionTab({
   }, [isProcessing]);
 
   useEffect(() => {
-    getSettings({ reload: true })
-      .then(async (settings) => {
-        const syncedSettings = await refreshSpeakerInstalledModels(settings);
-        const cloudSpeakerReady =
-          await canUseCloudSpeakerDiarization(syncedSettings);
-        syncSpeakerSetupState(syncedSettings);
-        if (
-          syncedSettings.fileSpeakerDiarization &&
-          ((!syncedSettings.useOwnKey && !cloudSpeakerReady) ||
-            (syncedSettings.useOwnKey && !isSpeakerSetupReady(syncedSettings)))
-        ) {
-          setSpeakerDiarization(false);
-          void saveSettings({ fileSpeakerDiarization: false });
-          return;
-        }
+    let mounted = true;
 
-        setSpeakerDiarization(syncedSettings.fileSpeakerDiarization);
+    getSettings({ reload: true })
+      .then((settings) => {
+        if (!mounted) return;
+
+        settingsRef.current = settings;
+        setSpeakerDiarization(settings.fileSpeakerDiarization);
+        syncSpeakerSetupState(settings);
+
+        const validationRun = speakerDiarizationToggleRunRef.current;
+        void (async () => {
+          const syncedSettings = await refreshSpeakerInstalledModels(settings);
+          const cloudSpeakerReady = syncedSettings.useOwnKey
+            ? false
+            : await canUseCloudSpeakerDiarization(syncedSettings);
+
+          if (!mounted) return;
+
+          settingsRef.current = syncedSettings;
+          syncSpeakerSetupState(syncedSettings);
+          if (speakerDiarizationToggleRunRef.current !== validationRun) {
+            return;
+          }
+
+          if (
+            syncedSettings.fileSpeakerDiarization &&
+            ((!syncedSettings.useOwnKey && !cloudSpeakerReady) ||
+              (syncedSettings.useOwnKey &&
+                !isSpeakerSetupReady(syncedSettings)))
+          ) {
+            setSpeakerDiarization(false);
+            void saveSettings({ fileSpeakerDiarization: false });
+            return;
+          }
+
+          setSpeakerDiarization(syncedSettings.fileSpeakerDiarization);
+        })();
       })
       .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const resetResult = (): void => {
@@ -486,6 +551,7 @@ export function FileTranscriptionTab({
         settings,
         true,
       );
+      settingsRef.current = settings;
       syncSpeakerSetupState(settings);
       if (speakerMode && !settings.useOwnKey && !cloudSpeakerReady) {
         setSpeakerDiarization(false);
@@ -733,6 +799,7 @@ export function FileTranscriptionTab({
       }
 
       const finalSettings = await getSettings({ reload: true });
+      settingsRef.current = finalSettings;
       syncSpeakerSetupState(finalSettings);
       setSpeakerSetupMessage(
         speakerSetupIntent === "toggle"
@@ -759,7 +826,7 @@ export function FileTranscriptionTab({
       }
       setSpeakerSetupIntent(null);
     } catch (caughtError) {
-      setSpeakerSetupError(toFileTranscriptionErrorMessage(caughtError));
+      setSpeakerSetupError(toSpeakerSetupErrorMessage(caughtError));
     } finally {
       setSpeakerSetupInstalling(false);
     }
@@ -794,50 +861,93 @@ export function FileTranscriptionTab({
     await emit(HISTORY_UPDATED_EVENT, nextEntry);
   };
 
-  const toggleSpeakerDiarization = async (): Promise<void> => {
+  const toggleSpeakerDiarization = (): void => {
+    const runId = speakerDiarizationToggleRunRef.current + 1;
+    speakerDiarizationToggleRunRef.current = runId;
+    const isCurrentToggleRun = (): boolean =>
+      speakerDiarizationToggleRunRef.current === runId;
+
     if (speakerDiarization) {
       setSpeakerDiarization(false);
-      await saveSettings({ fileSpeakerDiarization: false });
+      void saveSettings({ fileSpeakerDiarization: false });
       return;
     }
 
-    const settings = await refreshSpeakerInstalledModels(
-      await getSettings({ reload: true }),
-    );
-    const cloudSpeakerReady = await canUseCloudSpeakerDiarization(
-      settings,
-      true,
-    );
-    syncSpeakerSetupState(settings);
+    setError("");
+    setSpeakerDiarization(true);
+    void saveSettings({ fileSpeakerDiarization: true });
 
-    if (!settings.useOwnKey) {
-      if (cloudSpeakerReady) {
-        setSpeakerDiarization(true);
-        await saveSettings({ fileSpeakerDiarization: true });
+    const cachedSettings = settingsRef.current;
+    if (
+      !cachedSettings ||
+      (cachedSettings.useOwnKey && !isSpeakerSetupReady(cachedSettings))
+    ) {
+      setPendingSpeakerFilePath(null);
+      setSpeakerSetupIntent("toggle");
+      setSpeakerSetupMessage("");
+      setSpeakerSetupError("");
+      setSpeakerSetupModalOpen(true);
+    }
+
+    void (async () => {
+      try {
+        const settings = await refreshSpeakerInstalledModels(
+          await getSettings({ reload: true }),
+        );
+        const cloudSpeakerReady = settings.useOwnKey
+          ? false
+          : await canUseCloudSpeakerDiarization(settings, true);
+
+        if (!isCurrentToggleRun()) {
+          return;
+        }
+
+        settingsRef.current = settings;
+        syncSpeakerSetupState(settings);
+
+        if (!settings.useOwnKey) {
+          if (cloudSpeakerReady) {
+            setSpeakerSetupModalOpen(false);
+            setSpeakerSetupIntent(null);
+            return;
+          }
+
+          setSpeakerSetupModalOpen(false);
+          setSpeakerSetupIntent(null);
+          setError(
+            toFileTranscriptionErrorMessage(
+              new Error("Cloud speaker diarization unavailable"),
+            ),
+          );
+          setSpeakerDiarization(false);
+          await saveSettings({ fileSpeakerDiarization: false });
+          return;
+        }
+
+        if (isSpeakerSetupReady(settings)) {
+          setSpeakerSetupModalOpen(false);
+          setSpeakerSetupIntent(null);
+          return;
+        }
+
+        setPendingSpeakerFilePath(null);
+        setSpeakerSetupIntent("toggle");
+        setSpeakerSetupMessage("");
+        setSpeakerSetupError("");
+        setSpeakerSetupModalOpen(true);
+      } catch (caughtError) {
+        if (!isCurrentToggleRun()) {
+          return;
+        }
+
+        setSpeakerSetupModalOpen(false);
+        setSpeakerSetupIntent(null);
+        setError(toFileTranscriptionErrorMessage(caughtError));
+        setSpeakerDiarization(false);
+        await saveSettings({ fileSpeakerDiarization: false });
         return;
       }
-
-      setError(
-        toFileTranscriptionErrorMessage(
-          new Error("Cloud speaker diarization unavailable"),
-        ),
-      );
-      setSpeakerDiarization(false);
-      await saveSettings({ fileSpeakerDiarization: false });
-      return;
-    }
-
-    if (isSpeakerSetupReady(settings)) {
-      setSpeakerDiarization(true);
-      await saveSettings({ fileSpeakerDiarization: true });
-      return;
-    }
-
-    setPendingSpeakerFilePath(null);
-    setSpeakerSetupIntent("toggle");
-    setSpeakerSetupMessage("");
-    setSpeakerSetupError("");
-    setSpeakerSetupModalOpen(true);
+    })();
   };
 
   const resultText = resultEntry?.cleaned ?? "";
@@ -849,6 +959,12 @@ export function FileTranscriptionTab({
   const speakerSetupActionLabel = "Скачать";
   const closeSpeakerSetupModal = (): void => {
     if (speakerSetupInstalling) return;
+
+    if (speakerSetupIntent === "toggle") {
+      speakerDiarizationToggleRunRef.current += 1;
+      setSpeakerDiarization(false);
+      void saveSettings({ fileSpeakerDiarization: false });
+    }
 
     setSpeakerSetupModalOpen(false);
     setPendingSpeakerFilePath(null);

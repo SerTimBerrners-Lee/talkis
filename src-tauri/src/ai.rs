@@ -1400,6 +1400,16 @@ pub struct InstallSttModelResult {
     pub whisper_endpoint: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct SttEndpointErrorResponse {
+    error: SttEndpointError,
+}
+
+#[derive(Deserialize)]
+struct SttEndpointError {
+    message: String,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct DeleteSttModelRequest {
     pub api_key: String,
@@ -1879,6 +1889,14 @@ pub async fn install_stt_model(
             }
         }
 
+        let error_detail = stt_endpoint_error_message(&error_text).unwrap_or_else(|| {
+            error_text
+                .chars()
+                .take(200)
+                .collect::<String>()
+                .trim()
+                .to_string()
+        });
         let message = match status_code {
             401 => "STT endpoint отклонил API-ключ при установке модели.".to_string(),
             403 => "STT endpoint запретил установку модели. Проверьте права доступа.".to_string(),
@@ -1892,8 +1910,7 @@ pub async fn install_stt_model(
             ),
             _ => format!(
                 "STT endpoint вернул ошибку {} при установке модели: {}",
-                status_code,
-                error_text.chars().take(200).collect::<String>()
+                status_code, error_detail
             ),
         };
         logger::log_error("STT_INSTALL", &message);
@@ -1937,6 +1954,13 @@ pub async fn install_stt_model(
         ),
         whisper_endpoint: effective_whisper_endpoint,
     })
+}
+
+fn stt_endpoint_error_message(response_text: &str) -> Option<String> {
+    serde_json::from_str::<SttEndpointErrorResponse>(response_text)
+        .ok()
+        .map(|response| response.error.message.trim().to_string())
+        .filter(|message| !message.is_empty())
 }
 
 #[tauri::command]
