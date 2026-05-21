@@ -3,6 +3,20 @@ use std::time::Duration;
 
 use crate::logger;
 
+#[cfg(target_os = "linux")]
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(target_os = "linux")]
+static LINUX_PASTE_TARGET_WINDOW: OnceLock<Mutex<Option<LinuxPasteTarget>>> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, Debug)]
+struct LinuxPasteTarget {
+    window: u32,
+    wm_class: String,
+    title: String,
+}
+
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -22,6 +36,263 @@ fn ensure_input_event_permission() -> Result<(), String> {
 #[cfg(not(target_os = "macos"))]
 fn ensure_input_event_permission() -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn paste_target_window() -> &'static Mutex<Option<LinuxPasteTarget>> {
+    LINUX_PASTE_TARGET_WINDOW.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_window_property(
+    conn: &impl x11rb::connection::Connection,
+    window: u32,
+    property: &[u8],
+    type_atom: x11rb::protocol::xproto::AtomEnum,
+) -> Result<String, String> {
+    use x11rb::protocol::xproto::ConnectionExt;
+
+    let property_atom = conn
+        .intern_atom(false, property)
+        .map_err(|err| format!("Failed to request X11 atom {:?}: {}", property, err))?
+        .reply()
+        .map_err(|err| format!("Failed to resolve X11 atom {:?}: {}", property, err))?
+        .atom;
+    let reply = conn
+        .get_property(false, window, property_atom, type_atom, 0, 1024)
+        .map_err(|err| format!("Failed to request X11 property {:?}: {}", property, err))?
+        .reply()
+        .map_err(|err| format!("Failed to read X11 property {:?}: {}", property, err))?;
+    let text = String::from_utf8_lossy(&reply.value)
+        .replace('\0', " ")
+        .trim()
+        .to_string();
+
+    Ok(text)
+}
+
+#[cfg(target_os = "linux")]
+fn get_linux_active_window() -> Result<Option<LinuxPasteTarget>, String> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
+
+    let (conn, screen_num) = x11rb::connect(None)
+        .map_err(|err| format!("Failed to connect to X11: {}", err))?;
+    let screen = &conn.setup().roots[screen_num];
+    let active_window_atom = conn
+        .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .map_err(|err| format!("Failed to request _NET_ACTIVE_WINDOW atom: {}", err))?
+        .reply()
+        .map_err(|err| format!("Failed to resolve _NET_ACTIVE_WINDOW atom: {}", err))?
+        .atom;
+    let reply = conn
+        .get_property(
+            false,
+            screen.root,
+            active_window_atom,
+            AtomEnum::WINDOW,
+            0,
+            1,
+        )
+        .map_err(|err| format!("Failed to request active X11 window: {}", err))?
+        .reply()
+        .map_err(|err| format!("Failed to read active X11 window: {}", err))?;
+
+    let Some(window) = reply.value32().and_then(|mut values| values.next()) else {
+        return Ok(None);
+    };
+
+    if window == 0 {
+        return Ok(None);
+    }
+
+    let wm_class = read_linux_window_property(&conn, window, b"WM_CLASS", AtomEnum::STRING)
+        .unwrap_or_default();
+    let title = read_linux_window_property(&conn, window, b"_NET_WM_NAME", AtomEnum::STRING)
+        .or_else(|_| read_linux_window_property(&conn, window, b"WM_NAME", AtomEnum::STRING))
+        .unwrap_or_default();
+
+    Ok(Some(LinuxPasteTarget {
+        window,
+        wm_class,
+        title,
+    }))
+}
+
+#[cfg(target_os = "linux")]
+fn is_linux_terminal_target(target: &LinuxPasteTarget) -> bool {
+    let wm_class = target.wm_class.to_ascii_lowercase();
+    [
+        "warp",
+        "gnome-terminal",
+        "org.gnome.terminal",
+        "konsole",
+        "xterm",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "tilix",
+        "foot",
+    ]
+    .iter()
+    .any(|needle| wm_class.contains(needle))
+}
+
+#[cfg(target_os = "linux")]
+fn is_warp_target(target: &LinuxPasteTarget) -> bool {
+    target.wm_class.to_ascii_lowercase().contains("warp")
+}
+
+#[cfg(target_os = "linux")]
+fn is_talkis_window(target: &LinuxPasteTarget) -> bool {
+    target.wm_class.to_ascii_lowercase().contains("talkis")
+}
+
+#[cfg(target_os = "linux")]
+pub fn remember_linux_paste_target_window() {
+    match get_linux_active_window() {
+        Ok(Some(target)) => {
+            if is_talkis_window(&target) {
+                logger::log_info(
+                    "PASTE",
+                    &format!(
+                        "Ignoring Talkis window as paste target: id={}, class=\"{}\", title=\"{}\"",
+                        target.window, target.wm_class, target.title
+                    ),
+                );
+                return;
+            }
+
+            if let Ok(mut saved_target) = paste_target_window().lock() {
+                *saved_target = Some(target.clone());
+            }
+            logger::log_info(
+                "PASTE",
+                &format!(
+                    "Remembered Linux paste target window: id={}, class=\"{}\", title=\"{}\"",
+                    target.window, target.wm_class, target.title
+                ),
+            );
+        }
+        Ok(_) => {
+            logger::log_info("PASTE", "No active Linux paste target window to remember");
+        }
+        Err(err) => {
+            logger::log_error("PASTE", &format!("Failed to remember paste target: {}", err));
+        }
+    }
+}
+
+#[tauri::command]
+pub fn remember_paste_target_window() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    remember_linux_paste_target_window();
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn write_linux_xclip_selection(selection: &str, text: &str) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("xclip")
+        .args(["-selection", selection])
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("Failed to start xclip for {}: {}", selection, err))?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|err| format!("Failed to write {} text to xclip: {}", selection, err))?;
+    }
+
+    let status = child
+        .wait()
+        .map_err(|err| format!("Failed to wait for xclip {}: {}", selection, err))?;
+    if !status.success() {
+        return Err(format!("xclip {} exited with {}", selection, status));
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn write_linux_xclip_text(text: &str) {
+    for selection in ["clipboard", "primary"] {
+        match write_linux_xclip_selection(selection, text) {
+            Ok(()) => logger::log_info(
+                "PASTE",
+                &format!("Wrote recognized text to X11 {} selection via xclip", selection),
+            ),
+            Err(err) => logger::log_error("PASTE", &err),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn focus_remembered_linux_paste_target() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{
+        ClientMessageData, ClientMessageEvent, ConfigureWindowAux, ConnectionExt, EventMask,
+        InputFocus, StackMode, CLIENT_MESSAGE_EVENT,
+    };
+
+    let Some(target) = paste_target_window()
+        .lock()
+        .ok()
+        .and_then(|target| target.clone())
+    else {
+        return;
+    };
+    let window = target.window;
+
+    let result = (|| -> Result<(), String> {
+        let (conn, screen_num) = x11rb::connect(None)
+            .map_err(|err| format!("Failed to connect to X11: {}", err))?;
+        let screen = &conn.setup().roots[screen_num];
+        let active_window_atom = conn
+            .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+            .map_err(|err| format!("Failed to request _NET_ACTIVE_WINDOW atom: {}", err))?
+            .reply()
+            .map_err(|err| format!("Failed to resolve _NET_ACTIVE_WINDOW atom: {}", err))?
+            .atom;
+        let event = ClientMessageEvent {
+            response_type: CLIENT_MESSAGE_EVENT,
+            format: 32,
+            sequence: 0,
+            window,
+            type_: active_window_atom,
+            data: ClientMessageData::from([2, x11rb::CURRENT_TIME, 0, 0, 0]),
+        };
+
+        conn.send_event(
+            false,
+            screen.root,
+            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+            event,
+        )
+        .map_err(|err| format!("Failed to request WM activation for {}: {}", window, err))?;
+        conn.configure_window(
+            window,
+            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+        )
+        .map_err(|err| format!("Failed to raise remembered window {}: {}", window, err))?;
+        conn.set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+            .map_err(|err| format!("Failed to focus remembered window {}: {}", window, err))?;
+        conn.flush()
+            .map_err(|err| format!("Failed to flush X11 focus request: {}", err))?;
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            logger::log_info("PASTE", &format!("Focused remembered Linux paste target: {}", window));
+            std::thread::sleep(Duration::from_millis(180));
+        }
+        Err(err) => logger::log_error("PASTE", &err),
+    }
 }
 
 /// Simulate Cmd+V using CoreGraphics directly.
@@ -91,7 +362,80 @@ fn simulate_cmd_v() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn should_use_terminal_paste_shortcut() -> bool {
+    paste_target_window()
+        .lock()
+        .ok()
+        .and_then(|target| target.clone())
+        .is_some_and(|target| is_linux_terminal_target(&target))
+}
+
+#[cfg(target_os = "linux")]
+fn should_use_warp_paste_shortcut() -> bool {
+    paste_target_window()
+        .lock()
+        .ok()
+        .and_then(|target| target.clone())
+        .is_some_and(|target| is_warp_target(&target))
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_cmd_v() -> Result<(), String> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{KEY_PRESS_EVENT, KEY_RELEASE_EVENT};
+    use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
+
+    const CONTROL_LEFT_KEYCODE: u8 = 37;
+    const SHIFT_LEFT_KEYCODE: u8 = 50;
+    const INSERT_KEYCODE: u8 = 118;
+    const V_KEYCODE: u8 = 55;
+    let warp_paste = should_use_warp_paste_shortcut();
+    let terminal_paste = should_use_terminal_paste_shortcut();
+
+    let (conn, screen_num) = x11rb::connect(None)
+        .map_err(|err| format!("Failed to connect to X11: {}", err))?;
+    let root = conn.setup().roots[screen_num].root;
+
+    let events: &[(u8, u8)] = if warp_paste {
+        &[
+            (KEY_PRESS_EVENT, SHIFT_LEFT_KEYCODE),
+            (KEY_PRESS_EVENT, INSERT_KEYCODE),
+            (KEY_RELEASE_EVENT, INSERT_KEYCODE),
+            (KEY_RELEASE_EVENT, SHIFT_LEFT_KEYCODE),
+        ]
+    } else if terminal_paste {
+        &[
+            (KEY_PRESS_EVENT, CONTROL_LEFT_KEYCODE),
+            (KEY_PRESS_EVENT, SHIFT_LEFT_KEYCODE),
+            (KEY_PRESS_EVENT, V_KEYCODE),
+            (KEY_RELEASE_EVENT, V_KEYCODE),
+            (KEY_RELEASE_EVENT, SHIFT_LEFT_KEYCODE),
+            (KEY_RELEASE_EVENT, CONTROL_LEFT_KEYCODE),
+        ]
+    } else {
+        &[
+            (KEY_PRESS_EVENT, CONTROL_LEFT_KEYCODE),
+            (KEY_PRESS_EVENT, V_KEYCODE),
+            (KEY_RELEASE_EVENT, V_KEYCODE),
+            (KEY_RELEASE_EVENT, CONTROL_LEFT_KEYCODE),
+        ]
+    };
+
+    for &(event_type, keycode) in events {
+        conn.xtest_fake_input(event_type, keycode, 0, root, 0, 0, 0)
+            .map_err(|err| format!("XTest paste key event failed: {}", err))?;
+        conn.flush()
+            .map_err(|err| format!("Failed to flush XTest paste event: {}", err))?;
+        std::thread::sleep(Duration::from_millis(45));
+    }
+
+    conn.flush()
+        .map_err(|err| format!("Failed to flush XTest paste events: {}", err))?;
+    Ok(())
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
 fn simulate_cmd_v() -> Result<(), String> {
     use enigo::{Enigo, Key, Keyboard, Settings};
 
@@ -121,7 +465,23 @@ fn paste_shortcut_label() -> &'static str {
 
 #[cfg(target_os = "linux")]
 fn paste_shortcut_label() -> &'static str {
-    "Ctrl+V via best-effort input simulation"
+    if should_use_warp_paste_shortcut() {
+        "Shift+Insert via XTest"
+    } else if should_use_terminal_paste_shortcut() {
+        "Ctrl+Shift+V via XTest"
+    } else {
+        "Ctrl+V via XTest"
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn should_restore_clipboard_after_paste() -> bool {
+    false
+}
+
+#[cfg(not(target_os = "linux"))]
+fn should_restore_clipboard_after_paste() -> bool {
+    true
 }
 
 /// Paste text by writing to clipboard and simulating Cmd+V
@@ -148,17 +508,34 @@ pub async fn paste_text(app: tauri::AppHandle, text: String) -> Result<(), Strin
                 "PASTE",
                 &format!("Writing text to clipboard, chars={}", char_count),
             );
+            #[cfg(target_os = "linux")]
+            let linux_clipboard_text = text.clone();
+
             handle
                 .clipboard()
                 .write_text(text)
                 .map_err(|e| format!("Clipboard write failed: {}", e))?;
 
+            #[cfg(target_os = "linux")]
+            write_linux_xclip_text(&linux_clipboard_text);
+
             std::thread::sleep(Duration::from_millis(100));
+
+            #[cfg(target_os = "linux")]
+            focus_remembered_linux_paste_target();
 
             logger::log_info("PASTE", &format!("Simulating {}", paste_shortcut_label()));
             simulate_cmd_v()?;
 
-            std::thread::sleep(Duration::from_millis(350));
+            std::thread::sleep(Duration::from_millis(500));
+
+            if !should_restore_clipboard_after_paste() {
+                logger::log_info(
+                    "PASTE",
+                    "Keeping recognized text in clipboard after paste on Linux",
+                );
+                return Ok(());
+            }
 
             if let Some(previous_text) = previous_clipboard_text {
                 logger::log_info("PASTE", "Restoring previous clipboard text after paste");

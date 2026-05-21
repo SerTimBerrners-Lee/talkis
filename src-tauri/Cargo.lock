@@ -4716,6 +4716,7 @@ dependencies = [
  "webkit2gtk",
  "whisper-rs",
  "window-vibrancy 0.7.1",
+ "x11rb",
 ]
 
 [[package]]

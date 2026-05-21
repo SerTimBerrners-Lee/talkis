@@ -1,19 +1,44 @@
-type RecorderCodec = "webm" | "default";
+import { logInfo } from "../../../lib/logger";
+
+type RecorderCodec = "webm" | "default" | "wav";
+
+const PCM_TARGET_PEAK = 0.82;
+const PCM_NORMALIZE_BELOW_PEAK = 0.35;
+const PCM_MIN_SIGNAL_PEAK = 0.001;
+const PCM_MAX_GAIN = 8;
 
 interface PcmRecorderState {
   audioContext: AudioContext | null;
   source: MediaStreamAudioSourceNode | null;
   processor: ScriptProcessorNode | null;
+  sink: GainNode | null;
   chunks: Float32Array[];
   sampleRate: number;
   paused: boolean;
 }
 
 interface RecordingRuntimeState {
+  active: boolean;
   recorder: MediaRecorder | null;
   chunks: Blob[];
   stream: MediaStream | null;
   pcm: PcmRecorderState;
+  pcmOnly: boolean;
+}
+
+interface PcmAudioStats {
+  sampleCount: number;
+  sampleRate: number;
+  durationMs: number;
+  mean: number;
+  peak: number;
+  rms: number;
+  gain: number;
+}
+
+interface EncodedWavResult {
+  blob: Blob;
+  stats: PcmAudioStats;
 }
 
 export interface RecordingRuntimeController {
@@ -23,7 +48,7 @@ export interface RecordingRuntimeController {
   stop(): Promise<void>;
   hasRecorder(): boolean;
   hasAudioChunks(): boolean;
-  getAudioBlob(): Blob;
+  getAudioBlob(): Promise<Blob>;
   reset(): void;
   dispose(): void;
 }
@@ -56,11 +81,21 @@ function stopTracks(stream: MediaStream | null): void {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
+function shouldUsePcmOnlyRecorder(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const platform = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+  return platform.includes("linux") || platform.includes("x11");
+}
+
 function createEmptyPcmState(): PcmRecorderState {
   return {
     audioContext: null,
     source: null,
     processor: null,
+    sink: null,
     chunks: [],
     sampleRate: 48_000,
     paused: false,
@@ -71,6 +106,8 @@ function startPcmRecorder(stream: MediaStream): PcmRecorderState {
   const audioContext = new AudioContext({ latencyHint: "interactive" });
   const source = audioContext.createMediaStreamSource(stream);
   const processor = audioContext.createScriptProcessor(4096, 1, 1);
+  const sink = audioContext.createGain();
+  sink.gain.value = 0;
   const chunks: Float32Array[] = [];
 
   processor.onaudioprocess = (event) => {
@@ -86,13 +123,15 @@ function startPcmRecorder(stream: MediaStream): PcmRecorderState {
     audioContext,
     source,
     processor,
+    sink,
     chunks,
     sampleRate: audioContext.sampleRate,
     paused: false,
   };
 
   source.connect(processor);
-  processor.connect(audioContext.destination);
+  processor.connect(sink);
+  sink.connect(audioContext.destination);
   void audioContext.resume().catch(() => null);
 
   return pcmState;
@@ -100,11 +139,13 @@ function startPcmRecorder(stream: MediaStream): PcmRecorderState {
 
 function stopPcmRecorder(pcm: PcmRecorderState): void {
   pcm.processor?.disconnect();
+  pcm.sink?.disconnect();
   pcm.source?.disconnect();
   if (pcm.audioContext && pcm.audioContext.state !== "closed") {
     void pcm.audioContext.close().catch(() => null);
   }
   pcm.processor = null;
+  pcm.sink = null;
   pcm.source = null;
   pcm.audioContext = null;
   pcm.paused = false;
@@ -114,9 +155,47 @@ function pcmSampleCount(chunks: Float32Array[]): number {
   return chunks.reduce((total, chunk) => total + chunk.length, 0);
 }
 
-function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
+function getPcmStats(chunks: Float32Array[], sampleRate: number): PcmAudioStats {
   const sampleCount = pcmSampleCount(chunks);
-  const buffer = new ArrayBuffer(44 + sampleCount * 2);
+  let sum = 0;
+
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i += 1) {
+      sum += chunk[i];
+    }
+  }
+
+  const mean = sampleCount > 0 ? sum / sampleCount : 0;
+  let peak = 0;
+  let sumSquares = 0;
+
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i += 1) {
+      const sample = chunk[i] - mean;
+      const abs = Math.abs(sample);
+      peak = Math.max(peak, abs);
+      sumSquares += sample * sample;
+    }
+  }
+
+  const gain = peak > PCM_MIN_SIGNAL_PEAK && peak < PCM_NORMALIZE_BELOW_PEAK
+    ? Math.min(PCM_MAX_GAIN, PCM_TARGET_PEAK / peak)
+    : 1;
+
+  return {
+    sampleCount,
+    sampleRate,
+    durationMs: sampleRate > 0 ? Math.round((sampleCount / sampleRate) * 1000) : 0,
+    mean,
+    peak,
+    rms: sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0,
+    gain,
+  };
+}
+
+function encodeWav(chunks: Float32Array[], sampleRate: number): EncodedWavResult {
+  const stats = getPcmStats(chunks, sampleRate);
+  const buffer = new ArrayBuffer(44 + stats.sampleCount * 2);
   const view = new DataView(buffer);
 
   const writeString = (offset: number, value: string) => {
@@ -126,7 +205,7 @@ function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
   };
 
   writeString(0, "RIFF");
-  view.setUint32(4, 36 + sampleCount * 2, true);
+  view.setUint32(4, 36 + stats.sampleCount * 2, true);
   writeString(8, "WAVE");
   writeString(12, "fmt ");
   view.setUint32(16, 16, true);
@@ -137,26 +216,147 @@ function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   writeString(36, "data");
-  view.setUint32(40, sampleCount * 2, true);
+  view.setUint32(40, stats.sampleCount * 2, true);
 
   let offset = 44;
   for (const chunk of chunks) {
     for (let i = 0; i < chunk.length; i += 1) {
-      const sample = Math.max(-1, Math.min(1, chunk[i]));
+      const sample = Math.max(-1, Math.min(1, (chunk[i] - stats.mean) * stats.gain));
       view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
       offset += 2;
     }
   }
 
-  return new Blob([buffer], { type: "audio/wav" });
+  return {
+    blob: new Blob([buffer], { type: "audio/wav" }),
+    stats,
+  };
+}
+
+function encodeWavInWorker(chunks: Float32Array[], sampleRate: number): Promise<EncodedWavResult> {
+  if (typeof Worker === "undefined" || typeof URL === "undefined") {
+    return Promise.resolve(encodeWav(chunks, sampleRate));
+  }
+
+  return new Promise((resolve, reject) => {
+    const workerSource = `
+      const PCM_TARGET_PEAK = ${PCM_TARGET_PEAK};
+      const PCM_NORMALIZE_BELOW_PEAK = ${PCM_NORMALIZE_BELOW_PEAK};
+      const PCM_MIN_SIGNAL_PEAK = ${PCM_MIN_SIGNAL_PEAK};
+      const PCM_MAX_GAIN = ${PCM_MAX_GAIN};
+
+      function sampleCount(chunks) {
+        return chunks.reduce((total, chunk) => total + chunk.length, 0);
+      }
+
+      function getStats(chunks, sampleRate) {
+        const count = sampleCount(chunks);
+        let sum = 0;
+        for (const chunk of chunks) {
+          for (let i = 0; i < chunk.length; i += 1) {
+            sum += chunk[i];
+          }
+        }
+
+        const mean = count > 0 ? sum / count : 0;
+        let peak = 0;
+        let sumSquares = 0;
+        for (const chunk of chunks) {
+          for (let i = 0; i < chunk.length; i += 1) {
+            const sample = chunk[i] - mean;
+            const abs = Math.abs(sample);
+            peak = Math.max(peak, abs);
+            sumSquares += sample * sample;
+          }
+        }
+
+        const gain = peak > PCM_MIN_SIGNAL_PEAK && peak < PCM_NORMALIZE_BELOW_PEAK
+          ? Math.min(PCM_MAX_GAIN, PCM_TARGET_PEAK / peak)
+          : 1;
+
+        return {
+          sampleCount: count,
+          sampleRate,
+          durationMs: sampleRate > 0 ? Math.round((count / sampleRate) * 1000) : 0,
+          mean,
+          peak,
+          rms: count > 0 ? Math.sqrt(sumSquares / count) : 0,
+          gain,
+        };
+      }
+
+      self.onmessage = (event) => {
+        const chunks = event.data.buffers.map((buffer) => new Float32Array(buffer));
+        const sampleRate = event.data.sampleRate;
+        const stats = getStats(chunks, sampleRate);
+        const count = stats.sampleCount;
+        const buffer = new ArrayBuffer(44 + count * 2);
+        const view = new DataView(buffer);
+        const writeString = (offset, value) => {
+          for (let i = 0; i < value.length; i += 1) {
+            view.setUint8(offset + i, value.charCodeAt(i));
+          }
+        };
+
+        writeString(0, "RIFF");
+        view.setUint32(4, 36 + count * 2, true);
+        writeString(8, "WAVE");
+        writeString(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, "data");
+        view.setUint32(40, count * 2, true);
+
+        let offset = 44;
+        for (const chunk of chunks) {
+          for (let i = 0; i < chunk.length; i += 1) {
+            const sample = Math.max(-1, Math.min(1, (chunk[i] - stats.mean) * stats.gain));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+            offset += 2;
+          }
+        }
+
+        self.postMessage({ buffer, stats }, [buffer]);
+      };
+    `;
+
+    const url = URL.createObjectURL(new Blob([workerSource], { type: "application/javascript" }));
+    const worker = new Worker(url);
+    const cleanup = () => {
+      worker.terminate();
+      URL.revokeObjectURL(url);
+    };
+
+    worker.onmessage = (event: MessageEvent<{ buffer: ArrayBuffer; stats: PcmAudioStats }>) => {
+      cleanup();
+      resolve({
+        blob: new Blob([event.data.buffer], { type: "audio/wav" }),
+        stats: event.data.stats,
+      });
+    };
+    worker.onerror = (event) => {
+      cleanup();
+      reject(new Error(event.message || "WAV encoder worker failed"));
+    };
+
+    const buffers = chunks.map((chunk) => chunk.slice().buffer);
+    worker.postMessage({ buffers, sampleRate }, buffers);
+  });
 }
 
 export function createRecordingRuntimeController(): RecordingRuntimeController {
   const state: RecordingRuntimeState = {
+    active: false,
     recorder: null,
     chunks: [],
     stream: null,
     pcm: createEmptyPcmState(),
+    pcmOnly: false,
   };
 
   return {
@@ -164,6 +364,12 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       state.stream = stream;
       state.chunks = [];
       state.pcm = startPcmRecorder(stream);
+      state.active = true;
+      state.pcmOnly = shouldUsePcmOnlyRecorder();
+
+      if (state.pcmOnly) {
+        return "wav";
+      }
 
       let recorder: MediaRecorder;
       let codec: RecorderCodec = "webm";
@@ -190,6 +396,11 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       return codec;
     },
     pause() {
+      if (state.pcmOnly && state.active) {
+        state.pcm.paused = true;
+        return true;
+      }
+
       if (!state.recorder || state.recorder.state !== "recording") {
         return false;
       }
@@ -204,6 +415,11 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       }
     },
     resume() {
+      if (state.pcmOnly && state.active) {
+        state.pcm.paused = false;
+        return true;
+      }
+
       if (!state.recorder || state.recorder.state !== "paused") {
         return false;
       }
@@ -217,46 +433,64 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       }
     },
     async stop() {
-      if (!state.recorder) {
+      if (!state.active) {
+        return;
+      }
+
+      if (state.pcmOnly || !state.recorder) {
+        stopTracks(state.stream);
+        state.stream = null;
+        stopPcmRecorder(state.pcm);
+        state.active = false;
+        state.pcmOnly = false;
         return;
       }
 
       const activeRecorder = state.recorder;
       const stopped = waitForRecorderStop(activeRecorder);
-      activeRecorder.requestData();
       activeRecorder.stop();
       stopTracks(state.stream);
       state.stream = null;
       await stopped;
       stopPcmRecorder(state.pcm);
       state.recorder = null;
+      state.active = false;
     },
     hasRecorder() {
-      return state.recorder !== null;
+      return state.active;
     },
     hasAudioChunks() {
       return state.chunks.length > 0 || pcmSampleCount(state.pcm.chunks) > 0;
     },
-    getAudioBlob() {
+    async getAudioBlob() {
       if (state.chunks.length > 0) {
         const type = state.chunks[0]?.type || "audio/webm";
         return new Blob(state.chunks, { type });
       }
 
-      return encodeWav(state.pcm.chunks, state.pcm.sampleRate);
+      const { blob, stats } = await encodeWavInWorker(state.pcm.chunks, state.pcm.sampleRate);
+      logInfo(
+        "RECORDING",
+        `PCM audio stats: samples=${stats.sampleCount}, sample_rate=${stats.sampleRate}, duration_ms=${stats.durationMs}, peak=${stats.peak.toFixed(4)}, rms=${stats.rms.toFixed(4)}, gain=${stats.gain.toFixed(2)}`,
+      );
+      return blob;
     },
     reset() {
+      state.active = false;
       state.recorder = null;
       state.chunks = [];
       state.pcm = createEmptyPcmState();
+      state.pcmOnly = false;
     },
     dispose() {
       stopPcmRecorder(state.pcm);
       stopTracks(state.stream);
       state.stream = null;
+      state.active = false;
       state.recorder = null;
       state.chunks = [];
       state.pcm = createEmptyPcmState();
+      state.pcmOnly = false;
     },
   };
 }
