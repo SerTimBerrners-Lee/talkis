@@ -59,6 +59,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             libxdo-dev \
+            libasound2-dev \
             librsvg2-dev \
             patchelf \
             clang \
@@ -145,6 +146,32 @@ jobs:
         env:
           BUILD_ROOT: release-artifacts
           TALKIS_REQUIRED_UPDATER_PLATFORMS: darwin-aarch64,windows-x86_64,linux-x86_64
+
+      - name: Prepare stable download assets
+        run: |
+          set -euo pipefail
+
+          STABLE_DIR="release-artifacts/stable-downloads"
+          mkdir -p "$STABLE_DIR"
+
+          copy_first() {
+            local pattern="$1"
+            local target="$2"
+            local source
+
+            source="$(find release-artifacts -type f -name "$pattern" ! -path "$STABLE_DIR/*" -print -quit)"
+            if [[ -z "$source" ]]; then
+              echo "Missing release asset matching $pattern" >&2
+              exit 1
+            fi
+
+            cp "$source" "$STABLE_DIR/$target"
+            echo "Prepared $target from $source"
+          }
+
+          copy_first "*.dmg" "Talkis-macos.dmg"
+          copy_first "*.exe" "Talkis-windows-x64-setup.exe"
+          copy_first "*.AppImage" "Talkis-linux-x64.AppImage"
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2

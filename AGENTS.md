@@ -219,6 +219,30 @@ logger::log_error("TAG", &format!("error: {}", e));
 - **Auth flow:** Email OTP + Yandex OAuth → deep link `talkis://auth?token=xxx`
 - **Subscription:** Free (own API key) or paid (cloud, 390₽/mo)
 
+## Audio Pipeline Rules
+
+For any audio, transcription, local STT, file transcription, or call-capture work, read
+`docs/audio-pipeline-principles.md` before editing code.
+
+Key source files:
+
+- Voice widget recording: `src/windows/widget/hooks/useWidgetRecording.ts`, `src/windows/widget/services/recordingRuntime.ts`
+- Native voice recording: `src-tauri/src/native_voice_recorder.rs`
+- STT request orchestration and hallucination filtering: `src-tauri/src/ai.rs`
+- Media conversion and chunking: `src-tauri/src/media.rs`
+- Managed local Whisper runtime: `src-tauri/src/bin/talkis-stt.rs`
+- Call capture and call transcript assembly: `src-tauri/src/call_capture.rs`, `src/lib/callCapture.ts`
+
+Stable principles:
+
+- Ordinary voice dictation should avoid ffmpeg in the hot path. Prefer native microphone capture that returns `audio/wav`, `16 kHz`, mono, PCM16.
+- Keep WebView `MediaRecorder` as a fallback, especially when a selected microphone can only be addressed reliably by WebView `deviceId`.
+- Local STT input must be `WAV 16 kHz mono PCM16`; skip ffmpeg when audio already matches that format.
+- Keep ffmpeg for arbitrary files, video, unsupported formats, diarization preparation, and file chunking.
+- Long local Whisper jobs can hallucinate repeated caption-like text on silence. Preserve the no-context local runtime settings and the repetitive-text filters unless a replacement is tested against long silent recordings.
+- macOS call system-audio capture is the only implemented system-audio path. Windows/Linux call capture should remain explicit unsupported placeholders until WASAPI loopback / PipeWire monitor capture is implemented.
+- Every audio path needs structured logs with enough evidence to debug runtime behavior: recorder stats, ffmpeg timing, STT endpoint, chunk index/size, and call-capture levels.
+
 ## Release Workflow
 
 - Follow `docs/release/rule.md` for every release

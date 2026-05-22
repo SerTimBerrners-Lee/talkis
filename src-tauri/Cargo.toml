@@ -1,6 +1,6 @@
 [package]
 name = "talkis"
-version = "0.1.21"
+version = "0.1.22"
 description = "Talkis - Voice to Text Desktop Widget"
 authors = ["trixter"]
 edition = "2021"
@@ -28,6 +28,7 @@ sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+cpal = "0.15.3"
 window-vibrancy = "0.7.1"
 dirs = "5"
 include_dir = "0.7"

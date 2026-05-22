@@ -526,6 +526,11 @@ fn transcribe(request: &HttpRequest, config: &RuntimeConfig) -> Result<String, (
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
+    params.set_no_context(true);
+    params.set_suppress_nst(true);
+    params.set_temperature(0.0);
+    params.set_temperature_inc(0.0);
+    params.set_entropy_thold(2.2);
 
     if let Some(language) = multipart.fields.get("language") {
         let language = language.trim();

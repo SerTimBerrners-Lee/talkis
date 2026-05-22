@@ -76,8 +76,8 @@ fn get_linux_active_window() -> Result<Option<LinuxPasteTarget>, String> {
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
 
-    let (conn, screen_num) = x11rb::connect(None)
-        .map_err(|err| format!("Failed to connect to X11: {}", err))?;
+    let (conn, screen_num) =
+        x11rb::connect(None).map_err(|err| format!("Failed to connect to X11: {}", err))?;
     let screen = &conn.setup().roots[screen_num];
     let active_window_atom = conn
         .intern_atom(false, b"_NET_ACTIVE_WINDOW")
@@ -178,7 +178,10 @@ pub fn remember_linux_paste_target_window() {
             logger::log_info("PASTE", "No active Linux paste target window to remember");
         }
         Err(err) => {
-            logger::log_error("PASTE", &format!("Failed to remember paste target: {}", err));
+            logger::log_error(
+                "PASTE",
+                &format!("Failed to remember paste target: {}", err),
+            );
         }
     }
 }
@@ -224,7 +227,10 @@ fn write_linux_xclip_text(text: &str) {
         match write_linux_xclip_selection(selection, text) {
             Ok(()) => logger::log_info(
                 "PASTE",
-                &format!("Wrote recognized text to X11 {} selection via xclip", selection),
+                &format!(
+                    "Wrote recognized text to X11 {} selection via xclip",
+                    selection
+                ),
             ),
             Err(err) => logger::log_error("PASTE", &err),
         }
@@ -249,8 +255,8 @@ fn focus_remembered_linux_paste_target() {
     let window = target.window;
 
     let result = (|| -> Result<(), String> {
-        let (conn, screen_num) = x11rb::connect(None)
-            .map_err(|err| format!("Failed to connect to X11: {}", err))?;
+        let (conn, screen_num) =
+            x11rb::connect(None).map_err(|err| format!("Failed to connect to X11: {}", err))?;
         let screen = &conn.setup().roots[screen_num];
         let active_window_atom = conn
             .intern_atom(false, b"_NET_ACTIVE_WINDOW")
@@ -288,7 +294,10 @@ fn focus_remembered_linux_paste_target() {
 
     match result {
         Ok(()) => {
-            logger::log_info("PASTE", &format!("Focused remembered Linux paste target: {}", window));
+            logger::log_info(
+                "PASTE",
+                &format!("Focused remembered Linux paste target: {}", window),
+            );
             std::thread::sleep(Duration::from_millis(180));
         }
         Err(err) => logger::log_error("PASTE", &err),
@@ -393,8 +402,8 @@ fn simulate_cmd_v() -> Result<(), String> {
     let warp_paste = should_use_warp_paste_shortcut();
     let terminal_paste = should_use_terminal_paste_shortcut();
 
-    let (conn, screen_num) = x11rb::connect(None)
-        .map_err(|err| format!("Failed to connect to X11: {}", err))?;
+    let (conn, screen_num) =
+        x11rb::connect(None).map_err(|err| format!("Failed to connect to X11: {}", err))?;
     let root = conn.setup().roots[screen_num].root;
 
     let events: &[(u8, u8)] = if warp_paste {

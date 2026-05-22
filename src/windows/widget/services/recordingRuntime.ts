@@ -1,6 +1,8 @@
-import { logInfo } from "../../../lib/logger";
+import { invoke } from "@tauri-apps/api/core";
 
-type RecorderCodec = "webm" | "default" | "wav";
+import { logError, logInfo } from "../../../lib/logger";
+
+type RecorderCodec = "native-wav" | "webm" | "default" | "wav";
 
 const PCM_TARGET_PEAK = 0.82;
 const PCM_NORMALIZE_BELOW_PEAK = 0.35;
@@ -19,6 +21,8 @@ interface PcmRecorderState {
 
 interface RecordingRuntimeState {
   active: boolean;
+  nativeActive: boolean;
+  nativeResult: NativeVoiceRecordingResult | null;
   recorder: MediaRecorder | null;
   chunks: Blob[];
   stream: MediaStream | null;
@@ -41,7 +45,23 @@ interface EncodedWavResult {
   stats: PcmAudioStats;
 }
 
+interface NativeRecordingOptions {
+  deviceLabel?: string | null;
+}
+
+interface NativeVoiceRecordingResult {
+  audioBase64: string;
+  mimeType: string;
+  fileName: string;
+  durationMs: number;
+  sampleRate: number;
+  channels: number;
+  peak: number;
+  rms: number;
+}
+
 export interface RecordingRuntimeController {
+  startNative(options?: NativeRecordingOptions): Promise<RecorderCodec>;
   start(stream: MediaStream): RecorderCodec;
   pause(): boolean;
   resume(): boolean;
@@ -79,6 +99,15 @@ function waitForRecorderStop(recorder: MediaRecorder): Promise<void> {
 
 function stopTracks(stream: MediaStream | null): void {
   stream?.getTracks().forEach((track) => track.stop());
+}
+
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
 }
 
 function shouldUsePcmOnlyRecorder(): boolean {
@@ -352,6 +381,8 @@ function encodeWavInWorker(chunks: Float32Array[], sampleRate: number): Promise<
 export function createRecordingRuntimeController(): RecordingRuntimeController {
   const state: RecordingRuntimeState = {
     active: false,
+    nativeActive: false,
+    nativeResult: null,
     recorder: null,
     chunks: [],
     stream: null,
@@ -360,9 +391,36 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
   };
 
   return {
+    async startNative(options) {
+      state.chunks = [];
+      state.nativeResult = null;
+      state.stream = null;
+      state.recorder = null;
+      stopPcmRecorder(state.pcm);
+      state.pcm = createEmptyPcmState();
+      state.pcmOnly = false;
+
+      try {
+        await invoke("start_native_voice_recording", {
+          req: {
+            deviceLabel: options?.deviceLabel || null,
+          },
+        });
+      } catch (error) {
+        state.active = false;
+        state.nativeActive = false;
+        throw error;
+      }
+
+      state.active = true;
+      state.nativeActive = true;
+      return "native-wav";
+    },
     start(stream) {
       state.stream = stream;
       state.chunks = [];
+      state.nativeActive = false;
+      state.nativeResult = null;
       state.pcm = startPcmRecorder(stream);
       state.active = true;
       state.pcmOnly = shouldUsePcmOnlyRecorder();
@@ -396,6 +454,13 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       return codec;
     },
     pause() {
+      if (state.nativeActive && state.active) {
+        void invoke("pause_native_voice_recording").catch((error) => {
+          logError("RECORDING", `Native recorder pause failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        return true;
+      }
+
       if (state.pcmOnly && state.active) {
         state.pcm.paused = true;
         return true;
@@ -415,6 +480,13 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       }
     },
     resume() {
+      if (state.nativeActive && state.active) {
+        void invoke("resume_native_voice_recording").catch((error) => {
+          logError("RECORDING", `Native recorder resume failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        return true;
+      }
+
       if (state.pcmOnly && state.active) {
         state.pcm.paused = false;
         return true;
@@ -434,6 +506,13 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
     },
     async stop() {
       if (!state.active) {
+        return;
+      }
+
+      if (state.nativeActive) {
+        state.nativeResult = await invoke<NativeVoiceRecordingResult>("stop_native_voice_recording");
+        state.active = false;
+        state.nativeActive = false;
         return;
       }
 
@@ -460,9 +539,22 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       return state.active;
     },
     hasAudioChunks() {
+      if (state.nativeResult) {
+        return state.nativeResult.audioBase64.length > 0;
+      }
+
       return state.chunks.length > 0 || pcmSampleCount(state.pcm.chunks) > 0;
     },
     async getAudioBlob() {
+      if (state.nativeResult) {
+        const result = state.nativeResult;
+        logInfo(
+          "RECORDING",
+          `Native audio stats: duration_ms=${result.durationMs}, sample_rate=${result.sampleRate}, channels=${result.channels}, peak=${result.peak.toFixed(4)}, rms=${result.rms.toFixed(4)}`,
+        );
+        return base64ToBlob(result.audioBase64, result.mimeType || "audio/wav");
+      }
+
       if (state.chunks.length > 0) {
         const type = state.chunks[0]?.type || "audio/webm";
         return new Blob(state.chunks, { type });
@@ -477,16 +569,23 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
     },
     reset() {
       state.active = false;
+      state.nativeActive = false;
+      state.nativeResult = null;
       state.recorder = null;
       state.chunks = [];
       state.pcm = createEmptyPcmState();
       state.pcmOnly = false;
     },
     dispose() {
+      if (state.nativeActive) {
+        void invoke("stop_native_voice_recording").catch(() => null);
+      }
       stopPcmRecorder(state.pcm);
       stopTracks(state.stream);
       state.stream = null;
       state.active = false;
+      state.nativeActive = false;
+      state.nativeResult = null;
       state.recorder = null;
       state.chunks = [];
       state.pcm = createEmptyPcmState();

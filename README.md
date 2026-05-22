@@ -11,6 +11,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - The recognized text is pasted automatically into the current app
 - A second press during recording locks the recording mode
 - The floating widget can start/stop recording with a mouse click, copy the latest result, and show a low microphone signal notice
+- Voice dictation uses native microphone capture first and produces `16 kHz` mono PCM WAV for local STT, with WebView `MediaRecorder` kept as fallback for selected-device parity
 - Autostart can be enabled from settings
 - The settings window lets you choose language, microphone, model source, API adapter, text cleanup style, and transcribe audio/video files
 - The settings window supports system, light, and dark appearance modes; system mode follows macOS
@@ -165,7 +166,7 @@ Talkis checks for a new app version in the background after startup and then per
 
 The `Файлы` tab can transcribe audio or video files without LLM cleanup. File selection and drag-and-drop use a native path-based pipeline, so large files do not need to be loaded into the webview memory.
 
-Talkis supports file transcription up to 1 GB. Video files, long recordings, and less common formats are converted inside the app with the bundled ffmpeg sidecar, split into safe audio chunks, and transcribed sequentially. The UI shows chunk progress while processing.
+Talkis supports file transcription up to 8 GB. Video files, long recordings, and less common formats are converted inside the app with the bundled ffmpeg sidecar, split into safe audio chunks, and transcribed sequentially. The UI shows chunk progress while processing. Ready `16 kHz` mono PCM WAV files can skip ffmpeg and go directly to local STT when they fit in one request.
 
 File transcription can optionally split the transcript by speakers. In Talkis Cloud mode, `Разделить по говорящим` sends that file job to the cloud diarization endpoint on `proxy.talkis.ru`, backed by AssemblyAI, and does not use the installed local Whisper runtime. If cloud diarization is unavailable, Talkis stops with an error instead of silently falling back to local processing. In API or local mode, Talkis uses a downloaded local Whisper model with timestamps plus the speaker-diarization components for that file job. The global API or local model selection is not overwritten by this background diarization flow.
 
@@ -242,6 +243,12 @@ If LLM model is set to "Без обработки", the raw transcription is pas
 - Delete and reinstall the model if the runtime reports missing model files
 - For custom localhost STT servers on non-managed ports, Talkis treats the endpoint as an external OpenAI-compatible server and does not try to start or stop it
 
+### Local call/file transcription repeats the same phrase
+
+- Long low-signal or silent regions can make local Whisper repeat caption-like phrases such as `Спасибо` or `Продолжение следует`
+- Talkis disables context carry-over in the managed Whisper runtime and filters repeated timestamped segments before speaker assembly
+- If this appears again, check `~/.talkis/talkis.log` for recorder stats, ffmpeg timings, STT chunk sizes, and call-capture levels
+
 ### The microphone list is empty
 
 - Grant microphone permission in macOS
@@ -271,10 +278,10 @@ On Ubuntu/Debian, install the native Tauri and local sidecar build dependencies 
 
 ```bash
 sudo apt update
-sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev librsvg2-dev patchelf clang libclang-dev cmake
+sudo apt install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libxdo-dev libasound2-dev librsvg2-dev patchelf clang libclang-dev cmake
 ```
 
-`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars, `cmake` is required by the bundled `whisper.cpp` build, and `libxdo-dev` provides the `xdo` library used by Tauri/global hotkey linking. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
+`libclang-dev` is required by `whisper-rs-sys` while building the local STT sidecars, `cmake` is required by the bundled `whisper.cpp` build, `libxdo-dev` provides the `xdo` library used by Tauri/global hotkey linking, and `libasound2-dev` is required by the native microphone recorder on Linux. If libclang is installed in a non-standard location, set `LIBCLANG_PATH` to the directory that contains `libclang.so`.
 
 ```bash
 bun install
@@ -303,7 +310,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.19` to build and publish a GitHub Release
+- Push a tag like `v0.1.22` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -324,6 +331,7 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 - Tauri v2
 - React + TypeScript
 - Rust (backend, CGEvent paste, prompt engine)
+- Native microphone recording via `cpal`
 - OpenAI Whisper / gpt-4o-transcribe
 - OpenAI GPT-4o mini (text cleanup)
 - Talkis-managed local STT runtimes for Whisper, Qwen ASR, NVIDIA Parakeet MLX, and speaker diarization
@@ -331,4 +339,4 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.21**.
+Talkis is an active work in progress. Current version: **0.1.22**.

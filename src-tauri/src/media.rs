@@ -1,12 +1,14 @@
 use crate::logger;
 use base64::Engine;
+use hound::{SampleFormat, WavReader};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 #[cfg(debug_assertions)]
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri_plugin_shell::ShellExt;
 
 const MAX_TRANSCRIPTION_BYTES: u64 = 25 * 1024 * 1024;
@@ -75,6 +77,18 @@ fn unique_temp_path(prefix: &str, extension: &str) -> PathBuf {
     ))
 }
 
+fn is_local_stt_ready_wav(input_bytes: &[u8]) -> bool {
+    let Ok(reader) = WavReader::new(Cursor::new(input_bytes)) else {
+        return false;
+    };
+    let spec = reader.spec();
+
+    spec.sample_rate == 16000
+        && spec.channels == 1
+        && spec.bits_per_sample == 16
+        && spec.sample_format == SampleFormat::Int
+}
+
 #[cfg(debug_assertions)]
 fn ffmpeg_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
@@ -112,16 +126,26 @@ async fn run_ffmpeg(app: &tauri::AppHandle, args: Vec<String>) -> Result<Vec<u8>
     match app.shell().sidecar("talkis-ffmpeg") {
         Ok(command) => {
             logger::log_info("MEDIA", "Running bundled ffmpeg sidecar");
+            let started_at = Instant::now();
             let output = command
                 .args(args.clone())
                 .output()
                 .await
                 .map_err(|err| format!("Не удалось запустить встроенный ffmpeg: {}", err))?;
+            let elapsed_ms = started_at.elapsed().as_millis();
 
             if output.status.success() {
+                logger::log_info(
+                    "MEDIA",
+                    &format!("Bundled ffmpeg sidecar finished in {}ms", elapsed_ms),
+                );
                 return Ok(output.stderr);
             }
 
+            logger::log_error(
+                "MEDIA",
+                &format!("Bundled ffmpeg sidecar failed in {}ms", elapsed_ms),
+            );
             return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
         }
         Err(err) => {
@@ -139,15 +163,25 @@ async fn run_ffmpeg(app: &tauri::AppHandle, args: Vec<String>) -> Result<Vec<u8>
             "MEDIA",
             &format!("Running system ffmpeg fallback: {:?}", ffmpeg),
         );
+        let started_at = Instant::now();
         let output = Command::new(&ffmpeg)
             .args(&args)
             .output()
             .map_err(|err| format!("Не удалось запустить системный ffmpeg: {}", err))?;
+        let elapsed_ms = started_at.elapsed().as_millis();
 
         if output.status.success() {
+            logger::log_info(
+                "MEDIA",
+                &format!("System ffmpeg fallback finished in {}ms", elapsed_ms),
+            );
             return Ok(output.stderr);
         }
 
+        logger::log_error(
+            "MEDIA",
+            &format!("System ffmpeg fallback failed in {}ms", elapsed_ms),
+        );
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
 
@@ -162,6 +196,17 @@ pub async fn convert_audio_to_local_stt_wav(
     input_bytes: &[u8],
     file_name: &str,
 ) -> Result<Vec<u8>, String> {
+    if is_local_stt_ready_wav(input_bytes) {
+        logger::log_info(
+            "MEDIA",
+            &format!(
+                "Skipping ffmpeg for local STT: input is already 16 kHz mono PCM WAV, size={} bytes",
+                input_bytes.len()
+            ),
+        );
+        return Ok(input_bytes.to_vec());
+    }
+
     let input_ext = file_extension(file_name);
     let input_path = unique_temp_path("local-stt-input", input_ext);
     let output_path = unique_temp_path("local-stt-output", "wav");
@@ -229,6 +274,34 @@ pub async fn prepare_media_file_chunks_for_transcription(
         return Err(
             "Файл слишком большой. Максимальный размер для локальной подготовки: 8 ГБ.".to_string(),
         );
+    }
+
+    if metadata.len() <= MAX_TRANSCRIPTION_BYTES {
+        if let Ok(input_bytes) = fs::read(input_path) {
+            if is_local_stt_ready_wav(&input_bytes) {
+                logger::log_info(
+                    "MEDIA",
+                    &format!(
+                        "Skipping ffmpeg for file transcription: input is already 16 kHz mono PCM WAV, size={} bytes",
+                        metadata.len()
+                    ),
+                );
+                return Ok(PreparedMediaChunks {
+                    temp_dir: unique_temp_path("file-transcription-direct-wav", "dir"),
+                    chunks: vec![PreparedMediaChunk {
+                        path: input_path.to_path_buf(),
+                        file_name: input_path
+                            .file_name()
+                            .and_then(|value| value.to_str())
+                            .unwrap_or("talkis-transcription.wav")
+                            .to_string(),
+                        mime_type: "audio/wav".to_string(),
+                        size_bytes: metadata.len(),
+                        start_offset_seconds: 0.0,
+                    }],
+                });
+            }
+        }
     }
 
     let chunks_dir = unique_temp_path("file-transcription-chunks", "dir");

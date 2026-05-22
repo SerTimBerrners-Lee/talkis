@@ -4,8 +4,9 @@ mod commands;
 mod hotkey_capture;
 mod local_stt;
 mod logger;
-mod media_permissions;
 mod media;
+mod media_permissions;
+mod native_voice_recorder;
 mod paste;
 mod prompt_config;
 
@@ -120,6 +121,10 @@ pub fn run() {
             call_capture::get_call_capture_status,
             call_capture::get_call_capture_duration_ms,
             media::prepare_media_for_transcription,
+            native_voice_recorder::start_native_voice_recording,
+            native_voice_recorder::pause_native_voice_recording,
+            native_voice_recorder::resume_native_voice_recording,
+            native_voice_recorder::stop_native_voice_recording,
             ai::test_api_connection,
             ai::list_stt_models,
             ai::install_stt_model,

@@ -237,6 +237,156 @@ fn is_likely_short_uncertain_transcription(
     all_high_no_speech || all_low_confidence || any_high_compression
 }
 
+fn normalize_repetition_key(value: &str) -> String {
+    let normalized = value.trim().to_lowercase().replace('ё', "е");
+    let mut key = String::with_capacity(normalized.len());
+
+    for ch in normalized.chars() {
+        if ch.is_alphanumeric() {
+            key.push(ch);
+        } else {
+            key.push(' ');
+        }
+    }
+
+    key.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn is_known_caption_artifact_key(key: &str) -> bool {
+    key == "продолжение следует"
+        || key == "to be continued"
+        || key == "thanks for watching"
+        || key == "спасибо за просмотр"
+}
+
+fn split_transcript_units(text: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        current.push(ch);
+        if matches!(ch, '.' | '!' | '?' | '…' | '\n') {
+            let trimmed = current.trim();
+            if !normalize_repetition_key(trimmed).is_empty() {
+                units.push(trimmed.to_string());
+            }
+            current.clear();
+        }
+    }
+
+    let trimmed = current.trim();
+    if !normalize_repetition_key(trimmed).is_empty() {
+        units.push(trimmed.to_string());
+    }
+
+    if units.is_empty() && !text.trim().is_empty() {
+        units.push(text.trim().to_string());
+    }
+
+    units
+}
+
+fn sanitize_repetitive_transcript_text(text: &str) -> String {
+    let units = split_transcript_units(text);
+    if units.is_empty() {
+        return String::new();
+    }
+
+    let mut totals = std::collections::HashMap::<String, usize>::new();
+    for unit in &units {
+        let key = normalize_repetition_key(unit);
+        if !key.is_empty() {
+            *totals.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    let mut kept_counts = std::collections::HashMap::<String, usize>::new();
+    let mut kept = Vec::new();
+
+    for unit in units {
+        let key = normalize_repetition_key(&unit);
+        if key.is_empty() || is_known_caption_artifact_key(&key) {
+            continue;
+        }
+
+        let total = totals.get(&key).copied().unwrap_or(0);
+        if total >= 3 {
+            let count = kept_counts.entry(key).or_insert(0);
+            if *count >= 1 {
+                continue;
+            }
+            *count += 1;
+        }
+
+        kept.push(unit);
+    }
+
+    kept.join(" ").trim().to_string()
+}
+
+fn is_repeated_segment_filter_candidate(key: &str) -> bool {
+    if is_known_caption_artifact_key(key) {
+        return true;
+    }
+
+    let token_count = key.split_whitespace().count();
+    key == "спасибо" || (2..=12).contains(&token_count)
+}
+
+fn sanitize_stt_segments(segments: Vec<SttTranscriptSegment>) -> Vec<SttTranscriptSegment> {
+    let mut cleaned = Vec::with_capacity(segments.len());
+    for mut segment in segments {
+        segment.text = sanitize_repetitive_transcript_text(&segment.text);
+        if !segment.text.trim().is_empty() {
+            cleaned.push(segment);
+        }
+    }
+
+    let mut totals = std::collections::HashMap::<String, usize>::new();
+    for segment in &cleaned {
+        let key = normalize_repetition_key(&segment.text);
+        if !key.is_empty() {
+            *totals.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    let original_len = cleaned.len();
+    let mut seen = std::collections::HashMap::<String, usize>::new();
+    let filtered = cleaned
+        .into_iter()
+        .filter(|segment| {
+            let key = normalize_repetition_key(&segment.text);
+            if key.is_empty() || is_known_caption_artifact_key(&key) {
+                return false;
+            }
+
+            let total = totals.get(&key).copied().unwrap_or(0);
+            if total >= 3 && is_repeated_segment_filter_candidate(&key) {
+                let count = seen.entry(key).or_insert(0);
+                if *count >= 1 {
+                    return false;
+                }
+                *count += 1;
+            }
+
+            true
+        })
+        .collect::<Vec<_>>();
+
+    if filtered.len() != original_len {
+        logger::log_info(
+            "WHISPER",
+            &format!(
+                "Filtered repetitive local STT segments: before={}, after={}",
+                original_len,
+                filtered.len()
+            ),
+        );
+    }
+
+    filtered
+}
+
 #[tauri::command]
 pub async fn transcribe_and_clean(
     app: AppHandle,
@@ -489,6 +639,33 @@ async fn transcribe_audio_bytes_internal(
         });
     }
 
+    let sanitized_raw = sanitize_repetitive_transcript_text(&raw);
+    if sanitized_raw != raw {
+        logger::log_info(
+            "WHISPER",
+            &format!(
+                "Sanitized repetitive local STT text: before_chars={}, after_chars={}",
+                raw.chars().count(),
+                sanitized_raw.chars().count()
+            ),
+        );
+    }
+
+    if sanitized_raw.is_empty() {
+        logger::log_info(
+            "WHISPER",
+            &format!(
+                "Detected likely repetitive silence hallucination, dropping transcription: \"{}\"",
+                raw
+            ),
+        );
+        return Ok(AudioTranscriptionResult {
+            raw: String::new(),
+            cleaned: String::new(),
+            segments: Vec::new(),
+        });
+    }
+
     if is_known_whisper_hallucination(&raw) {
         logger::log_info(
             "WHISPER",
@@ -532,7 +709,7 @@ async fn transcribe_audio_bytes_internal(
     );
     logger::log_info("API", "Transcription complete");
 
-    let segments = whisper_body
+    let raw_segments = whisper_body
         .segments
         .iter()
         .filter_map(|segment| {
@@ -554,16 +731,41 @@ async fn transcribe_audio_bytes_internal(
             })
         })
         .collect::<Vec<_>>();
+    let segments = sanitize_stt_segments(raw_segments);
 
     if require_segments && segments.is_empty() {
-        return Err(
-            "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами.".to_string(),
+        if whisper_body.segments.is_empty() {
+            return Err(
+                "Для разделения по говорящим нужна локальная Whisper-модель с таймкодами."
+                    .to_string(),
+            );
+        }
+
+        logger::log_info(
+            "WHISPER",
+            "All timestamped local STT segments were filtered as repetitive hallucinations",
         );
+        return Ok(AudioTranscriptionResult {
+            raw: String::new(),
+            cleaned: String::new(),
+            segments: Vec::new(),
+        });
     }
 
+    let cleaned_raw = if require_segments && !segments.is_empty() {
+        segments
+            .iter()
+            .map(|segment| segment.text.trim())
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        sanitized_raw
+    };
+
     Ok(AudioTranscriptionResult {
-        raw: raw.clone(),
-        cleaned: raw,
+        raw: cleaned_raw.clone(),
+        cleaned: cleaned_raw,
         segments,
     })
 }
@@ -2140,6 +2342,41 @@ mod tests {
 
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].text, "Давайте начнем");
+    }
+
+    #[test]
+    fn removes_caption_artifact_units_from_local_stt_text() {
+        let text = sanitize_repetitive_transcript_text(
+            "Продолжение следует... Продолжение следует... Сколько уйдет времени?",
+        );
+
+        assert_eq!(text, "Сколько уйдет времени?");
+    }
+
+    #[test]
+    fn compacts_repeated_sentence_runs_inside_segment() {
+        let text = sanitize_repetitive_transcript_text(
+            "Проверим пайплайн. Убедимся в том, что у нас все было. Убедимся в том, что у нас все было. Убедимся в том, что у нас все было.",
+        );
+
+        assert_eq!(
+            text,
+            "Проверим пайплайн. Убедимся в том, что у нас все было."
+        );
+    }
+
+    #[test]
+    fn filters_repeated_low_information_stt_segments() {
+        let segments = sanitize_stt_segments(vec![
+            stt(0.0, 1.0, "Спасибо."),
+            stt(30.0, 31.0, "Спасибо."),
+            stt(60.0, 61.0, "Спасибо."),
+            stt(90.0, 94.0, "Реальная фраза"),
+        ]);
+
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "Спасибо.");
+        assert_eq!(segments[1].text, "Реальная фраза");
     }
 
     #[test]

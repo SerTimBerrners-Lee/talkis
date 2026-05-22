@@ -57,6 +57,21 @@ function getAudioConstraints(micId: string): MediaTrackConstraints | true {
   return constraints;
 }
 
+async function resolveSelectedMicLabel(micId: string): Promise<string | null> {
+  if (!micId || !navigator.mediaDevices?.enumerateDevices) {
+    return null;
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const selected = devices.find((device) => device.kind === "audioinput" && device.deviceId === micId);
+    return selected?.label?.trim() || null;
+  } catch (error) {
+    logError("RECORDING", `Failed to resolve selected mic label: ${formatErrorMessage(error)}`);
+    return null;
+  }
+}
+
 async function waitForTrackReady(stream: MediaStream, timeoutMs: number): Promise<void> {
   const [track] = stream.getAudioTracks();
   if (!track || (!track.muted && track.readyState === "live")) {
@@ -234,6 +249,30 @@ export function useWidgetRecording({
       void resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
 
       recordingSettingsRef.current = activeSettings;
+      const nativeMicLabel = await resolveSelectedMicLabel(activeSettings.micId);
+      if (activeSettings.micId && nativeMicLabel) {
+        logInfo("RECORDING", `Using preferred native mic label: ${nativeMicLabel}`);
+      } else if (activeSettings.micId) {
+        logInfo("RECORDING", "Selected mic label is unavailable for native recorder; using WebView recorder to preserve selected mic");
+      }
+
+      if (!activeSettings.micId || nativeMicLabel) {
+        try {
+          const codec = await runtimeRef.current.startNative({ deviceLabel: nativeMicLabel });
+          logInfo("RECORDING", codec === "native-wav" ? "Using native wav recorder" : "Using native recorder");
+          setStream(null);
+          logInfo("RECORDING", "Recording started successfully");
+          dispatch({ type: "RECORDING_STARTED", timestamp: Date.now() });
+          return;
+        } catch (nativeError) {
+          runtimeRef.current.reset();
+          logError(
+            "RECORDING",
+            `Native recorder start failed, falling back to WebView recorder: ${formatErrorMessage(nativeError)}`,
+          );
+        }
+      }
+
       const audioConstraints = getAudioConstraints(activeSettings.micId);
       if (activeSettings.micId) {
         logInfo("RECORDING", `Using preferred mic: ${activeSettings.micId}`);
@@ -326,9 +365,9 @@ export function useWidgetRecording({
     void resizeWidget(CALL_STACK_WIDGET_WIDTH, CALL_STACK_WIDGET_HEIGHT);
     await waitForWidgetPaint();
 
-    await runtimeRef.current.stop();
-
     try {
+      await runtimeRef.current.stop();
+
       if (!runtimeRef.current.hasAudioChunks()) {
         logError("RECORDING", "No audio chunks recorded");
         throw new Error("Аудио не записано. Попробуйте еще раз.");
