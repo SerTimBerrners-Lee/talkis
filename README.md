@@ -11,6 +11,7 @@ It sits in a small floating widget, listens while you hold a hotkey, sends audio
 - The recognized text is pasted automatically into the current app
 - A second press during recording locks the recording mode
 - The floating widget can start/stop recording with a mouse click, copy the latest result, and show a low microphone signal notice
+- The phone button starts a call-recording mode that captures the microphone plus macOS system audio, then saves the result as a call transcript in history
 - Voice dictation uses native microphone capture first and produces `16 kHz` mono PCM WAV for local STT, with WebView `MediaRecorder` kept as fallback for selected-device parity
 - Autostart can be enabled from settings
 - The settings window lets you choose language, microphone, model source, API adapter, text cleanup style, and transcribe audio/video files
@@ -78,6 +79,7 @@ The app relies on:
 
 - microphone access
 - accessibility permission on macOS for automatic text pasting (via CGEvent)
+- system audio permission on macOS for recording calls
 - best-effort paste simulation on Windows/Linux
 - a global hotkey
 
@@ -103,6 +105,7 @@ If it is hidden, click the floating widget to open it again.
 On first launch, Talkis asks for:
 
 - Microphone access — required for recording
+- System audio access on macOS — required for recording the audio side of calls
 - Accessibility access — required to paste the final text into other apps
 
 Without accessibility permission, speech can still be processed, but automatic paste will not work.
@@ -144,6 +147,12 @@ When the widget is idle, hover it to show quick controls:
 - click the copy button to copy the latest successful result from local history
 
 The copy shortcut is cleared when history is cleared, and it refreshes after entries are deleted.
+
+### Call recording
+
+Click the phone button next to the floating widget to record a call. Talkis requests microphone access and, on macOS, system audio access before recording starts. If either permission is missing, the widget shows a clear error and the settings window asks for the required permissions again.
+
+macOS call recording uses two tracks: `Вы` from the microphone and `Созвон` from system audio. Windows and Linux call system-audio capture are not enabled yet; those platforms still return an explicit unsupported-state message for this call mode.
 
 ### Settings you can change
 
@@ -260,6 +269,13 @@ If LLM model is set to "Без обработки", the raw transcription is pas
 - Make sure another app is not using the same shortcut
 - Restart Talkis after changing macOS permissions
 
+### Call recording shows an error
+
+- Grant Microphone permission in macOS System Settings → Privacy & Security → Microphone
+- Grant system audio recording permission in macOS System Settings → Privacy & Security → Screen & System Audio Recording
+- Restart Talkis after changing either permission
+- If the selected microphone was disconnected, choose another microphone in Talkis settings
+
 ### Build fails on external drives with `._*` files
 
 macOS can create AppleDouble metadata files on some external volumes. If Tauri fails while reading files like `._default.json`, remove them:
@@ -310,7 +326,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.22` to build and publish a GitHub Release
+- Push a tag like `v0.1.23` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -339,4 +355,4 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.22**.
+Talkis is an active work in progress. Current version: **0.1.23**.

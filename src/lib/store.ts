@@ -671,7 +671,7 @@ export async function clearHistory(): Promise<void> {
 
 const PERMISSIONS_PASSED_KEY = "permissions_passed";
 const PERMISSIONS_VERSION_KEY = "permissions_version";
-const CURRENT_PERMISSIONS_VERSION = 2;
+const CURRENT_PERMISSIONS_VERSION = 3;
 const WIDGET_POSITION_KEY = "widget_position";
 
 export async function getPermissionsPassed(): Promise<boolean> {

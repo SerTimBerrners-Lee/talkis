@@ -18,6 +18,7 @@ import {
   addHistoryEntry,
   getHistory,
   getSettings,
+  setPermissionsPassed,
   type HistoryEntry,
 } from "../../lib/store";
 import {
@@ -29,6 +30,10 @@ import {
   transcribeFilePathOnly,
 } from "../../lib/fileTranscription";
 import { logError, logInfo } from "../../lib/logger";
+import {
+  requestSystemAudioPermission,
+  requiresSystemAudioPermission,
+} from "../../lib/permissions";
 import { startAppUpdateScheduler } from "../../lib/updater";
 import { scaleWidgetDimension } from "../../lib/widgetScale";
 import {
@@ -55,6 +60,7 @@ import {
   IDLE_HOVER_WIDGET_HEIGHT,
   IDLE_HOVER_WIDGET_WIDTH,
   IDLE_HOVER_SCALE,
+  NOTICE_TIMEOUT_MS,
   WIDGET_SHELL_HEIGHT,
   WIDGET_SHELL_WIDTH,
 } from "./widgetConstants";
@@ -71,11 +77,22 @@ type WidgetFileDropState =
   | "closing";
 type WidgetCallState =
   | "idle"
+  | "starting"
   | "recording"
   | "processing"
   | "success"
   | "error";
 type WidgetRetryProcessingSource = WidgetRetryProcessingPayload["source"];
+
+class CallCaptureStartError extends Error {
+  readonly permissionRelated: boolean;
+
+  constructor(message: string, permissionRelated = false) {
+    super(message);
+    this.name = "CallCaptureStartError";
+    this.permissionRelated = permissionRelated;
+  }
+}
 
 const WIDGET_WAVES = [
   {
@@ -118,12 +135,95 @@ function getCopyableText(
   return cleaned.length > 0 ? cleaned : null;
 }
 
+function stopMediaStream(stream: MediaStream | null): void {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+function isPermissionDeniedError(error: unknown): boolean {
+  if (!(error instanceof DOMException)) {
+    return false;
+  }
+
+  return error.name === "NotAllowedError" || error.name === "SecurityError";
+}
+
+function isSelectedMicUnavailableError(error: unknown): boolean {
+  if (!(error instanceof DOMException)) {
+    return false;
+  }
+
+  return (
+    error.name === "NotFoundError" || error.name === "OverconstrainedError"
+  );
+}
+
+function microphoneStartErrorMessage(error: unknown): string {
+  if (isPermissionDeniedError(error)) {
+    return "Разрешите микрофон для записи созвона.";
+  }
+
+  if (isSelectedMicUnavailableError(error)) {
+    return "Выбранный микрофон недоступен. Проверьте микрофон в настройках Talkis.";
+  }
+
+  return "Не удалось получить доступ к микрофону для записи созвона.";
+}
+
+function callCaptureStartErrorMessage(error: unknown): string {
+  if (error instanceof CallCaptureStartError) {
+    return error.message;
+  }
+
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes("wasapi") ||
+    normalized.includes("pipewire") ||
+    normalized.includes("не поддерживается")
+  ) {
+    return "Запись системного звука пока доступна только на macOS.";
+  }
+
+  if (
+    normalized.includes("audiohardwarecreateprocesstap") ||
+    normalized.includes("audiodevicestart") ||
+    normalized.includes("звука системы") ||
+    normalized.includes("system audio")
+  ) {
+    return "Разрешите запись звука системы для созвона.";
+  }
+
+  return "Не удалось начать запись созвона. Проверьте разрешения микрофона и звука системы.";
+}
+
+function isCallCapturePermissionError(error: unknown): boolean {
+  if (error instanceof CallCaptureStartError) {
+    return error.permissionRelated;
+  }
+
+  if (isPermissionDeniedError(error)) {
+    return true;
+  }
+
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const normalized = rawMessage.toLowerCase();
+  return (
+    normalized.includes("audiohardwarecreateprocesstap") ||
+    normalized.includes("audiodevicestart") ||
+    normalized.includes("звука системы") ||
+    normalized.includes("system audio")
+  );
+}
+
 export function Widget() {
   const widgetWindow = getCurrentWindow();
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragTriggeredRef = useRef(false);
   const callMicRuntimeRef = useRef(createRecordingRuntimeController());
   const callMicPausedForVoiceRef = useRef(false);
+  const callSystemAudioPermissionReadyRef = useRef(false);
+  const callNoticeTimerRef = useRef<number | null>(null);
   const callStateRef = useRef<WidgetCallState>("idle");
   const pauseCallMicForVoice = useCallback(() => {
     if (callStateRef.current !== "recording") {
@@ -232,6 +332,33 @@ export function Widget() {
     });
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (callNoticeTimerRef.current) {
+        window.clearTimeout(callNoticeTimerRef.current);
+        callNoticeTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const showCallNotice = useCallback((message: string): void => {
+    if (callNoticeTimerRef.current) {
+      window.clearTimeout(callNoticeTimerRef.current);
+      callNoticeTimerRef.current = null;
+    }
+
+    void invoke("show_widget_notice", {
+      message,
+      tone: "error",
+      anchorState: stateRef.current,
+    });
+
+    callNoticeTimerRef.current = window.setTimeout(() => {
+      callNoticeTimerRef.current = null;
+      void invoke("hide_widget_notice");
+    }, NOTICE_TIMEOUT_MS);
+  }, []);
+
   const clearFileResetTimer = () => {
     if (!fileResetTimerRef.current) return;
     window.clearTimeout(fileResetTimerRef.current);
@@ -315,19 +442,47 @@ export function Widget() {
       return;
     }
 
+    let micStream: MediaStream | null = null;
+
     try {
       setCallError("");
-      setCallState("recording");
+      setCallState("starting");
       const settings = await getSettings({ reload: true });
       setCallSettings(settings);
 
       const micConstraints = settings.micId
         ? { deviceId: { exact: settings.micId } }
         : true;
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: micConstraints,
-      });
+
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: micConstraints,
+        });
+      } catch (error) {
+        throw new CallCaptureStartError(
+          microphoneStartErrorMessage(error),
+          isPermissionDeniedError(error),
+        );
+      }
+
+      if (
+        requiresSystemAudioPermission() &&
+        !callSystemAudioPermissionReadyRef.current
+      ) {
+        const granted = await requestSystemAudioPermission();
+
+        if (!granted) {
+          throw new CallCaptureStartError(
+            "Разрешите запись звука системы для созвона.",
+            true,
+          );
+        }
+
+        callSystemAudioPermissionReadyRef.current = true;
+      }
+
       callMicRuntimeRef.current.start(micStream);
+      micStream = null;
       if (callMicPausedForVoiceRef.current) {
         callMicRuntimeRef.current.pause();
       }
@@ -339,13 +494,32 @@ export function Widget() {
       });
       setCallStartedAt(Date.now());
       setCallSession(session);
+      setCallState("recording");
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logError("CALL_CAPTURE", `Call capture start failed: ${message}`);
+      stopMediaStream(micStream);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const message = callCaptureStartErrorMessage(error);
+      logError("CALL_CAPTURE", `Call capture start failed: ${rawMessage}`);
       callMicRuntimeRef.current.dispose();
       callMicPausedForVoiceRef.current = false;
+      if (isCallCapturePermissionError(error)) {
+        callSystemAudioPermissionReadyRef.current = false;
+        void setPermissionsPassed(false).catch((storeError) => {
+          logError(
+            "CALL_CAPTURE",
+            `Failed to reset permissions flag: ${
+              storeError instanceof Error
+                ? storeError.message
+                : String(storeError)
+            }`,
+          );
+        });
+      }
       setCallError(message);
+      setCallSession(null);
+      setCallSettings(null);
       setCallState("error");
+      showCallNotice(message);
       window.setTimeout(() => {
         setCallState("idle");
         setCallError("");
@@ -959,6 +1133,7 @@ function CallBubble({
   disabled: boolean;
   onClick: () => void;
 }) {
+  const isStarting = state === "starting";
   const isRecording = state === "recording";
   const isProcessing = state === "processing";
   const isSuccess = state === "success";
@@ -966,13 +1141,15 @@ function CallBubble({
   const copyIconColor = "rgba(255,255,255,0.72)";
   const title = isError
     ? error || "Ошибка созвона"
-    : isProcessing
-      ? "Транскрибируем разговор"
-      : isSuccess
-        ? "Созвон готов"
-        : isRecording
-          ? "Завершить и транскрибировать"
-          : "Запись разговора";
+    : isStarting
+      ? "Запрашиваем доступы"
+      : isProcessing
+        ? "Транскрибируем разговор"
+        : isSuccess
+          ? "Созвон готов"
+          : isRecording
+            ? "Завершить и транскрибировать"
+            : "Запись разговора";
   const iconColor = disabled
     ? "rgba(255,255,255,0.28)"
     : isRecording || isError
@@ -1015,7 +1192,7 @@ function CallBubble({
           WebkitFontSmoothing: "antialiased",
         }}
       >
-        {isProcessing ? (
+        {isStarting || isProcessing ? (
           <Loader2
             className="loading-soft-icon"
             size={iconSize}

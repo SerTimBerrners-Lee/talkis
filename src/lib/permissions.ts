@@ -55,18 +55,25 @@ export async function requestSystemAudioPermission(): Promise<boolean> {
     return true;
   }
 
+  let session: { id: string } | null = null;
+
   try {
-    const session = await invoke<{ id: string }>("start_call_capture", {
+    session = await invoke<{ id: string }>("start_call_capture", {
       req: {
         targetId: "system-output",
         includeMic: false,
         includeSystem: true,
       },
     });
-    await invoke("stop_call_capture", { sessionId: session.id });
     return true;
   } catch {
     return false;
+  } finally {
+    if (session) {
+      await invoke("stop_call_capture", { sessionId: session.id }).catch(
+        () => undefined,
+      );
+    }
   }
 }
 
