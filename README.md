@@ -150,7 +150,7 @@ The copy shortcut is cleared when history is cleared, and it refreshes after ent
 
 ### Call recording
 
-Click the phone button next to the floating widget to record a call. Talkis requests microphone access and, on macOS, system audio access before recording starts. If either permission is missing, the widget shows a clear error and the settings window asks for the required permissions again.
+Click the phone button next to the floating widget to record a call. Talkis requests microphone access and, on macOS, system audio access before recording starts. If the saved microphone device is no longer available after an app update or device reconnect, Talkis falls back to the system default microphone before showing an error. If either permission is missing, the widget shows a clear error and the settings window asks for the required permissions again.
 
 macOS call recording uses two tracks: `Вы` from the microphone and `Созвон` from system audio. Windows and Linux call system-audio capture are not enabled yet; those platforms still return an explicit unsupported-state message for this call mode.
 
@@ -274,7 +274,7 @@ If LLM model is set to "Без обработки", the raw transcription is pas
 - Grant Microphone permission in macOS System Settings → Privacy & Security → Microphone
 - Grant system audio recording permission in macOS System Settings → Privacy & Security → Screen & System Audio Recording
 - Restart Talkis after changing either permission
-- If the selected microphone was disconnected, choose another microphone in Talkis settings
+- If the selected microphone was disconnected, Talkis will try the system default microphone; choose another microphone in Talkis settings if the warning repeats
 
 ### Build fails on external drives with `._*` files
 
@@ -326,7 +326,7 @@ The repository includes a GitHub Actions workflow at `.github/workflows/release.
 
 - The canonical release process is documented in `docs/release/rule.md`
 - Before every release, refresh `README.md` and create a release review file from `docs/release/review-template.md`
-- Push a tag like `v0.1.23` to build and publish a GitHub Release
+- Push a tag like `v0.1.24` to build and publish a GitHub Release
 - Or run the workflow manually and provide a tag
 - The current workflow publishes macOS, Windows, and Linux release artifacts plus updater metadata
 - For macOS release builds, move `Talkis.app` to `Applications` before granting Accessibility access
@@ -355,4 +355,4 @@ Without Apple secrets, the workflow can still produce unsigned macOS release art
 
 ## Status
 
-Talkis is an active work in progress. Current version: **0.1.23**.
+Talkis is an active work in progress. Current version: **0.1.24**.

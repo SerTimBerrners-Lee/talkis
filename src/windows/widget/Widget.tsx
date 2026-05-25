@@ -86,11 +86,13 @@ type WidgetRetryProcessingSource = WidgetRetryProcessingPayload["source"];
 
 class CallCaptureStartError extends Error {
   readonly permissionRelated: boolean;
+  readonly rawCause: unknown;
 
-  constructor(message: string, permissionRelated = false) {
+  constructor(message: string, permissionRelated = false, rawCause?: unknown) {
     super(message);
     this.name = "CallCaptureStartError";
     this.permissionRelated = permissionRelated;
+    this.rawCause = rawCause;
   }
 }
 
@@ -162,11 +164,78 @@ function microphoneStartErrorMessage(error: unknown): string {
     return "Разрешите микрофон для записи созвона.";
   }
 
+  if (error instanceof DOMException && error.name === "NotReadableError") {
+    return "Микрофон занят или недоступен. Закройте приложения, которые могут использовать микрофон, и попробуйте снова.";
+  }
+
   if (isSelectedMicUnavailableError(error)) {
     return "Выбранный микрофон недоступен. Проверьте микрофон в настройках Talkis.";
   }
 
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "Микрофон не успел запуститься. Попробуйте ещё раз.";
+  }
+
   return "Не удалось получить доступ к микрофону для записи созвона.";
+}
+
+function formatCallCaptureRawError(error: unknown): string {
+  const source =
+    error instanceof CallCaptureStartError && error.rawCause
+      ? error.rawCause
+      : error;
+
+  if (source instanceof DOMException) {
+    const constraint =
+      "constraint" in source && typeof source.constraint === "string"
+        ? `, constraint=${source.constraint}`
+        : "";
+    return `${source.name}: ${source.message || "[no message]"}${constraint}`;
+  }
+
+  if (source instanceof Error) {
+    return `${source.name}: ${source.message}`;
+  }
+
+  return String(source);
+}
+
+async function requestCallMicrophoneStream(micId: string): Promise<MediaStream> {
+  if (!micId) {
+    return navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+
+  try {
+    logInfo("CALL_CAPTURE", `Requesting selected call mic: ${micId}`);
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: micId } },
+    });
+  } catch (selectedError) {
+    if (isPermissionDeniedError(selectedError)) {
+      throw selectedError;
+    }
+
+    logError(
+      "CALL_CAPTURE",
+      `Selected call mic failed, trying default: ${formatCallCaptureRawError(
+        selectedError,
+      )}`,
+    );
+
+    try {
+      const defaultStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      logInfo("CALL_CAPTURE", "Using default call mic after selected mic failed");
+      return defaultStream;
+    } catch (defaultError) {
+      throw new CallCaptureStartError(
+        microphoneStartErrorMessage(defaultError),
+        isPermissionDeniedError(defaultError),
+        defaultError,
+      );
+    }
+  }
 }
 
 function callCaptureStartErrorMessage(error: unknown): string {
@@ -450,18 +519,17 @@ export function Widget() {
       const settings = await getSettings({ reload: true });
       setCallSettings(settings);
 
-      const micConstraints = settings.micId
-        ? { deviceId: { exact: settings.micId } }
-        : true;
-
       try {
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: micConstraints,
-        });
+        micStream = await requestCallMicrophoneStream(settings.micId);
       } catch (error) {
+        if (error instanceof CallCaptureStartError) {
+          throw error;
+        }
+
         throw new CallCaptureStartError(
           microphoneStartErrorMessage(error),
           isPermissionDeniedError(error),
+          error,
         );
       }
 
@@ -497,9 +565,11 @@ export function Widget() {
       setCallState("recording");
     } catch (error) {
       stopMediaStream(micStream);
-      const rawMessage = error instanceof Error ? error.message : String(error);
       const message = callCaptureStartErrorMessage(error);
-      logError("CALL_CAPTURE", `Call capture start failed: ${rawMessage}`);
+      logError(
+        "CALL_CAPTURE",
+        `Call capture start failed: ${formatCallCaptureRawError(error)}`,
+      );
       callMicRuntimeRef.current.dispose();
       callMicPausedForVoiceRef.current = false;
       if (isCallCapturePermissionError(error)) {
