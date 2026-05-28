@@ -238,7 +238,3 @@ Project conventions:
 ## License
 
 No license file is included in this checkout yet. Add a `LICENSE` file before publishing the repository as a fully open-source project or accepting external contributions.
-
-## Status
-
-Talkis is an active work in progress. Current version: `0.1.24`.
