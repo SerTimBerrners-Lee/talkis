@@ -43,6 +43,14 @@ It is designed for practical daily work: IDEs, chats, notes, CRM fields, email, 
 
 ## Latest Changes
 
+### v0.4.9
+
+- Microphone startup has a three-second budget and native dictation start/stop runs outside the interface thread, keeping Talkis responsive when an audio driver stalls after idle or sleep. Dictation and call recording retain their WebView fallback; live translation reports a startup timeout.
+- Ordinary dictation detects driver errors or missing audio callbacks, transcribes the audio captured before the interruption, and warns that later speech was not recorded. A driver stop timeout also preserves the captured audio, and the next recording opens the microphone again.
+- Late native microphone startup releases its stream and live transcription session. Call recording uses a separate native track file so a late response cannot overwrite the fallback recording.
+- Windows native crashes and Rust panics now leave build and process details in `~/.talkis/talkis.log`; startup and exit events help distinguish an application exit from interrupted recording. The reported Windows 10 exit after sleep still needs verification on affected machines.
+- Restored the widget's manual record button on Windows, reduced repeated polling errors while the desktop is unavailable, and reduced the local text model's default context to 4096 tokens to lower memory use alongside speech recognition.
+
 ### v0.4.8
 
 - Windows upgrades now stop Talkis and every bundled local-model process before replacing files, preventing `Error opening file for writing ... talkis-stt.exe` and partially installed application/runtime combinations.
