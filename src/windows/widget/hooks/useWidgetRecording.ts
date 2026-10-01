@@ -15,6 +15,7 @@ import {
 } from "../widgetConstants";
 import type { WidgetNoticeTone } from "../widgetConstants";
 import { createRecordingRuntimeController } from "../services/recordingRuntime";
+import { startRecoveringPoll } from "../services/recoveringPoll";
 import {
   processRecordingBlob,
   startDictationStreamOverlaySession,
@@ -116,6 +117,39 @@ export function useWidgetRecording({
   const lowMicMonitorCleanupRef = useRef<(() => void) | null>(null);
   const recordingLimitTimerRef = useRef<number | null>(null);
   const recordingSettingsRef = useRef<AppSettings | null>(null);
+  const interruptionMonitorCleanupRef = useRef<(() => void) | null>(null);
+
+  const stopInterruptionMonitor = useCallback((): void => {
+    interruptionMonitorCleanupRef.current?.();
+    interruptionMonitorCleanupRef.current = null;
+  }, []);
+
+  const startInterruptionMonitor = useCallback((): void => {
+    stopInterruptionMonitor();
+    interruptionMonitorCleanupRef.current = startRecoveringPoll(async (isCurrent): Promise<void> => {
+      if (!machineRef.current.recordingActive) {
+        return;
+      }
+
+      const interrupted = await runtimeRef.current.isInterrupted();
+      if (!isCurrent() || !interrupted || !machineRef.current.recordingActive) {
+        return;
+      }
+
+      stopInterruptionMonitor();
+      void logError("RECORDING", "Microphone interrupted; processing the captured audio prefix");
+      await stopAndProcessRef.current();
+
+      if (machineRef.current.widgetState !== "recording") {
+        showNotice(t("widget.recording.microphoneInterrupted"), "error");
+      }
+    }, {
+      intervalMs: 500,
+      onError: (error): void => {
+        void logError("RECORDING", `Recorder health check failed: ${formatErrorMessage(error)}`);
+      },
+    });
+  }, [machineRef, showNotice, stopAndProcessRef, stopInterruptionMonitor, t]);
 
   const resizeForSettings = useCallback(
     (currentSettings: AppSettings): Promise<void> =>
@@ -458,6 +492,7 @@ export function useWidgetRecording({
         logInfo("RECORDING", "Recording started successfully");
         dispatch({ type: "RECORDING_STARTED", timestamp: Date.now() });
         scheduleRecordingLimitTimer();
+        startInterruptionMonitor();
         return;
       } catch (nativeError) {
         runtimeRef.current.reset();
@@ -528,10 +563,12 @@ export function useWidgetRecording({
       logInfo("RECORDING", "Recording started successfully");
       dispatch({ type: "RECORDING_STARTED", timestamp: Date.now() });
       scheduleRecordingLimitTimer();
+      startInterruptionMonitor();
     } catch (error) {
       onRecordingStartFailed?.();
       stopLowMicMonitor();
       clearRecordingLimitTimer();
+      stopInterruptionMonitor();
       runtimeRef.current.dispose();
       void clearDictationStreamSession(true);
       recordingSettingsRef.current = null;
@@ -559,6 +596,8 @@ export function useWidgetRecording({
     onRecordingStartFailed,
     resizeForSettings,
     scheduleRecordingLimitTimer,
+    startInterruptionMonitor,
+    stopInterruptionMonitor,
     setStream,
     settings,
     showError,
@@ -592,6 +631,7 @@ export function useWidgetRecording({
     };
 
     clearRecordingLimitTimer();
+    stopInterruptionMonitor();
     stopLowMicMonitor();
     setStream(null);
     onRecordingProcessing?.();
@@ -689,6 +729,7 @@ export function useWidgetRecording({
     showError,
     showNotice,
     stopLowMicMonitor,
+    stopInterruptionMonitor,
     t,
   ]);
 
@@ -702,6 +743,7 @@ export function useWidgetRecording({
     return () => {
       stopLowMicMonitor();
       clearRecordingLimitTimer();
+      stopInterruptionMonitor();
       runtimeRef.current.dispose();
       void clearDictationStreamSession(true);
     };
@@ -709,6 +751,7 @@ export function useWidgetRecording({
     clearDictationStreamSession,
     clearRecordingLimitTimer,
     stopLowMicMonitor,
+    stopInterruptionMonitor,
   ]);
 
   return { startRecording, stopAndProcess };

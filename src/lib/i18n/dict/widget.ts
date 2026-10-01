@@ -245,6 +245,10 @@ export const widget = {
     ru: "Аудио не записано. Попробуйте еще раз.",
     en: "No audio was recorded. Try again.",
   },
+  "widget.recording.microphoneInterrupted": {
+    ru: "Запись остановлена: микрофон перестал передавать звук. Слова после обрыва не записаны. Проверьте микрофон перед новой записью.",
+    en: "Recording stopped: the microphone stopped sending audio. Words after the interruption were not recorded. Check your microphone before starting again.",
+  },
   "widget.recording.speechNotRecognized": {
     ru: "Речь не распознана. Попробуйте еще раз.",
     en: "No speech recognized. Try again.",

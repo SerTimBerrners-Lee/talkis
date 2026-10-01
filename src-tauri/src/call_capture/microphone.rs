@@ -1,3 +1,4 @@
+use crate::audio_capture_startup::{wait_for_start, MICROPHONE_START_TIMEOUT};
 use crate::live_dictation::{
     self, LiveDictationFeeder, LiveDictationSession, LiveDictationStartRequest,
 };
@@ -6,13 +7,15 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tauri::AppHandle;
 
 const CHECKPOINT_SECONDS: u64 = 5;
 const STOP_TIMEOUT: Duration = Duration::from_secs(3);
+
+static CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct CallMicrophoneCapture {
     stop_tx: mpsc::Sender<()>,
@@ -21,6 +24,7 @@ pub struct CallMicrophoneCapture {
     live_session: Option<LiveDictationSession>,
     pub device_name: String,
     pub sample_rate: u32,
+    pub path: PathBuf,
 }
 
 struct CallMicrophoneWriter {
@@ -135,7 +139,11 @@ pub fn start(
 ) -> Result<CallMicrophoneCapture, String> {
     let paused = Arc::new(AtomicBool::new(false));
     let thread_paused = Arc::clone(&paused);
-    let (started_tx, started_rx) = mpsc::channel();
+    // A late native start must never overwrite the WebView fallback's mic.wav.
+    let sequence = CAPTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let path = path.with_file_name(format!("mic-native-{}-{sequence}.wav", std::process::id()));
+    let thread_path = path.clone();
+    let (started_tx, started_rx) = mpsc::sync_channel(0);
     let (stop_tx, stop_rx) = mpsc::channel();
     let (stopped_tx, stopped_rx) = mpsc::channel();
 
@@ -144,7 +152,7 @@ pub fn start(
         .spawn(move || {
             run_thread(
                 app,
-                path,
+                thread_path,
                 device_label,
                 live_request,
                 thread_paused,
@@ -155,9 +163,12 @@ pub fn start(
         })
         .map_err(|error| format!("Не удалось создать поток микрофона созвона: {}", error))?;
 
-    let started = started_rx
-        .recv()
-        .map_err(|_| "Поток микрофона созвона завершился до запуска.".to_string())??;
+    let started = wait_for_start(
+        started_rx,
+        MICROPHONE_START_TIMEOUT,
+        "Микрофон созвона не ответил вовремя. Используется резервный способ записи.",
+        "Поток микрофона созвона завершился до запуска.",
+    )?;
 
     Ok(CallMicrophoneCapture {
         stop_tx,
@@ -166,6 +177,7 @@ pub fn start(
         live_session: started.live_session,
         device_name: started.device_name,
         sample_rate: started.sample_rate,
+        path,
     })
 }
 
@@ -175,7 +187,7 @@ fn run_thread(
     device_label: Option<String>,
     live_request: Option<LiveDictationStartRequest>,
     paused: Arc<AtomicBool>,
-    started_tx: mpsc::Sender<Result<StartedCapture, String>>,
+    started_tx: mpsc::SyncSender<Result<StartedCapture, String>>,
     stop_rx: mpsc::Receiver<()>,
     stopped_tx: mpsc::Sender<Result<(), String>>,
 ) {
@@ -193,7 +205,7 @@ fn run_thread(
         let channels = usize::from(config.channels.max(1));
         let sample_rate = config.sample_rate.0;
         let writer = Arc::new(Mutex::new(Some(CallMicrophoneWriter::create(
-            path,
+            path.clone(),
             sample_rate,
         )?)));
         let live_session =
@@ -205,7 +217,7 @@ fn run_thread(
                 &format!("Call microphone stream error: {}", error),
             )
         };
-        let stream = match sample_format {
+        let stream_result = match sample_format {
             cpal::SampleFormat::F32 => build_stream(
                 &device,
                 &config,
@@ -237,17 +249,33 @@ fn run_thread(
                 error_fn,
             ),
             other => {
+                if let Some(session) = live_session {
+                    live_dictation::cancel_live_dictation_session(session);
+                }
                 return Err(format!(
                     "Формат микрофона {:?} пока не поддерживается.",
                     other
-                ))
+                ));
             }
         }
-        .map_err(|error| format!("Не удалось открыть микрофон созвона: {}", error))?;
+        .map_err(|error| format!("Не удалось открыть микрофон созвона: {}", error));
 
-        stream
-            .play()
-            .map_err(|error| format!("Не удалось запустить микрофон созвона: {}", error))?;
+        let stream = match stream_result {
+            Ok(stream) => stream,
+            Err(error) => {
+                if let Some(session) = live_session {
+                    live_dictation::cancel_live_dictation_session(session);
+                }
+                return Err(error);
+            }
+        };
+
+        if let Err(error) = stream.play() {
+            if let Some(session) = live_session {
+                live_dictation::cancel_live_dictation_session(session);
+            }
+            return Err(format!("Не удалось запустить микрофон созвона: {error}"));
+        }
 
         Ok((stream, writer, device_name, sample_rate, live_session))
     })();
@@ -256,20 +284,29 @@ fn run_thread(
         Ok(value) => value,
         Err(error) => {
             let _ = started_tx.send(Err(error));
+            let _ = std::fs::remove_file(&path);
             return;
         }
     };
 
     let feeder_session = live_session;
-    if started_tx
-        .send(Ok(StartedCapture {
-            device_name: device_name.clone(),
-            sample_rate,
-            live_session: feeder_session,
-        }))
-        .is_err()
-    {
+    if let Err(send_error) = started_tx.send(Ok(StartedCapture {
+        device_name: device_name.clone(),
+        sample_rate,
+        live_session: feeder_session,
+    })) {
         drop(stream);
+        if let Ok(started) = send_error.0 {
+            if let Some(session) = started.live_session {
+                live_dictation::cancel_live_dictation_session(session);
+            }
+        }
+        let _ = finalize_writer(&writer);
+        let _ = std::fs::remove_file(&path);
+        logger::log_info(
+            "CALL_CAPTURE",
+            "Released late call microphone startup after timeout",
+        );
         return;
     }
 
@@ -283,14 +320,18 @@ fn run_thread(
 
     let _ = stop_rx.recv();
     drop(stream);
-    let result = writer
+    let result = finalize_writer(&writer);
+    let _ = stopped_tx.send(result);
+}
+
+fn finalize_writer(writer: &Arc<Mutex<Option<CallMicrophoneWriter>>>) -> Result<(), String> {
+    writer
         .lock()
         .map_err(|_| "Не удалось заблокировать WAV-дорожку микрофона.".to_string())
         .and_then(|mut guard| match guard.take() {
             Some(writer) => writer.finalize(),
             None => Ok(()),
-        });
-    let _ = stopped_tx.send(result);
+        })
 }
 
 fn select_device(host: &cpal::Host, requested_label: Option<&str>) -> Result<cpal::Device, String> {

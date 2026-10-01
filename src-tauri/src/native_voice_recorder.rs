@@ -1,3 +1,4 @@
+use crate::audio_capture_startup::{wait_for_start, MICROPHONE_START_TIMEOUT};
 use crate::live_dictation::{
     self, LiveDictationFeeder, LiveDictationFinal, LiveDictationSession, LiveDictationStartRequest,
 };
@@ -13,7 +14,9 @@ use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
-mod startup;
+mod health;
+
+use health::CaptureHealth;
 
 #[cfg(all(test, windows))]
 mod windows_smoke;
@@ -25,7 +28,6 @@ const PCM_NORMALIZE_BELOW_PEAK: f32 = 0.35;
 const PCM_MIN_SIGNAL_PEAK: f32 = 0.001;
 const PCM_MAX_GAIN: f32 = 8.0;
 const MAX_NATIVE_RECORDING_SECONDS: usize = 5 * 60;
-const NATIVE_START_TIMEOUT: Duration = Duration::from_secs(3);
 
 static RECORDER: OnceLock<Mutex<Option<NativeVoiceRecorder>>> = OnceLock::new();
 static RECORDER_RUNTIME: OnceLock<Result<NativeRecorderRuntime, String>> = OnceLock::new();
@@ -103,6 +105,7 @@ struct NativeRecorderState {
     paused: bool,
     max_samples: Option<usize>,
     limit_reached: bool,
+    health: CaptureHealth,
 }
 
 struct PcmStats {
@@ -209,7 +212,8 @@ fn append_samples(
             Ok(guard) => guard,
             Err(err) => err.into_inner(),
         };
-        if guard.paused {
+        guard.health.record_input();
+        if guard.paused || guard.health.has_failed() {
             return;
         }
 
@@ -276,7 +280,8 @@ fn append_i16_samples(
             Ok(guard) => guard,
             Err(err) => err.into_inner(),
         };
-        if guard.paused {
+        guard.health.record_input();
+        if guard.paused || guard.health.has_failed() {
             return;
         }
 
@@ -334,7 +339,8 @@ fn append_u16_samples(
             Ok(guard) => guard,
             Err(err) => err.into_inner(),
         };
-        if guard.paused {
+        guard.health.record_input();
+        if guard.paused || guard.health.has_failed() {
             return;
         }
 
@@ -388,11 +394,9 @@ fn build_input_stream(
         return Err("Микрофон вернул аудиоформат без каналов.".to_string());
     }
 
-    let err_fn = |err| {
-        logger::log_error(
-            "NATIVE_RECORDER",
-            &format!("Native input stream error: {}", err),
-        );
+    let error_state = Arc::clone(&state);
+    let err_fn = move |err| {
+        mark_input_failed(&error_state, format!("Native input stream error: {err}"));
     };
 
     match sample_format {
@@ -816,11 +820,16 @@ impl NativeRecorderRuntime {
                     req,
                     state,
                     response_tx,
-                    deadline: Instant::now() + NATIVE_START_TIMEOUT,
+                    deadline: Instant::now() + MICROPHONE_START_TIMEOUT,
                 },
             )))
             .map_err(|_| "Поток нативной записи недоступен.".to_string())?;
-        let result = startup::wait_for_start(response_rx, NATIVE_START_TIMEOUT);
+        let result = wait_for_start(
+            response_rx,
+            MICROPHONE_START_TIMEOUT,
+            "Микрофон не ответил вовремя. Используется резервный способ записи.",
+            "Нативная запись завершилась до запуска.",
+        );
         if let Err(err) = &result {
             logger::log_error(
                 "NATIVE_RECORDER",
@@ -917,6 +926,7 @@ pub fn resume_native_voice_recording() -> Result<(), String> {
         .lock()
         .map_err(|_| "Не удалось продолжить нативную запись.".to_string())?;
     state.paused = false;
+    state.health.record_input();
     logger::log_info("NATIVE_RECORDER", "Native voice recorder resumed");
     Ok(())
 }
@@ -928,6 +938,41 @@ pub async fn stop_native_voice_recording() -> Result<NativeVoiceRecordingResult,
         .map_err(|err| format!("Не удалось завершить нативную запись: {err}"))?
 }
 
+fn mark_input_failed(state: &Arc<Mutex<NativeRecorderState>>, message: String) {
+    let mut guard = state.lock().unwrap_or_else(|error| error.into_inner());
+    if guard.health.fail(message.clone()) {
+        logger::log_error("NATIVE_RECORDER", &message);
+    }
+}
+
+#[tauri::command]
+pub async fn native_voice_recording_interrupted() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let guard = recorder_slot()
+            .lock()
+            .map_err(|_| "Не удалось проверить состояние записи.".to_string())?;
+        let Some(recorder) = guard.as_ref() else {
+            return Ok(false);
+        };
+        let mut state = recorder
+            .state
+            .lock()
+            .map_err(|_| "Не удалось проверить микрофон.".to_string())?;
+        let previously_failed = state.health.has_failed();
+        let paused = state.paused;
+        let failure = state.health.check(Instant::now(), paused);
+        if !previously_failed {
+            if let Some(message) = failure {
+                logger::log_error("NATIVE_RECORDER", message);
+            }
+        }
+
+        Ok(failure.is_some())
+    })
+    .await
+    .map_err(|err| format!("Не удалось проверить запись: {err}"))?
+}
+
 fn stop_recording() -> Result<NativeVoiceRecordingResult, String> {
     let recorder = recorder_slot()
         .lock()
@@ -935,6 +980,15 @@ fn stop_recording() -> Result<NativeVoiceRecordingResult, String> {
         .take()
         .ok_or_else(|| "Активная нативная запись не найдена.".to_string())?;
 
+    finish_recording(recorder, || {
+        recorder_runtime().and_then(NativeRecorderRuntime::stop)
+    })
+}
+
+fn finish_recording(
+    recorder: NativeVoiceRecorder,
+    stop_driver: impl FnOnce() -> Result<(), String>,
+) -> Result<NativeVoiceRecordingResult, String> {
     let source_sample_rate = recorder.source_sample_rate;
     let source_channels = recorder.source_channels;
     let device_name = recorder.device_name.clone();
@@ -944,7 +998,19 @@ fn stop_recording() -> Result<NativeVoiceRecordingResult, String> {
         "NATIVE_RECORDER",
         "Stopping native input stream on persistent owner",
     );
-    recorder_runtime()?.stop()?;
+    // Freeze the captured prefix before asking a potentially stalled driver to
+    // stop. Even a stop timeout must not discard the user's existing audio.
+    state
+        .lock()
+        .map_err(|_| "Не удалось завершить нативную запись.".to_string())?
+        .paused = true;
+    let stop_result = stop_driver();
+    if let Err(error) = &stop_result {
+        logger::log_error(
+            "NATIVE_RECORDER",
+            &format!("Driver stop failed; preserving captured audio: {error}"),
+        );
+    }
 
     let (source_samples, limit_reached) = {
         let mut guard = state
@@ -953,6 +1019,11 @@ fn stop_recording() -> Result<NativeVoiceRecordingResult, String> {
         (std::mem::take(&mut guard.samples), guard.limit_reached)
     };
     let live_transcription = live_session.and_then(|session| {
+        if stop_result.is_err() {
+            live_dictation::cancel_live_dictation_session(session);
+            return None;
+        }
+
         match live_dictation::finish_live_dictation_session(session) {
             Ok(result) => {
                 logger::log_info(
@@ -1016,6 +1087,44 @@ fn stop_recording() -> Result<NativeVoiceRecordingResult, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stop_timeout_still_returns_the_captured_wav_and_freezes_late_callbacks() {
+        let state = Arc::new(Mutex::new(NativeRecorderState::default()));
+        let samples: Vec<f32> = [0.1, -0.1].into_iter().cycle().take(48_000).collect();
+        append_f32_samples(&state, 1, &samples, None);
+        let recorder = NativeVoiceRecorder {
+            state: Arc::clone(&state),
+            source_sample_rate: 48_000,
+            source_channels: 1,
+            device_name: "test microphone".to_string(),
+            live_session: None,
+        };
+
+        let result = finish_recording(recorder, || Err("driver stop timeout".to_string()))
+            .expect("captured audio is preserved");
+        let wav = base64::engine::general_purpose::STANDARD
+            .decode(result.audio_base64)
+            .expect("base64 WAV");
+        let reader = hound::WavReader::new(std::io::Cursor::new(wav)).expect("valid WAV");
+        assert_eq!(result.duration_ms, 1000);
+        assert_eq!(reader.spec().sample_rate, 16_000);
+        assert_eq!(reader.duration(), 16_000);
+        append_f32_samples(&state, 1, &samples, None);
+        assert!(state.lock().expect("state").samples.is_empty());
+    }
+
+    #[test]
+    fn microphone_failure_preserves_the_recorded_prefix_and_ignores_late_audio() {
+        let state = Arc::new(Mutex::new(NativeRecorderState::default()));
+        append_f32_samples(&state, 1, &[0.1, 0.2, 0.3], None);
+        mark_input_failed(&state, "device disconnected".to_string());
+        append_f32_samples(&state, 1, &[0.4, 0.5], None);
+
+        let mut guard = state.lock().expect("recorder state");
+        assert_eq!(guard.samples, vec![0.1, 0.2, 0.3]);
+        assert!(guard.health.check(Instant::now(), false).is_some());
+    }
 
     fn probe_owner_thread(
         command_tx: &mpsc::Sender<NativeRecorderCommand>,

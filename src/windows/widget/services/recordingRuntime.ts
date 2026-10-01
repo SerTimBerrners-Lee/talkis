@@ -80,6 +80,7 @@ export interface RecordingRuntimeController {
   getAudioStats(): AudioSignalStats | null;
   getLiveTranscription(): LiveTranscriptionResult | null;
   getAudioBlob(): Promise<Blob>;
+  isInterrupted(): Promise<boolean>;
   reset(): void;
   dispose(): void;
 }
@@ -549,17 +550,36 @@ export function createRecordingRuntimeController(): RecordingRuntimeController {
       }
 
       const activeRecorder = state.recorder;
-      const stopped = waitForRecorderStop(activeRecorder);
-      activeRecorder.stop();
-      stopTracks(state.stream);
+      if (activeRecorder.state !== "inactive") {
+        const stopped = waitForRecorderStop(activeRecorder);
+        activeRecorder.stop();
+        stopTracks(state.stream);
+        await stopped;
+      } else {
+        stopTracks(state.stream);
+      }
+
       state.stream = null;
-      await stopped;
       stopPcmRecorder(state.pcm);
       state.recorder = null;
       state.active = false;
     },
     hasRecorder() {
       return state.active;
+    },
+    async isInterrupted(): Promise<boolean> {
+      if (!state.active) {
+        return false;
+      }
+
+      if (state.nativeActive) {
+        return invoke<boolean>("native_voice_recording_interrupted");
+      }
+
+      return Boolean(
+        state.stream?.getAudioTracks().some((track) => track.readyState === "ended") ||
+        state.recorder?.state === "inactive",
+      );
     },
     hasAudioChunks() {
       if (state.nativeResult) {

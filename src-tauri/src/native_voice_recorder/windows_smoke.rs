@@ -2,7 +2,12 @@
 //! no audio is saved and no transcription service is contacted.
 use super::*;
 
-fn record_once(host: &cpal::Host, label: Option<&str>, pause: bool) -> Result<usize, String> {
+fn record_once(
+    host: &cpal::Host,
+    label: Option<&str>,
+    pause: bool,
+    inject_error: bool,
+) -> Result<usize, String> {
     let device = select_input_device(host, label)?;
     let supported = device
         .default_input_config()
@@ -26,6 +31,18 @@ fn record_once(host: &cpal::Host, label: Option<&str>, pause: bool) -> Result<us
         stream.play().map_err(|err| err.to_string())?;
         std::thread::sleep(Duration::from_millis(500));
         assert!(state.lock().map_err(|err| err.to_string())?.samples.len() > paused_count);
+    }
+
+    if inject_error {
+        mark_input_failed(
+            &state,
+            "Injected microphone disconnection for hardware smoke test".to_string(),
+        );
+        let captured = state.lock().map_err(|err| err.to_string())?.samples.len();
+        std::thread::sleep(Duration::from_millis(200));
+        let mut guard = state.lock().map_err(|err| err.to_string())?;
+        assert!(guard.health.check(Instant::now(), false).is_some());
+        assert_eq!(guard.samples.len(), captured);
     }
 
     drop_native_input_stream(stream)?;
@@ -57,12 +74,12 @@ fn windows_microphone_restarts_after_idle_and_device_error() {
                 } else {
                     Some(label.as_str())
                 };
-                let samples = record_once(&host, selected, cycle == 3)?;
+                let samples = record_once(&host, selected, cycle == 3, cycle == 5)?;
                 eprintln!("Microphone restart cycle {cycle}: samples={samples}");
             }
 
             assert!(select_input_device(&host, Some("talkis-missing-device-smoke-test")).is_err());
-            let samples = record_once(&host, None, false)?;
+            let samples = record_once(&host, None, false, false)?;
             eprintln!("Recording after unavailable-device error: samples={samples}");
 
             let idle_seconds = std::env::var("TALKIS_RECORDER_IDLE_TEST_SECONDS")
@@ -71,7 +88,7 @@ fn windows_microphone_restarts_after_idle_and_device_error() {
                 .unwrap_or(20);
             eprintln!("Idle interval: {idle_seconds}s; manual sleep/resume can be tested here");
             std::thread::sleep(Duration::from_secs(idle_seconds));
-            let samples = record_once(&host, None, false)?;
+            let samples = record_once(&host, None, false, false)?;
             eprintln!("Recording after idle: samples={samples}");
 
             Ok(())

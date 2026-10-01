@@ -1,4 +1,5 @@
 mod ai;
+mod audio_capture_startup;
 mod call_capture;
 mod commands;
 mod crash_diagnostics;
@@ -216,6 +217,7 @@ pub fn run() {
             native_voice_recorder::pause_native_voice_recording,
             native_voice_recorder::resume_native_voice_recording,
             native_voice_recorder::stop_native_voice_recording,
+            native_voice_recorder::native_voice_recording_interrupted,
             ai::test_api_connection,
             realtime::test_realtime_connection,
             ai::list_stt_models,

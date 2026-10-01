@@ -158,6 +158,11 @@ Important implementation details:
   a three-second budget so a stalled driver after Windows sleep cannot freeze
   the interface or prevent WebView fallback. Expired queued starts are skipped;
   a stream returned after timeout is released together with its live session.
+- Driver errors and five seconds without input callbacks interrupt ordinary
+  dictation. Silence still produces callbacks and must not count as a failure.
+  The widget finishes the captured prefix and warns the user; the next recording
+  reopens the device. A stop timeout also preserves the captured prefix for batch
+  transcription instead of discarding it.
 - On Windows that owner thread performs the first WASAPI device lookup during
   application startup and must stay alive. `cpal` caches an
   `IMMDeviceEnumerator` created in a thread-local COM apartment; ending the
@@ -322,6 +327,12 @@ native mic first and open a WebView stream only after the backend explicitly
 reports that native capture is unavailable. Opening the same input through both
 paths during startup can make macOS call apps rebuild their audio route and can
 leave other audio ducked.
+
+Native call and live-translation microphone startup also has a three-second
+budget and runs off the async worker threads. A late startup is rejected and
+releases its stream. Native call startup uses a unique track file so a late
+driver response cannot overwrite WebView fallback audio; the accepted path is
+published in the session manifest.
 
 Both native tracks are written while the call is active. Their PCM WAV headers
 must be flushed at least every five seconds so a process crash cannot invalidate

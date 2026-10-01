@@ -865,14 +865,14 @@ pub async fn start_call_capture(
             .find(|track| matches!(track.kind, CallCaptureTrackKind::Mic))
             .map(|track| PathBuf::from(&track.path));
         match mic_path {
-            Some(path) => match microphone::start(
-                app,
-                path,
-                req.mic_device_label.clone(),
-                req.live_transcription
+            Some(path) => match tokio::task::spawn_blocking({
+                let device_label = req.mic_device_label.clone();
+                let live_request = req.live_transcription
                     .as_ref()
-                    .and_then(|live| live.mic.clone()),
-            ) {
+                    .and_then(|live| live.mic.clone());
+
+                move || microphone::start(app, path, device_label, live_request)
+            }).await.unwrap_or_else(|error| Err(format!("Не удалось запустить микрофон созвона: {error}"))) {
                 Ok(capture) => {
                     if req
                         .live_transcription
@@ -892,6 +892,7 @@ pub async fn start_call_capture(
                         .find(|track| matches!(track.kind, CallCaptureTrackKind::Mic))
                     {
                         track.sample_rate = capture.sample_rate;
+                        track.path = capture.path.to_string_lossy().to_string();
                     }
                     session.native_mic_active = true;
                     logger::log_info(

@@ -78,6 +78,7 @@ import {
 import { useWidgetController } from "./hooks/useWidgetController";
 import { WidgetRecordButton } from "./WidgetRecordButton";
 import { createRecordingRuntimeController } from "./services/recordingRuntime";
+import { startRecoveringPoll } from "./services/recoveringPoll";
 import {
   applyLiveTranslationEvent,
   buildLiveTranslationHistoryEntry,
@@ -2406,42 +2407,43 @@ function IdlePill({
     const enterMarginPx = 8;
     const leaveMarginPx = 16;
 
-    const updateHoverState = async () => {
-      try {
-        const [cursor, position, size] = await Promise.all([
-          cursorPosition(),
-          widgetWindow.outerPosition(),
-          widgetWindow.outerSize(),
-        ]);
+    const updateHoverState = async (): Promise<void> => {
+      const [cursor, position, size] = await Promise.all([
+        cursorPosition(),
+        widgetWindow.outerPosition(),
+        widgetWindow.outerSize(),
+      ]);
 
-        if (disposed) {
-          return;
-        }
-
-        const margin = isHovered ? leaveMarginPx : enterMarginPx;
-        const hovered =
-          cursor.x >= position.x - margin &&
-          cursor.x <= position.x + size.width + margin &&
-          cursor.y >= position.y - margin &&
-          cursor.y <= position.y + size.height + margin;
-
-        setIsHovered(hovered);
-      } catch (error) {
-        logError(
-          "WIDGET",
-          `Failed to poll widget hover state: ${error instanceof Error ? error.message : String(error)}`,
-        );
+      if (disposed) {
+        return;
       }
+
+      const margin = isHovered ? leaveMarginPx : enterMarginPx;
+      const hovered =
+        cursor.x >= position.x - margin &&
+        cursor.x <= position.x + size.width + margin &&
+        cursor.y >= position.y - margin &&
+        cursor.y <= position.y + size.height + margin;
+
+      setIsHovered(hovered);
     };
 
-    void updateHoverState();
-    const interval = window.setInterval(() => {
-      void updateHoverState();
-    }, 80);
+    const stopPolling = startRecoveringPoll(updateHoverState, {
+      intervalMs: 80,
+      onError: (error): void => {
+        void logError(
+          "WIDGET",
+          `Widget hover polling paused: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+      onRecovery: (): void => {
+        void logInfo("WIDGET", "Widget hover polling recovered");
+      },
+    });
 
     return () => {
       disposed = true;
-      window.clearInterval(interval);
+      stopPolling();
     };
   }, [isHovered, widgetWindow]);
 

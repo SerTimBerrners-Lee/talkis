@@ -1,3 +1,4 @@
+use crate::audio_capture_startup::{wait_for_start, MICROPHONE_START_TIMEOUT};
 use crate::call_capture::{self, CallCaptureSession, StartCallCaptureRequest};
 use crate::logger;
 use crate::realtime::{
@@ -820,9 +821,10 @@ fn start_mic_capture(
     wav_path: Option<PathBuf>,
 ) -> Result<(mpsc::Sender<()>, mpsc::Receiver<Result<(), String>>), String> {
     let (stop_tx, stop_rx) = mpsc::channel();
-    let (started_tx, started_rx) = mpsc::channel();
+    let (started_tx, started_rx) = mpsc::sync_channel(0);
     let (stopped_tx, stopped_rx) = mpsc::channel();
     thread::Builder::new().name("talkis-live-translation-mic".to_string()).spawn(move || {
+        let cleanup_path = wav_path.clone();
         let start = (|| -> Result<(cpal::Stream, Arc<Mutex<PcmEncoder>>, Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>), String> {
             let device = select_microphone(label.as_deref())?;
             let supported = device.default_input_config().map_err(|error| format!("Failed to read microphone format: {}", error))?;
@@ -844,8 +846,20 @@ fn start_mic_capture(
             stream.play().map_err(|error| format!("Failed to start microphone: {}", error))?;
             Ok((stream, encoder, writer))
         })();
-        let (stream, encoder, writer) = match start { Ok(value) => value, Err(error) => { let _=started_tx.send(Err(error)); return; } };
-        if started_tx.send(Ok(())).is_err() { return; }
+        let (stream, encoder, writer) = match start { Ok(value) => value, Err(error) => {
+            let _=started_tx.send(Err(error));
+            if let Some(path) = cleanup_path { let _ = std::fs::remove_file(path); }
+            return;
+        } };
+        if started_tx.send(Ok(())).is_err() {
+            drop(stream);
+            if let Ok(mut guard) = writer.lock() {
+                if let Some(writer) = guard.take() { let _ = writer.finalize(); }
+            }
+            if let Some(path) = cleanup_path { let _ = std::fs::remove_file(path); }
+            logger::log_info("LIVE_TRANSLATION", "Released late translation microphone startup after timeout");
+            return;
+        }
         let _ = stop_rx.recv();
         drop(stream);
         if let Ok(mut encoder) = encoder.lock() {
@@ -856,9 +870,12 @@ fn start_mic_capture(
         }
         let _ = stopped_tx.send(Ok(()));
     }).map_err(|error| format!("Failed to spawn microphone capture: {}", error))?;
-    started_rx
-        .recv()
-        .map_err(|_| "Microphone capture ended before startup.".to_string())??;
+    wait_for_start(
+        started_rx,
+        MICROPHONE_START_TIMEOUT,
+        "Микрофон не ответил вовремя. Попробуйте снова запустить синхронный перевод.",
+        "Микрофон синхронного перевода завершил работу до запуска.",
+    )?;
     Ok((stop_tx, stopped_rx))
 }
 
@@ -1028,8 +1045,13 @@ pub async fn start_live_translation(
         let mic_path = req
             .save_audio
             .then(|| PathBuf::from(&call_session.directory).join("mic.wav"));
+        let mic_device_label = req.mic_device_label;
+        let startup_audio_tx = mic_audio_tx.clone();
+        let mic_start = tokio::task::spawn_blocking(move || {
+            start_mic_capture(mic_device_label, startup_audio_tx, mic_path)
+        }).await.unwrap_or_else(|error| Err(format!("Не удалось запустить микрофон перевода: {error}")));
         let (mic_stop_tx, mic_stopped_rx) =
-            match start_mic_capture(req.mic_device_label, mic_audio_tx.clone(), mic_path) {
+            match mic_start {
                 Ok(value) => value,
                 Err(error) => {
                     let _ = call_capture::stop_call_capture(call_session.id.clone()).await;
