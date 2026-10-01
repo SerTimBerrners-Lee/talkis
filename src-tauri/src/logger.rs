@@ -58,7 +58,12 @@ pub fn get_log_path_cmd() -> String {
 pub fn clear_logs() -> Result<(), String> {
     let path = get_log_path();
     if path.exists() {
-        fs::remove_file(&path).map_err(|e| e.to_string())?;
+        // Keep the pre-opened crash diagnostics handle attached to this file.
+        OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

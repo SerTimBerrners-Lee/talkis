@@ -154,6 +154,10 @@ Important implementation details:
   handles in global state.
 - The native recorder owner thread is process-long and reused across recording
   sessions. Do not replace it with one short-lived OS thread per recording.
+- Native start/stop commands run outside the UI thread. Microphone startup has
+  a three-second budget so a stalled driver after Windows sleep cannot freeze
+  the interface or prevent WebView fallback. Expired queued starts are skipped;
+  a stream returned after timeout is released together with its live session.
 - On Windows that owner thread performs the first WASAPI device lookup during
   application startup and must stay alive. `cpal` caches an
   `IMMDeviceEnumerator` created in a thread-local COM apartment; ending the

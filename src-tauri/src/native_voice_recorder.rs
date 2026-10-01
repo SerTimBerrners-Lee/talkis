@@ -10,8 +10,13 @@ use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
+
+mod startup;
+
+#[cfg(all(test, windows))]
+mod windows_smoke;
 
 const TARGET_SAMPLE_RATE: u32 = 16_000;
 const TARGET_CHANNELS: u16 = 1;
@@ -20,6 +25,7 @@ const PCM_NORMALIZE_BELOW_PEAK: f32 = 0.35;
 const PCM_MIN_SIGNAL_PEAK: f32 = 0.001;
 const PCM_MAX_GAIN: f32 = 8.0;
 const MAX_NATIVE_RECORDING_SECONDS: usize = 5 * 60;
+const NATIVE_START_TIMEOUT: Duration = Duration::from_secs(3);
 
 static RECORDER: OnceLock<Mutex<Option<NativeVoiceRecorder>>> = OnceLock::new();
 static RECORDER_RUNTIME: OnceLock<Result<NativeRecorderRuntime, String>> = OnceLock::new();
@@ -61,7 +67,8 @@ struct NativeRecorderStartCommand {
     app: AppHandle,
     req: StartNativeVoiceRecordingRequest,
     state: Arc<Mutex<NativeRecorderState>>,
-    response_tx: mpsc::Sender<Result<NativeRecorderThreadInfo, String>>,
+    response_tx: mpsc::SyncSender<Result<NativeRecorderThreadInfo, String>>,
+    deadline: Instant,
 }
 
 enum NativeRecorderCommand {
@@ -562,6 +569,10 @@ fn open_native_input_stream(
     let device_name = device
         .name()
         .unwrap_or_else(|_| "default input".to_string());
+    logger::log_info(
+        "NATIVE_RECORDER",
+        &format!("Native input resolved: device={device_name}; querying format"),
+    );
     let supported_config = device
         .default_input_config()
         .map_err(|err| format!("Не удалось получить формат микрофона: {}", err))?;
@@ -582,6 +593,10 @@ fn open_native_input_stream(
         source_sample_rate,
     );
     let live_feeder = live_session.as_ref().map(LiveDictationSession::feeder);
+    logger::log_info(
+        "NATIVE_RECORDER",
+        &format!("Building native input stream: sample_rate={source_sample_rate}, channels={source_channels}"),
+    );
     let stream = match build_input_stream(
         &device,
         &config,
@@ -677,7 +692,16 @@ fn run_native_recorder_owner(
                     req,
                     state,
                     response_tx,
+                    deadline,
                 } = *command;
+                if Instant::now() >= deadline {
+                    logger::log_info(
+                        "NATIVE_RECORDER",
+                        "Skipping expired native recording request",
+                    );
+                    continue;
+                }
+
                 if active_stream.is_some() {
                     let _ = response_tx.send(Err("Запись уже идёт.".to_string()));
                     continue;
@@ -782,7 +806,9 @@ impl NativeRecorderRuntime {
         req: StartNativeVoiceRecordingRequest,
         state: Arc<Mutex<NativeRecorderState>>,
     ) -> Result<NativeRecorderThreadInfo, String> {
-        let (response_tx, response_rx) = mpsc::channel();
+        // A rendezvous hands stream ownership over only when the caller receives
+        // the result. A response arriving after timeout must drop the stream.
+        let (response_tx, response_rx) = mpsc::sync_channel(0);
         self.command_tx
             .send(NativeRecorderCommand::Start(Box::new(
                 NativeRecorderStartCommand {
@@ -790,12 +816,19 @@ impl NativeRecorderRuntime {
                     req,
                     state,
                     response_tx,
+                    deadline: Instant::now() + NATIVE_START_TIMEOUT,
                 },
             )))
             .map_err(|_| "Поток нативной записи недоступен.".to_string())?;
-        response_rx
-            .recv()
-            .map_err(|_| "Нативная запись завершилась до запуска.".to_string())?
+        let result = startup::wait_for_start(response_rx, NATIVE_START_TIMEOUT);
+        if let Err(err) = &result {
+            logger::log_error(
+                "NATIVE_RECORDER",
+                &format!("Native recording start failed: {err}"),
+            );
+        }
+
+        result
     }
 
     fn stop(&self) -> Result<(), String> {
@@ -820,10 +853,16 @@ impl NativeRecorderRuntime {
 }
 
 #[tauri::command]
-pub fn start_native_voice_recording(
+pub async fn start_native_voice_recording(
     app: AppHandle,
     req: StartNativeVoiceRecordingRequest,
 ) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || start_recording(app, req))
+        .await
+        .map_err(|err| format!("Не удалось запустить нативную запись: {err}"))?
+}
+
+fn start_recording(app: AppHandle, req: StartNativeVoiceRecordingRequest) -> Result<(), String> {
     if crate::live_translation::is_active() {
         return Err("Сначала остановите синхронный перевод.".to_string());
     }
@@ -883,7 +922,13 @@ pub fn resume_native_voice_recording() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn stop_native_voice_recording() -> Result<NativeVoiceRecordingResult, String> {
+pub async fn stop_native_voice_recording() -> Result<NativeVoiceRecordingResult, String> {
+    tauri::async_runtime::spawn_blocking(stop_recording)
+        .await
+        .map_err(|err| format!("Не удалось завершить нативную запись: {err}"))?
+}
+
+fn stop_recording() -> Result<NativeVoiceRecordingResult, String> {
     let recorder = recorder_slot()
         .lock()
         .map_err(|_| "Не удалось заблокировать нативную запись.".to_string())?
@@ -895,6 +940,10 @@ pub fn stop_native_voice_recording() -> Result<NativeVoiceRecordingResult, Strin
     let device_name = recorder.device_name.clone();
     let live_session = recorder.live_session;
     let state = Arc::clone(&recorder.state);
+    logger::log_info(
+        "NATIVE_RECORDER",
+        "Stopping native input stream on persistent owner",
+    );
     recorder_runtime()?.stop()?;
 
     let (source_samples, limit_reached) = {

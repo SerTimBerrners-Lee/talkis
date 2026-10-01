@@ -78,6 +78,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Storage_FileSystem",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_Kernel",
+  "Win32_System_Threading",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

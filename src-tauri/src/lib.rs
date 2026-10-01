@@ -1,6 +1,7 @@
 mod ai;
 mod call_capture;
 mod commands;
+mod crash_diagnostics;
 mod download_cancel;
 mod history_storage;
 mod hotkey_capture;
@@ -48,6 +49,8 @@ fn focus_existing_instance(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crash_diagnostics::init();
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
@@ -90,7 +93,16 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            logger::log_info("INIT", "Application starting...");
+            logger::log_info(
+                "INIT",
+                &format!(
+                    "Application starting: version={}, pid={}, platform={}, debug={}",
+                    env!("CARGO_PKG_VERSION"),
+                    std::process::id(),
+                    std::env::consts::OS,
+                    cfg!(debug_assertions)
+                ),
+            );
             #[cfg(windows)]
             shutdown::cleanup_orphaned_sidecars();
             if let Err(err) = native_voice_recorder::init() {
@@ -237,8 +249,17 @@ pub fn run() {
             hotkey_manager::register_handy_hotkey,
             hotkey_manager::unregister_handy_hotkey,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Talkis");
+        .build(tauri::generate_context!())
+        .expect("error while building Talkis")
+        .run(|_, event| match event {
+            tauri::RunEvent::ExitRequested { code, .. } => logger::log_info(
+                "SHUTDOWN",
+                &format!("Application exit requested: code={code:?}, pid={}", std::process::id()),
+            ),
+            tauri::RunEvent::Exit => logger::log_info("SHUTDOWN", "Application event loop exited"),
+            tauri::RunEvent::Resumed => logger::log_info("LIFECYCLE", "Application event loop resumed"),
+            _ => {}
+        });
 }
 
 #[tauri::command]
