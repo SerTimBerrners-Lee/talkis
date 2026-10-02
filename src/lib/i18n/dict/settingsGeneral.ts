@@ -73,10 +73,6 @@ export const settingsGeneral = {
     ru: "Показывать виджет на рабочем столе",
     en: "Show the desktop widget",
   },
-  "settings.widgetVisibility.desc": {
-    ru: "Когда виджет скрыт, Talkis продолжает работать по горячим клавишам. Вернуть виджет можно здесь; настройки доступны через значок Talkis в строке меню или трее.",
-    en: "With the widget hidden, Talkis keeps working via hotkeys. Restore it here; settings remain available from the Talkis menu bar or tray icon.",
-  },
   "settings.widgetVisibility.on": { ru: "Показан", en: "Shown" },
   "settings.widgetVisibility.off": { ru: "Скрыт", en: "Hidden" },
   "settings.widgetVisibility.error": {
@@ -108,10 +104,6 @@ export const settingsGeneral = {
   "settings.startMinimized.title": {
     ru: "Сворачивать при запуске",
     en: "Start minimized",
-  },
-  "settings.startMinimized.desc": {
-    ru: "Со следующего запуска окно Talkis будет скрыто. Открыть его можно через значок в строке меню или трее. Показ виджета настраивается отдельно.",
-    en: "On the next launch, the Talkis window will stay hidden. Open it from the menu bar or tray icon. Widget visibility is configured separately.",
   },
   "settings.startMinimized.on": { ru: "Включено", en: "On" },
   "settings.startMinimized.off": { ru: "Выключено", en: "Off" },

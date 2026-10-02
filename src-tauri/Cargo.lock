@@ -5725,7 +5725,7 @@ dependencies = [
 
 [[package]]
 name = "talkis"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "base64 0.22.1",
  "block2 0.6.2",
@@ -5774,7 +5774,7 @@ dependencies = [
 
 [[package]]
 name = "talkis-llm"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "llama-cpp-2",
  "serde_json",

@@ -25,6 +25,7 @@
     },
     "dialog:default",
     "store:allow-load",
+    "store:allow-reload",
     "store:allow-get",
     "store:allow-set",
     "store:allow-save",

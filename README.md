@@ -47,6 +47,12 @@ Enable **Start minimized** in Settings to keep the main Talkis window hidden on 
 
 ## Latest Changes
 
+### v0.4.10
+
+- Settings can hide the floating desktop widget while keeping dictation hotkeys active. The choice survives restarts and is respected by the watchdog, tray actions and repeated launches.
+- Added **Start minimized** (off by default): the main window stays hidden on the next launch, while the tray/menu bar and hotkeys remain available. Initial setup, required permission recovery and startup errors still reveal the window.
+- Both new settings use compact switch rows without explanatory descriptions. Failed saves keep the previous choice; changing model settings preserves window preferences.
+
 ### v0.4.9
 
 - Microphone startup has a three-second budget and native dictation start/stop runs outside the interface thread, keeping Talkis responsive when an audio driver stalls after idle or sleep. Dictation and call recording retain their WebView fallback; live translation reports a startup timeout.

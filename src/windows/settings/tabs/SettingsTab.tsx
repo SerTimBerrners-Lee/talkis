@@ -372,6 +372,17 @@ export function SettingsTab(): ReactElement | null {
         "SETTINGS",
         `Failed to save startup setting: ${String(error)}`,
       );
+
+      try {
+        const latest = await getSettings({ reload: true });
+        settingsRef.current = latest;
+        setSettings(latest);
+      } catch (reloadError) {
+        void logError(
+          "SETTINGS",
+          `Failed to reload startup setting: ${String(reloadError)}`,
+        );
+      }
     } finally {
       startMinimizedPendingRef.current = false;
       setStartMinimizedPending(false);
@@ -1146,17 +1157,6 @@ export function SettingsTab(): ReactElement | null {
               >
                 {t("settings.widgetVisibility.title")}
               </div>
-              <div
-                id="widget-visibility-description"
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-low)",
-                  lineHeight: 1.5,
-                  marginTop: 4,
-                }}
-              >
-                {t("settings.widgetVisibility.desc")}
-              </div>
             </div>
             <SettingsToggleControl
               enabled={settings.widgetVisible}
@@ -1167,7 +1167,6 @@ export function SettingsTab(): ReactElement | null {
                   : "settings.widgetVisibility.off",
               )}
               ariaLabel={t("settings.widgetVisibility.title")}
-              describedBy="widget-visibility-description"
               onToggle={() => {
                 void toggleWidgetVisibility();
               }}
@@ -1306,17 +1305,6 @@ export function SettingsTab(): ReactElement | null {
               >
                 {t("settings.startMinimized.title")}
               </div>
-              <div
-                id="start-minimized-description"
-                style={{
-                  marginTop: 4,
-                  color: "var(--text-low)",
-                  fontSize: 11,
-                  lineHeight: 1.35,
-                }}
-              >
-                {t("settings.startMinimized.desc")}
-              </div>
             </div>
             <SettingsToggleControl
               enabled={settings.startMinimized}
@@ -1327,14 +1315,13 @@ export function SettingsTab(): ReactElement | null {
                   : "settings.startMinimized.off",
               )}
               ariaLabel={t("settings.startMinimized.title")}
-              describedBy="start-minimized-description"
               onToggle={() => {
                 void toggleStartMinimized();
               }}
             />
           </div>
           {startMinimizedError && (
-            <div role="alert" style={{ color: "var(--error)", fontSize: 11 }}>
+            <div role="alert" style={{ color: "var(--danger)", fontSize: 11 }}>
               {startMinimizedError}
             </div>
           )}
