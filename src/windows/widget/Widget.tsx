@@ -54,6 +54,7 @@ import {
   transcribeFilePathOnly,
 } from "../../lib/fileTranscription";
 import { logError, logInfo } from "../../lib/logger";
+import { holdBackgroundActivity } from "../../lib/backgroundActivity";
 import { tn, useI18n } from "../../lib/i18n";
 import {
   requestSystemAudioPermission,
@@ -339,6 +340,8 @@ function isCallCapturePermissionError(error: unknown): boolean {
 }
 
 export function Widget() {
+  useEffect(() => holdBackgroundActivity("widget"), []);
+
   const { t } = useI18n();
   const widgetWindow = getCurrentWindow();
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);

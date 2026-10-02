@@ -15,6 +15,7 @@
       {
         "label": "widget",
         "visible": false,
+        "backgroundThrottling": "disabled",
         "title": "Talkis",
         "url": "index.html?window=widget",
         "width": 129,

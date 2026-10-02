@@ -37,6 +37,7 @@ fn create_settings_window(
         .title("Talkis")
         .visible(visible)
         .focused(visible)
+        .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
         .inner_size(920.0, 680.0)
         .min_inner_size(820.0, 560.0)
         .center();

@@ -45,6 +45,7 @@ import {
 } from "../../lib/store";
 import { checkAllPermissions } from "../../lib/permissions";
 import { logError, logInfo } from "../../lib/logger";
+import { holdBackgroundActivity } from "../../lib/backgroundActivity";
 import { UserPanel } from "../../components/UserPanel";
 import { watchThemePreference } from "../../lib/theme";
 import { syncWindowsTitlebarTheme } from "../../lib/windowsTitlebar";
@@ -381,6 +382,8 @@ function getCurrentDomSelectionText(): string {
 }
 
 export function SettingsApp(): ReactElement {
+  useEffect(() => holdBackgroundActivity("settings"), []);
+
   const { t } = useI18n();
   const initialQuery = new URLSearchParams(window.location.search);
   const checkUpdateAtStartup = initialQuery.get("checkUpdate") === "1";
