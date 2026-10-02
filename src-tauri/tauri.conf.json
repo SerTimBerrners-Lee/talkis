@@ -14,6 +14,7 @@
     "windows": [
       {
         "label": "widget",
+        "visible": false,
         "title": "Talkis",
         "url": "index.html?window=widget",
         "width": 129,

@@ -94,12 +94,7 @@ fn open_settings(app: &AppHandle) {
 }
 
 fn open_talkis(app: &AppHandle) {
-    if let Err(err) = widget::restore_widget_window(app, "tray-open", false) {
-        logger::log_error(
-            "TRAY",
-            &format!("Failed to restore widget from tray: {err}"),
-        );
-    }
+    widget::schedule_widget_restore(app, "tray-open");
     open_settings(app);
 }
 

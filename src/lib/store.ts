@@ -3,7 +3,7 @@ import { load } from "@tauri-apps/plugin-store";
 
 import { DEFAULT_WIDGET_SCALE, normalizeWidgetScale } from "./widgetScale";
 import { recordTranscriptionStats } from "./stats";
-import { logInfo } from "./logger";
+import { logError, logInfo } from "./logger";
 import { createSerialTaskQueue } from "./serialTaskQueue";
 
 export interface SummaryEntry {
@@ -232,6 +232,8 @@ export interface AppSettings {
   hotkey: string;
   /** Floating widget visual scale. 1 = 100%. */
   widgetScale: number;
+  /** Keep dictation running while hiding the floating widget. */
+  widgetVisible: boolean;
   theme: ThemePreference;
   /** Transcription/recognition language (not the UI language). */
   language: string;
@@ -774,6 +776,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   llmModel: "gpt-4o-mini",
   hotkey: DEFAULT_HOTKEY,
   widgetScale: DEFAULT_WIDGET_SCALE,
+  widgetVisible: true,
   theme: "system",
   language: DEFAULT_LANGUAGE,
   doubleTapTimeout: 400,
@@ -1287,6 +1290,8 @@ export function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
       raw.widgetScale === undefined
         ? undefined
         : normalizeWidgetScale(raw.widgetScale),
+    widgetVisible:
+      typeof raw.widgetVisible === "boolean" ? raw.widgetVisible : undefined,
     theme: parseTheme(raw.theme),
     language: typeof raw.language === "string" ? raw.language : undefined,
     uiLanguage:
@@ -1688,6 +1693,29 @@ export function saveSettings(settings: AppSettingsPatch): Promise<void> {
 
     await store.set("settings", nextSettings);
     await store.save();
+
+    if (settings.widgetVisible !== undefined) {
+      try {
+        await invoke("sync_widget_visibility");
+      } catch (error) {
+        // Keep the previous choice if the native window change cannot be applied.
+        try {
+          await store.set("settings", {
+            ...nextSettings,
+            widgetVisible: current.widgetVisible,
+          });
+          await store.save();
+          await invoke("sync_widget_visibility");
+        } catch (restoreError) {
+          void logError(
+            "WIDGET",
+            `Failed to restore widget visibility after an apply error: ${String(restoreError)}`,
+          );
+        }
+
+        throw error;
+      }
+    }
   });
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactElement } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import {
@@ -26,6 +26,7 @@ import {
   AppSettingsPatch,
 } from "../../../lib/store";
 import { DictationHotkeyControl } from "../../../components/DictationHotkeyControl";
+import { SettingsToggleControl } from "../../../components/SettingsToggleControl";
 import { applyThemePreference } from "../../../lib/theme";
 import {
   formatWidgetScalePercent,
@@ -78,7 +79,7 @@ const THEME_OPTIONS: Array<{ id: AppSettings["theme"]; Icon: Icon }> = [
   { id: "light", Icon: IconSun },
   { id: "dark", Icon: IconMoon },
 ];
-export function SettingsTab() {
+export function SettingsTab(): ReactElement | null {
   const { lang, t } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
@@ -98,6 +99,9 @@ export function SettingsTab() {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [autostartLoaded, setAutostartLoaded] = useState(false);
   const [autostartPending, setAutostartPending] = useState(false);
+  const widgetVisibilityPendingRef = useRef(false);
+  const [widgetVisibilityPending, setWidgetVisibilityPending] = useState(false);
+  const [widgetVisibilityError, setWidgetVisibilityError] = useState("");
   const [appDataDir, setAppDataDir] = useState("");
   const [supportFeedback, setSupportFeedback] = useState("");
 
@@ -287,6 +291,53 @@ export function SettingsTab() {
       );
     });
     return s;
+  };
+
+  const toggleWidgetVisibility = async (): Promise<void> => {
+    if (!settingsRef.current || widgetVisibilityPendingRef.current) {
+      return;
+    }
+
+    const visible = !settingsRef.current.widgetVisible;
+    widgetVisibilityPendingRef.current = true;
+    setWidgetVisibilityPending(true);
+    setWidgetVisibilityError("");
+
+    try {
+      await saveSettings({ widgetVisible: visible });
+      const latest = mergeAppSettingsPatch(settingsRef.current, {
+        widgetVisible: visible,
+      });
+      settingsRef.current = latest;
+      setSettings(latest);
+      void emit(SETTINGS_UPDATED_EVENT).catch((error) => {
+        void logError(
+          "SETTINGS",
+          `Failed to emit widget visibility update: ${String(error)}`,
+        );
+      });
+    } catch (error) {
+      setWidgetVisibilityError(t("settings.widgetVisibility.error"));
+      void logError(
+        "SETTINGS",
+        `Failed to update widget visibility: ${String(error)}`,
+      );
+
+      // A save may succeed even if applying the native window change fails.
+      try {
+        const latest = await getSettings({ reload: true });
+        settingsRef.current = latest;
+        setSettings(latest);
+      } catch (reloadError) {
+        void logError(
+          "SETTINGS",
+          `Failed to reload widget visibility: ${String(reloadError)}`,
+        );
+      }
+    } finally {
+      widgetVisibilityPendingRef.current = false;
+      setWidgetVisibilityPending(false);
+    }
   };
 
   const contactSupport = async (): Promise<void> => {
@@ -1055,6 +1106,60 @@ export function SettingsTab() {
                   margin: 0,
                 }}
               >
+                {t("settings.widgetVisibility.title")}
+              </div>
+              <div
+                id="widget-visibility-description"
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-low)",
+                  lineHeight: 1.5,
+                  marginTop: 4,
+                }}
+              >
+                {t("settings.widgetVisibility.desc")}
+              </div>
+            </div>
+            <SettingsToggleControl
+              enabled={settings.widgetVisible}
+              disabled={widgetVisibilityPending}
+              label={t(
+                settings.widgetVisible
+                  ? "settings.widgetVisibility.on"
+                  : "settings.widgetVisibility.off",
+              )}
+              ariaLabel={t("settings.widgetVisibility.title")}
+              describedBy="widget-visibility-description"
+              onToggle={() => {
+                void toggleWidgetVisibility();
+              }}
+            />
+          </div>
+          {widgetVisibilityError && (
+            <div role="alert" style={{ fontSize: 12, color: "var(--danger)" }}>
+              {widgetVisibilityError}
+            </div>
+          )}
+        </div>
+
+        <div style={GROUPED_SETTINGS_SECTION_STYLE}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: SETTING_ROW_COLUMNS,
+              alignItems: "center",
+              gap: SETTING_ROW_GAP,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "var(--text-hi)",
+                  margin: 0,
+                }}
+              >
                 {t("settings.widgetSize.title")}
               </div>
             </div>
@@ -1129,78 +1234,17 @@ export function SettingsTab() {
                 {t("settings.autostart.title")}
               </div>
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autostartEnabled}
-              aria-disabled={autostartDisabled}
-              onClick={() => {
+            <SettingsToggleControl
+              enabled={autostartEnabled}
+              disabled={autostartDisabled}
+              label={t(
+                autostartEnabled ? "settings.autostart.on" : "settings.autostart.off",
+              )}
+              ariaLabel={t("settings.autostart.title")}
+              onToggle={() => {
                 void toggleAutostart();
               }}
-              className="btn"
-              style={{
-                width: "100%",
-                minHeight: CONTROL_HEIGHT,
-                padding: "0 10px",
-                borderRadius: CONTROL_RADIUS,
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) 34px",
-                alignItems: "center",
-                gap: 10,
-                opacity: autostartDisabled ? 0.72 : 1,
-                cursor: autostartDisabled ? "wait" : "pointer",
-                transform: "none",
-                justifySelf: "end",
-              }}
-            >
-              <span
-                style={{
-                  color: "var(--text-hi)",
-                  fontSize: CONTROL_FONT_SIZE,
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  minWidth: 0,
-                }}
-              >
-                {autostartEnabled
-                  ? t("settings.autostart.on")
-                  : t("settings.autostart.off")}
-              </span>
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 34,
-                  height: 20,
-                  borderRadius: 999,
-                  background: autostartEnabled
-                    ? "var(--accent)"
-                    : "var(--switch-track)",
-                  padding: 3,
-                  position: "relative",
-                  transition: "background 0.15s ease",
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    left: 3,
-                    width: 14,
-                    height: 14,
-                    borderRadius: "50%",
-                    background: "var(--accent-contrast)",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                    transform: autostartEnabled
-                      ? "translateX(14px)"
-                      : "translateX(0)",
-                    transition: "transform 0.18s ease",
-                  }}
-                />
-              </span>
-            </button>
+            />
           </div>
         </div>
 

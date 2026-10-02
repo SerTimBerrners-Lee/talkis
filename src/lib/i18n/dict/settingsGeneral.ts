@@ -68,6 +68,22 @@ export const settingsGeneral = {
     en: "Current: {hotkey}",
   },
 
+  // Widget visibility
+  "settings.widgetVisibility.title": {
+    ru: "Показывать виджет на рабочем столе",
+    en: "Show the desktop widget",
+  },
+  "settings.widgetVisibility.desc": {
+    ru: "Когда виджет скрыт, Talkis продолжает работать по горячим клавишам. Вернуть виджет можно здесь; настройки доступны через значок Talkis в строке меню или трее.",
+    en: "With the widget hidden, Talkis keeps working via hotkeys. Restore it here; settings remain available from the Talkis menu bar or tray icon.",
+  },
+  "settings.widgetVisibility.on": { ru: "Показан", en: "Shown" },
+  "settings.widgetVisibility.off": { ru: "Скрыт", en: "Hidden" },
+  "settings.widgetVisibility.error": {
+    ru: "Не удалось изменить видимость виджета. Попробуйте ещё раз.",
+    en: "Could not change widget visibility. Please try again.",
+  },
+
   // Widget size
   "settings.widgetSize.title": { ru: "Размер виджета", en: "Widget size" },
   "settings.widgetSize.desc": {

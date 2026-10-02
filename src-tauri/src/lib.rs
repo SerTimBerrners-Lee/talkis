@@ -34,12 +34,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 fn focus_existing_instance(app: &tauri::AppHandle) {
     use tauri::Manager;
 
-    if let Err(err) = widget::restore_widget_window(app, "second-launch", false) {
-        logger::log_error(
-            "WIDGET",
-            &format!("Failed to restore widget after a second launch: {err}"),
-        );
-    }
+    widget::schedule_widget_restore(app, "second-launch");
 
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.unminimize();
@@ -75,14 +70,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 logger::log_info("WIDGET", "Prevented the persistent widget from closing");
-                if let Err(err) =
-                    widget::restore_widget_window(window.app_handle(), "close-request", false)
-                {
-                    logger::log_error(
-                        "WIDGET",
-                        &format!("Failed to restore widget after close request: {err}"),
-                    );
-                }
+                widget::schedule_widget_restore(window.app_handle(), "close-request");
             }
         })
         .plugin(tauri_plugin_deep_link::init())
@@ -136,6 +124,7 @@ pub fn run() {
                     );
                 }
             }
+            widget::initialize_widget_visibility(app.handle());
             widget::start_widget_watchdog(app.handle());
 
             let handle = app.handle().clone();
@@ -174,6 +163,7 @@ pub fn run() {
             settings_window::set_settings_titlebar_theme,
             widget::widget_resize,
             widget::activate_widget_for_hotkey,
+            widget::sync_widget_visibility,
             widget::show_widget_notice,
             widget::hide_widget_notice,
             widget::expand_widget_notice,

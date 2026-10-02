@@ -26,6 +26,8 @@ Talkis is a desktop voice-to-text app built with Tauri, React, TypeScript, and R
 
 It is designed for practical daily work: IDEs, chats, notes, CRM fields, email, files, and meeting transcripts.
 
+To work without the floating widget, turn off **Show the desktop widget** in Settings. Talkis keeps running via hotkeys and remembers this choice after restart. Open settings from the Talkis menu bar or tray icon to show the widget again.
+
 ## Highlights
 
 - Dictate into any active text field with a global hotkey.

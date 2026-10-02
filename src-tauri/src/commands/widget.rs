@@ -7,6 +7,9 @@ use tauri::{
 
 use crate::{logger, media_permissions};
 
+#[path = "widget_display.rs"]
+mod widget_display;
+
 #[path = "widget_visibility.rs"]
 mod widget_visibility;
 use widget_visibility::{recover_offscreen_position, PhysicalRect};
@@ -83,6 +86,7 @@ fn get_or_create_main_widget_window(app: &AppHandle) -> Result<(WebviewWindow, b
         .ok_or_else(|| "Widget window configuration not found".to_string())?;
     let win = WebviewWindowBuilder::from_config(app, &config)
         .map_err(|e| e.to_string())?
+        .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
     media_permissions::allow_microphone_requests(&win);
@@ -126,12 +130,47 @@ fn keep_widget_on_available_monitor(win: &WebviewWindow) -> Result<bool, String>
 
 /// Restores the persistent widget without taking keyboard focus away from the
 /// application in which the user is typing.
-pub fn restore_widget_window(
+pub async fn restore_widget_window(
     app: &AppHandle,
     reason: &str,
     bring_to_front: bool,
 ) -> Result<bool, String> {
+    // WebView2 creation must stay outside UI-thread event handlers on Windows.
     let (win, recreated) = get_or_create_main_widget_window(app)?;
+    let handle = app.clone();
+    let reason = reason.to_owned();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    app.run_on_main_thread(move || {
+        let _ = tx.send(restore_widget_on_main_thread(
+            &handle,
+            &win,
+            recreated,
+            &reason,
+            bring_to_front,
+        ));
+    })
+    .map_err(|e| e.to_string())?;
+
+    rx.await
+        .map_err(|e| format!("Widget restoration interrupted: {e}"))?
+}
+
+fn restore_widget_on_main_thread(
+    app: &AppHandle,
+    win: &WebviewWindow,
+    recreated: bool,
+    reason: &str,
+    bring_to_front: bool,
+) -> Result<bool, String> {
+    if !widget_display::is_visible(app) {
+        if win.is_visible().map_err(|e| e.to_string())? {
+            win.hide().map_err(|e| e.to_string())?;
+        }
+
+        return Ok(false);
+    }
+
     let was_minimized = win.is_minimized().map_err(|e| e.to_string())?;
     let was_visible = win.is_visible().map_err(|e| e.to_string())?;
 
@@ -142,7 +181,7 @@ pub fn restore_widget_window(
         win.show().map_err(|e| e.to_string())?;
     }
 
-    let repositioned = keep_widget_on_available_monitor(&win)?;
+    let repositioned = keep_widget_on_available_monitor(win)?;
     let restored = recreated || was_minimized || !was_visible || repositioned;
     if restored || bring_to_front {
         win.set_always_on_top(true).map_err(|e| e.to_string())?;
@@ -165,6 +204,43 @@ pub fn restore_widget_window(
     Ok(restored)
 }
 
+pub fn initialize_widget_visibility(app: &AppHandle) {
+    widget_display::initialize(app);
+    schedule_widget_restore(app, "startup");
+}
+
+pub fn schedule_widget_restore(app: &AppHandle, reason: &'static str) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = restore_widget_window(&handle, reason, false).await {
+            logger::log_error(
+                "WIDGET",
+                &format!("Failed to restore widget ({reason}): {error}"),
+            );
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn sync_widget_visibility(app: AppHandle) -> Result<(), String> {
+    let visible = widget_display::read_saved_visibility(&app)?;
+    let (win, recreated) = get_or_create_main_widget_window(&app)?;
+    let handle = app.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    app.run_on_main_thread(move || {
+        widget_display::set_visible(&handle, visible);
+        let result =
+            restore_widget_on_main_thread(&handle, &win, recreated, "settings", false).map(|_| ());
+        logger::log_info("WIDGET", &format!("Widget visibility changed: {visible}"));
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+
+    rx.await
+        .map_err(|e| format!("Widget visibility update interrupted: {e}"))?
+}
+
 pub fn start_widget_watchdog(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -172,7 +248,7 @@ pub fn start_widget_watchdog(app: &AppHandle) {
         let mut previous_error: Option<String> = None;
 
         loop {
-            match restore_widget_window(&handle, "watchdog", false) {
+            match restore_widget_window(&handle, "watchdog", false).await {
                 Ok(_) => {
                     if previous_error.take().is_some() {
                         logger::log_info("WIDGET", "Widget watchdog recovered after an error");
@@ -441,38 +517,24 @@ fn text_overlay_width(payload: &WidgetTextOverlayPayload) -> f64 {
 #[cfg(target_os = "macos")]
 fn order_widget_window_front(app: &AppHandle) -> Result<(), String> {
     use objc2_app_kit::NSWindowCollectionBehavior;
-    use std::sync::mpsc;
 
-    let handle = app.clone();
-    let (tx, rx) = mpsc::channel::<Result<(), String>>();
+    // The restore entry point already runs on the UI thread.
+    let Some(win) = app.get_webview_window("widget") else {
+        return Ok(());
+    };
 
-    app.run_on_main_thread(move || {
-        let result = (|| -> Result<(), String> {
-            let Some(win) = handle.get_webview_window("widget") else {
-                return Ok(());
-            };
+    unsafe {
+        let ns_win: &objc2_app_kit::NSWindow = &*win.ns_window().map_err(|e| e.to_string())?.cast();
+        ns_win.setCollectionBehavior(
+            ns_win.collectionBehavior()
+                | NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::Stationary,
+        );
+        ns_win.orderFrontRegardless();
+    }
 
-            unsafe {
-                let ns_win: &objc2_app_kit::NSWindow =
-                    &*win.ns_window().map_err(|e| e.to_string())?.cast();
-                ns_win.setCollectionBehavior(
-                    ns_win.collectionBehavior()
-                        | NSWindowCollectionBehavior::CanJoinAllSpaces
-                        | NSWindowCollectionBehavior::FullScreenAuxiliary
-                        | NSWindowCollectionBehavior::Stationary,
-                );
-                ns_win.orderFrontRegardless();
-            }
-
-            Ok(())
-        })();
-
-        let _ = tx.send(result);
-    })
-    .map_err(|e| e.to_string())?;
-
-    rx.recv()
-        .map_err(|e| format!("Failed to receive widget activation result: {}", e))?
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -779,7 +841,7 @@ pub async fn activate_widget_for_hotkey(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     crate::paste::remember_linux_paste_target_window();
 
-    restore_widget_window(&app, "hotkey", true)?;
+    restore_widget_window(&app, "hotkey", true).await?;
     Ok(())
 }
 
