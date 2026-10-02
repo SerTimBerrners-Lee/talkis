@@ -2474,12 +2474,12 @@ export function SettingsTabs({ type }: SettingsTabsProps) {
 
   if (!settings) return null;
 
-  const update = (patch: Partial<AppSettings>) => {
+  const update = (patch: Partial<AppSettings>): void => {
     setSettings((prev) => {
       const next = { ...(prev ?? settings), ...patch };
       settingsSaveQueueRef.current = settingsSaveQueueRef.current
         .catch(() => {})
-        .then(() => saveSettings(next))
+        .then(() => saveSettings(patch))
         .then(() => {
           emit(SETTINGS_UPDATED_EVENT).catch(() => {});
         });
