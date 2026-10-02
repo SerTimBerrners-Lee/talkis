@@ -104,6 +104,22 @@ export const settingsGeneral = {
     en: "Launch Talkis automatically when you log in.",
   },
 
+  // Startup presentation
+  "settings.startMinimized.title": {
+    ru: "Сворачивать при запуске",
+    en: "Start minimized",
+  },
+  "settings.startMinimized.desc": {
+    ru: "Со следующего запуска окно Talkis будет скрыто. Открыть его можно через значок в строке меню или трее. Показ виджета настраивается отдельно.",
+    en: "On the next launch, the Talkis window will stay hidden. Open it from the menu bar or tray icon. Widget visibility is configured separately.",
+  },
+  "settings.startMinimized.on": { ru: "Включено", en: "On" },
+  "settings.startMinimized.off": { ru: "Выключено", en: "Off" },
+  "settings.startMinimized.error": {
+    ru: "Не удалось сохранить настройку запуска. Попробуйте ещё раз.",
+    en: "Could not save the startup setting. Please try again.",
+  },
+
   // Models directory
   "settings.modelsDir.title": {
     ru: "Директория моделей",

@@ -28,6 +28,8 @@ It is designed for practical daily work: IDEs, chats, notes, CRM fields, email, 
 
 To work without the floating widget, turn off **Show the desktop widget** in Settings. Talkis keeps running via hotkeys and remembers this choice after restart. Open settings from the Talkis menu bar or tray icon to show the widget again.
 
+Enable **Start minimized** in Settings to keep the main Talkis window hidden on the next launch. Hotkeys and the menu bar or tray icon stay available; widget visibility is a separate choice. The window still opens when initial setup or required permissions need attention. This option is off by default.
+
 ## Highlights
 
 - Dictate into any active text field with a global hotkey.

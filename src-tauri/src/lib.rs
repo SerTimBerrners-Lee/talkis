@@ -130,7 +130,12 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let _ = settings_window::open_settings(handle).await;
+                if let Err(error) = settings_window::prepare_settings_at_startup(handle).await {
+                    logger::log_error(
+                        "WINDOW",
+                        &format!("Failed to prepare startup settings: {error}"),
+                    );
+                }
             });
 
             // ── Deep link handling ──────────────────────────
@@ -159,6 +164,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             settings_window::open_settings,
+            settings_window::reveal_startup_settings,
             settings_window::open_settings_tab,
             settings_window::set_settings_titlebar_theme,
             widget::widget_resize,

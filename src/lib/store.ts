@@ -234,6 +234,8 @@ export interface AppSettings {
   widgetScale: number;
   /** Keep dictation running while hiding the floating widget. */
   widgetVisible: boolean;
+  /** Start with the settings window hidden, keeping tray and hotkeys active. */
+  startMinimized: boolean;
   theme: ThemePreference;
   /** Transcription/recognition language (not the UI language). */
   language: string;
@@ -777,6 +779,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   hotkey: DEFAULT_HOTKEY,
   widgetScale: DEFAULT_WIDGET_SCALE,
   widgetVisible: true,
+  startMinimized: false,
   theme: "system",
   language: DEFAULT_LANGUAGE,
   doubleTapTimeout: 400,
@@ -1292,6 +1295,8 @@ export function normalizeSavedSettings(saved: unknown): Partial<AppSettings> {
         : normalizeWidgetScale(raw.widgetScale),
     widgetVisible:
       typeof raw.widgetVisible === "boolean" ? raw.widgetVisible : undefined,
+    startMinimized:
+      typeof raw.startMinimized === "boolean" ? raw.startMinimized : undefined,
     theme: parseTheme(raw.theme),
     language: typeof raw.language === "string" ? raw.language : undefined,
     uiLanguage:

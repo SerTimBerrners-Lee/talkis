@@ -102,6 +102,9 @@ export function SettingsTab(): ReactElement | null {
   const widgetVisibilityPendingRef = useRef(false);
   const [widgetVisibilityPending, setWidgetVisibilityPending] = useState(false);
   const [widgetVisibilityError, setWidgetVisibilityError] = useState("");
+  const startMinimizedPendingRef = useRef(false);
+  const [startMinimizedPending, setStartMinimizedPending] = useState(false);
+  const [startMinimizedError, setStartMinimizedError] = useState("");
   const [appDataDir, setAppDataDir] = useState("");
   const [supportFeedback, setSupportFeedback] = useState("");
 
@@ -337,6 +340,41 @@ export function SettingsTab(): ReactElement | null {
     } finally {
       widgetVisibilityPendingRef.current = false;
       setWidgetVisibilityPending(false);
+    }
+  };
+
+  const toggleStartMinimized = async (): Promise<void> => {
+    if (!settingsRef.current || startMinimizedPendingRef.current) {
+      return;
+    }
+
+    const enabled = !settingsRef.current.startMinimized;
+    startMinimizedPendingRef.current = true;
+    setStartMinimizedPending(true);
+    setStartMinimizedError("");
+
+    try {
+      await saveSettings({ startMinimized: enabled });
+      const latest = mergeAppSettingsPatch(settingsRef.current, {
+        startMinimized: enabled,
+      });
+      settingsRef.current = latest;
+      setSettings(latest);
+      void emit(SETTINGS_UPDATED_EVENT).catch((error) => {
+        void logError(
+          "SETTINGS",
+          `Failed to emit startup setting update: ${String(error)}`,
+        );
+      });
+    } catch (error) {
+      setStartMinimizedError(t("settings.startMinimized.error"));
+      void logError(
+        "SETTINGS",
+        `Failed to save startup setting: ${String(error)}`,
+      );
+    } finally {
+      startMinimizedPendingRef.current = false;
+      setStartMinimizedPending(false);
     }
   };
 
@@ -1246,6 +1284,60 @@ export function SettingsTab(): ReactElement | null {
               }}
             />
           </div>
+        </div>
+
+        <div style={GROUPED_SETTINGS_SECTION_STYLE}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: SETTING_ROW_COLUMNS,
+              alignItems: "center",
+              gap: SETTING_ROW_GAP,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "var(--text-hi)",
+                  margin: 0,
+                }}
+              >
+                {t("settings.startMinimized.title")}
+              </div>
+              <div
+                id="start-minimized-description"
+                style={{
+                  marginTop: 4,
+                  color: "var(--text-low)",
+                  fontSize: 11,
+                  lineHeight: 1.35,
+                }}
+              >
+                {t("settings.startMinimized.desc")}
+              </div>
+            </div>
+            <SettingsToggleControl
+              enabled={settings.startMinimized}
+              disabled={startMinimizedPending}
+              label={t(
+                settings.startMinimized
+                  ? "settings.startMinimized.on"
+                  : "settings.startMinimized.off",
+              )}
+              ariaLabel={t("settings.startMinimized.title")}
+              describedBy="start-minimized-description"
+              onToggle={() => {
+                void toggleStartMinimized();
+              }}
+            />
+          </div>
+          {startMinimizedError && (
+            <div role="alert" style={{ color: "var(--error)", fontSize: 11 }}>
+              {startMinimizedError}
+            </div>
+          )}
         </div>
 
         <div style={GROUPED_SETTINGS_SECTION_STYLE}>

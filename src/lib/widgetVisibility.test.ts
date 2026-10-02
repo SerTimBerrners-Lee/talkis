@@ -3,7 +3,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 
 import { getSettings, saveSettings } from "./store";
 
-describe("persisted widget visibility", () => {
+describe("persisted window presentation", () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   let persisted: Record<string, unknown>;
   let pending: Record<string, unknown>;
@@ -78,6 +78,35 @@ describe("persisted widget visibility", () => {
     await saveSettings({ theme: "dark" });
     expect((await getSettings({ reload: true })).widgetVisible).toBe(false);
     expect(applied).toEqual([false]);
+  });
+
+  test("starts normally for existing installs and persists startup independently of the widget", async () => {
+    expect((await getSettings({ reload: true })).startMinimized).toBe(false);
+
+    await saveSettings({ widgetVisible: false });
+    await saveSettings({ startMinimized: true });
+    await saveSettings({ theme: "dark" });
+    const settings = await getSettings({ reload: true });
+
+    expect(settings.startMinimized).toBe(true);
+    expect(settings.widgetVisible).toBe(false);
+    expect(applied).toEqual([false]);
+
+    await saveSettings({ startMinimized: false });
+    const restored = await getSettings({ reload: true });
+
+    expect(restored.startMinimized).toBe(false);
+    expect(restored.widgetVisible).toBe(false);
+    expect(applied).toEqual([false]);
+  });
+
+  test("keeps the previous startup choice when saving fails", async () => {
+    await saveSettings({ startMinimized: true });
+    failSave = true;
+
+    await expect(saveSettings({ startMinimized: false })).rejects.toThrow("disk unavailable");
+    expect((await getSettings({ reload: true })).startMinimized).toBe(true);
+    expect(applied).toEqual([]);
   });
 
   test("does not hide the window when saving fails", async () => {

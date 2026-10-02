@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { CSSProperties, ReactElement } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -43,7 +44,7 @@ import {
   type ThemePreference,
 } from "../../lib/store";
 import { checkAllPermissions } from "../../lib/permissions";
-import { logError } from "../../lib/logger";
+import { logError, logInfo } from "../../lib/logger";
 import { UserPanel } from "../../components/UserPanel";
 import { watchThemePreference } from "../../lib/theme";
 import { syncWindowsTitlebarTheme } from "../../lib/windowsTitlebar";
@@ -379,10 +380,11 @@ function getCurrentDomSelectionText(): string {
   return window.getSelection()?.toString() ?? "";
 }
 
-export function SettingsApp() {
+export function SettingsApp(): ReactElement {
   const { t } = useI18n();
   const initialQuery = new URLSearchParams(window.location.search);
   const checkUpdateAtStartup = initialQuery.get("checkUpdate") === "1";
+  const isStartupWindow = initialQuery.get("startup") === "1";
   const [devOnboardingRequestId, setDevOnboardingRequestId] = useState(
     import.meta.env.DEV && initialQuery.get("onboarding") === "1" ? 1 : 0,
   );
@@ -431,8 +433,24 @@ export function SettingsApp() {
   }, [themePreference]);
 
   useEffect(() => {
-    Promise.all([getPermissionsPassed(), checkAllPermissions()])
-      .then(async ([passed, permissions]) => {
+    let mounted = true;
+
+    const revealStartupWindow = async (): Promise<void> => {
+      if (isStartupWindow && mounted) {
+        await invoke("reveal_startup_settings");
+      }
+    };
+
+    const startupSettings = getSettings().then(async (settings) => {
+      if (!settings.startMinimized) {
+        await revealStartupWindow();
+      }
+
+      return settings;
+    });
+
+    Promise.all([getPermissionsPassed(), checkAllPermissions(), startupSettings])
+      .then(async ([passed, permissions, settings]) => {
         const hasRequiredStartupPermissions =
           permissions.microphone !== "denied" &&
           (!isMacPlatform() || permissions.accessibility === "granted");
@@ -447,22 +465,46 @@ export function SettingsApp() {
           await setPermissionsPassed(true);
         }
 
-        setShowPermissions(
-          !(
-            (passed || shouldRecoverExistingInstall) &&
-            hasRequiredStartupPermissions
-          ),
+        if (!mounted) return;
+
+        const needsOnboarding = !(
+          (passed || shouldRecoverExistingInstall) &&
+          hasRequiredStartupPermissions
         );
+        setShowPermissions(needsOnboarding);
         setLoadError(null);
+
+        if (needsOnboarding) {
+          await revealStartupWindow();
+        }
+
+        if (isStartupWindow) {
+          void logInfo(
+            "SETTINGS_APP",
+            `Startup presentation: startMinimized=${settings.startMinimized}, needsOnboarding=${needsOnboarding}`,
+          );
+        }
       })
       .catch((error) => {
+        if (!mounted) return;
+
         void logError(
           "SETTINGS_APP",
           `Failed to load initial state: ${error instanceof Error ? error.message : String(error)}`,
         );
         setShowPermissions(false);
         setLoadError(t("settingsApp.loadError"));
+        void revealStartupWindow().catch((revealError) => {
+          void logError(
+            "SETTINGS_APP",
+            `Failed to reveal startup error: ${String(revealError)}`,
+          );
+        });
       });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
