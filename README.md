@@ -364,7 +364,7 @@ The live text overlay keeps consecutive chunks from the same source together and
 - Transcription contains unexpected foreign characters: choose a fixed recognition language such as `ru` or `en` instead of auto.
 - Local STT returns model errors: open `Модели` -> `Локально`, make sure the model is installed and selected, then reinstall it if the runtime reports missing files.
 - Call recording cannot start: grant Microphone and the OS system-audio permission, then start the call recording again. On Linux, also make sure PipeWire is running and an output device is active.
-- Need deeper diagnostics: open **Settings → General → Diagnostic log → Open log folder**. The current `~/.talkis/talkis.log` and three archives (`talkis.1.log`–`talkis.3.log`) each keep up to 2 MiB; older records are replaced automatically. Logs may contain dictated text. During development, you can also run `bun run logs`. On Windows, widget presentation changes and automatic recovery are recorded alongside microphone capture statistics; silent recordings show a persistent microphone warning.
+- Need deeper diagnostics: open **Settings → Diagnostic log → Open log folder**. The current `~/.talkis/talkis.log` and three archives (`talkis.1.log`–`talkis.3.log`) each keep up to 2 MiB; older records are replaced automatically. Logs may contain dictated text. During development, you can also run `bun run logs`. On Windows, widget presentation changes and automatic recovery are recorded alongside microphone capture statistics; silent recordings show a persistent microphone warning.
 
 ## Product And Architecture Documentation
 
