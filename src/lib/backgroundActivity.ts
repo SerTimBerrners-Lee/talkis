@@ -10,7 +10,7 @@ interface BackgroundLockManager {
 
 /** Keep event-driven background windows eligible to receive hotkeys and IPC. */
 export function holdBackgroundActivity(
-  windowLabel: "widget" | "settings",
+  windowLabel: "widget" | "settings" | "widget-notice" | "widget-text",
   locks: BackgroundLockManager | undefined =
     typeof navigator === "undefined" ? undefined : navigator.locks,
 ): () => void {

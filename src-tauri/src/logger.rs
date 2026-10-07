@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri_plugin_opener::OpenerExt;
 
 static LOG_MUTEX: Mutex<()> = Mutex::new(());
 
@@ -19,18 +19,17 @@ pub fn log(level: &str, tag: &str, message: &str) {
     let _guard = LOG_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    let line = format!("[{}] [{}] [{}] {}\n", timestamp, level, tag, message);
+    let line = crate::log_retention::bounded_line(format!(
+        "[{}] [{}] [{}] {}\n",
+        timestamp, level, tag, message
+    ));
 
-    if let Some(parent) = get_log_path().parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(get_log_path())
-    {
-        let _ = file.write_all(line.as_bytes());
+    if let Err(error) = crate::log_retention::append(
+        &get_log_path(),
+        line.as_bytes(),
+        crate::log_retention::MAX_LOG_BYTES,
+    ) {
+        eprintln!("Could not write Talkis log: {error}");
     }
 
     println!("{}", line.trim());
@@ -55,7 +54,17 @@ pub fn get_log_path_cmd() -> String {
 }
 
 #[tauri::command]
+pub fn open_log_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let directory = get_log_dir();
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    app.opener()
+        .open_path(directory.to_string_lossy(), None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn clear_logs() -> Result<(), String> {
+    let _guard = LOG_MUTEX.lock().unwrap_or_else(|error| error.into_inner());
     let path = get_log_path();
     if path.exists() {
         // Keep the pre-opened crash diagnostics handle attached to this file.

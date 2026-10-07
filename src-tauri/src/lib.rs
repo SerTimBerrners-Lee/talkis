@@ -12,6 +12,7 @@ mod live_translation;
 mod llm_runtime;
 mod local_stt;
 mod local_translator;
+mod log_retention;
 mod logger;
 mod media;
 mod media_permissions;
@@ -235,6 +236,7 @@ pub fn run() {
             download_cancel::cancel_local_model_download,
             logger::log_event,
             logger::get_log_path_cmd,
+            logger::open_log_folder,
             logger::clear_logs,
             accessibility::open_accessibility_settings,
             accessibility::reset_accessibility_permission,

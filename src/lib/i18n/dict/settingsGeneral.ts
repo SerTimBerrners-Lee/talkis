@@ -1,5 +1,21 @@
 // Strings for the General settings tab (windows/settings/tabs/SettingsTab.tsx).
 export const settingsGeneral = {
+  "settings.diagnostics.title": {
+    ru: "Журнал диагностики",
+    en: "Diagnostic log",
+  },
+  "settings.diagnostics.openFolder": {
+    ru: "Открыть папку журнала",
+    en: "Open log folder",
+  },
+  "settings.diagnostics.retention": {
+    ru: "Текущий журнал и три предыдущих — до 2 МБ каждый. В файлах могут быть тексты диктовок.",
+    en: "The current log and three previous logs are limited to 2 MB each. Files may contain dictated text.",
+  },
+  "settings.diagnostics.openFailed": {
+    ru: "Не удалось открыть папку журнала.",
+    en: "Could not open the log folder.",
+  },
   "settings.section.system": { ru: "Системные", en: "System" },
   "settings.section.translator": { ru: "Переводчик", en: "Translator" },
 

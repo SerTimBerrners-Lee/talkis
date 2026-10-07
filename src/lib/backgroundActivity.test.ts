@@ -3,6 +3,29 @@ import { describe, expect, test } from "bun:test";
 import { holdBackgroundActivity } from "./backgroundActivity";
 
 describe("background activity lifetime", () => {
+  test("keeps both hidden notification windows eligible to receive updates", async () => {
+    for (const label of ["widget-notice", "widget-text"] as const) {
+      let settled = false;
+      let request = Promise.resolve();
+      const release = holdBackgroundActivity(label, {
+        request: (name, options, callback): Promise<void> => {
+          expect(name).toBe(`talkis:${label}:background`);
+          request = callback({ name, mode: options.mode ?? "exclusive" }).then(() => {
+            settled = true;
+          });
+
+          return request;
+        },
+      });
+
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      release();
+      await request;
+      expect(settled).toBe(true);
+    }
+  });
+
   test("keeps a granted shared lock pending until the window unmounts", async () => {
     let settled = false;
     let signal: AbortSignal | undefined;

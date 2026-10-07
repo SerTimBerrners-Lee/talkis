@@ -14,6 +14,10 @@ mod widget_display;
 mod widget_visibility;
 use widget_visibility::{recover_offscreen_position, PhysicalRect};
 
+#[cfg(windows)]
+#[path = "widget_windows.rs"]
+mod widget_windows;
+
 const NOTICE_WINDOW_LABEL: &str = "widget-notice";
 const TEXT_WINDOW_LABEL: &str = "widget-text";
 const NOTICE_EVENT: &str = "widget-notice:update";
@@ -163,6 +167,9 @@ fn restore_widget_on_main_thread(
     reason: &str,
     bring_to_front: bool,
 ) -> Result<bool, String> {
+    #[cfg(windows)]
+    widget_windows::log_presentation(win, reason)?;
+
     if !widget_display::is_visible(app) {
         if win.is_visible().map_err(|e| e.to_string())? {
             win.hide().map_err(|e| e.to_string())?;
@@ -182,9 +189,23 @@ fn restore_widget_on_main_thread(
     }
 
     let repositioned = keep_widget_on_available_monitor(win)?;
-    let restored = recreated || was_minimized || !was_visible || repositioned;
+    #[allow(unused_mut)]
+    let mut restored = recreated || was_minimized || !was_visible || repositioned;
     if restored || bring_to_front {
         win.set_always_on_top(true).map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(windows)]
+    {
+        let repaired_topmost = widget_windows::ensure_topmost(win, restored || bring_to_front)?;
+        if repaired_topmost {
+            logger::log_info(
+                "WIDGET",
+                &format!("Recovered native topmost flag: reason={reason}"),
+            );
+            restored = true;
+        }
+        widget_windows::log_presentation(win, reason)?;
     }
 
     #[cfg(target_os = "macos")]
@@ -366,6 +387,7 @@ pub fn ensure_widget_notice_window(app: &AppHandle) -> Result<tauri::WebviewWind
     .resizable(false)
     .decorations(false)
     .always_on_top(true)
+    .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
     .accept_first_mouse(true)
     .focused(false)
     .visible(false)
@@ -402,6 +424,7 @@ pub fn ensure_widget_text_window(app: &AppHandle) -> Result<tauri::WebviewWindow
     .resizable(false)
     .decorations(false)
     .always_on_top(true)
+    .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
     .accept_first_mouse(true)
     .focused(false)
     .visible(false)

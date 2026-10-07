@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
+import { logError, logInfo } from "../../../lib/logger";
+
 import {
   NOTICE_TIMEOUT_MS,
   WidgetNoticeTone,
@@ -21,23 +23,26 @@ interface UseWidgetNoticeResult {
 export function useWidgetNotice({ stateRef }: UseWidgetNoticeParams): UseWidgetNoticeResult {
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const hideNotice = useCallback(() => {
+  const hideNotice = useCallback((): void => {
     if (noticeTimerRef.current) {
       clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = null;
     }
 
-    void invoke("hide_widget_notice");
+    void invoke("hide_widget_notice").catch((error: unknown) => {
+      void logError("WIDGET_NOTICE", `Failed to hide notice: ${String(error)}`);
+    });
   }, []);
 
   const showNotice = useCallback(
-    (message: string, tone: WidgetNoticeTone = "error") => {
+    (message: string, tone: WidgetNoticeTone = "error"): void => {
       if (noticeTimerRef.current) {
         clearTimeout(noticeTimerRef.current);
         noticeTimerRef.current = null;
       }
 
       if (tone === "error") {
+        void logInfo("WIDGET_NOTICE", "Showing persistent recording/error notice");
         showWidgetErrorOverlay(message);
         return;
       }
@@ -46,6 +51,9 @@ export function useWidgetNotice({ stateRef }: UseWidgetNoticeParams): UseWidgetN
         message,
         tone,
         anchorState: stateRef.current,
+      }).catch((error: unknown) => {
+        void logError("WIDGET_NOTICE", `Failed to show notice: ${String(error)}`);
+        showWidgetErrorOverlay(message);
       });
 
       noticeTimerRef.current = setTimeout(() => {

@@ -54,6 +54,7 @@ export interface ProcessRecordingBlobParams {
 export interface ProcessRecordingBlobResult {
   durationSeconds: number;
   hasTranscription: boolean;
+  silentAudio?: boolean;
 }
 
 export interface RetryHistoryEntryResult {
@@ -723,7 +724,7 @@ export async function processRecordingBlob({
     );
     await dictationStream?.hide().catch(() => {});
     dictationStream?.dispose();
-    return { durationSeconds, hasTranscription: false };
+    return { durationSeconds, hasTranscription: false, silentAudio: true };
   }
 
   const buffer = await blob.arrayBuffer();

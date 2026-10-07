@@ -27,6 +27,7 @@ import {
 } from "../../../lib/store";
 import { DictationHotkeyControl } from "../../../components/DictationHotkeyControl";
 import { SettingsToggleControl } from "../../../components/SettingsToggleControl";
+import { DiagnosticsSection } from "../sections/DiagnosticsSection";
 import { applyThemePreference } from "../../../lib/theme";
 import {
   formatWidgetScalePercent,
@@ -1595,6 +1596,8 @@ export function SettingsTab(): ReactElement | null {
             </button>
           </div>
         </div>
+
+        <DiagnosticsSection />
 
         <div style={GROUPED_SETTINGS_LAST_SECTION_STYLE}>
           <div

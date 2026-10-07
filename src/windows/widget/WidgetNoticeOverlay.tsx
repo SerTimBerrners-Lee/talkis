@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { IconAlertCircle, IconInfoCircle } from "../../lib/icons";
+import { holdBackgroundActivity } from "../../lib/backgroundActivity";
 
 import { NOTICE_AREA_HEIGHT, NOTICE_WIDGET_WIDTH, WIDGET_NOTICE_EVENT, type WidgetNoticeState } from "./widgetConstants";
 
@@ -10,6 +11,8 @@ export function WidgetNoticeOverlay(): ReactElement | null {
   const [notice, setNotice] = useState<WidgetNoticeState | null>(null);
   const [expanded, setExpanded] = useState(false);
   const bubbleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => holdBackgroundActivity("widget-notice"), []);
 
   useEffect(() => {
     let mounted = true;

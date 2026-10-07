@@ -100,4 +100,9 @@ describe("transcription hallucination guard", () => {
     expect(isClearlySilentAudio({ peak: 0.01, rms: 0.002 })).toBe(false);
     expect(isClearlySilentAudio(undefined)).toBe(false);
   });
+
+  test("detects the near-zero microphone levels in the reported empty recording", () => {
+    expect(isClearlySilentAudio({ peak: 0.000188, rms: 0.000007 })).toBe(true);
+    expect(isClearlySilentAudio({ peak: 0.001, rms: 0.0001 })).toBe(false);
+  });
 });

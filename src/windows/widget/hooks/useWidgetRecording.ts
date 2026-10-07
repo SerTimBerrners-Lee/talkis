@@ -693,9 +693,15 @@ export function useWidgetRecording({
       if (!pipelineResult.hasTranscription) {
         recordingSettingsRef.current = null;
         runtimeRef.current.reset();
-        showNotice(t("widget.recording.speechNotRecognized"), "info");
         dispatch({ type: "PROCESSING_COMPLETE" });
         await resizeForSettings(activeSettings);
+
+        if (pipelineResult.silentAudio) {
+          showNotice(t("widget.recording.silentAudio"), "error");
+        } else {
+          showNotice(t("widget.recording.speechNotRecognized"), "info");
+        }
+
         return;
       }
 

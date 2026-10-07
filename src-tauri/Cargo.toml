@@ -73,6 +73,9 @@ tauri-plugin-autostart = "2.5.1"
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
@@ -81,6 +84,7 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Diagnostics_Debug",
   "Win32_System_Kernel",
   "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

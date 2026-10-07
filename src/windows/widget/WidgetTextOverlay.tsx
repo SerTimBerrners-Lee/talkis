@@ -14,6 +14,7 @@ import {
   IconX,
 } from "../../lib/icons";
 import { SETTINGS_UPDATED_EVENT } from "../../lib/hotkeyEvents";
+import { holdBackgroundActivity } from "../../lib/backgroundActivity";
 import { applySavedTheme } from "../../lib/theme";
 import { WidgetErrorStatusBar } from "./WidgetErrorStatusBar";
 import {
@@ -42,6 +43,8 @@ export function WidgetTextOverlay(): ReactElement | null {
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragTriggeredRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => holdBackgroundActivity("widget-text"), []);
 
   const clearCopiedResetTimer = (): void => {
     if (!copiedResetTimerRef.current) {
