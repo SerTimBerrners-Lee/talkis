@@ -27,7 +27,6 @@ import {
 } from "../../../lib/store";
 import { DictationHotkeyControl } from "../../../components/DictationHotkeyControl";
 import { SettingsToggleControl } from "../../../components/SettingsToggleControl";
-import { DiagnosticsSection } from "../sections/DiagnosticsSection";
 import { applyThemePreference } from "../../../lib/theme";
 import {
   formatWidgetScalePercent,
@@ -37,7 +36,7 @@ import {
   WIDGET_SCALE_STEP,
 } from "../../../lib/widgetScale";
 import { SETTINGS_UPDATED_EVENT } from "../../../lib/hotkeyEvents";
-import { logError, logInfo } from "../../../lib/logger";
+import { getLogPath, logError, logInfo } from "../../../lib/logger";
 import { LANGUAGES } from "../../../config/languages";
 import { useI18n } from "../../../lib/i18n";
 
@@ -107,6 +106,9 @@ export function SettingsTab(): ReactElement | null {
   const [startMinimizedPending, setStartMinimizedPending] = useState(false);
   const [startMinimizedError, setStartMinimizedError] = useState("");
   const [appDataDir, setAppDataDir] = useState("");
+  const [logPath, setLogPath] = useState("");
+  const [logFolderPending, setLogFolderPending] = useState(false);
+  const [logFolderError, setLogFolderError] = useState("");
   const [supportFeedback, setSupportFeedback] = useState("");
 
   type MicAvailabilityState =
@@ -128,6 +130,8 @@ export function SettingsTab(): ReactElement | null {
           `Failed to load app data directory: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
+
+    void getLogPath().then(setLogPath);
   }, []);
 
   useEffect(() => {
@@ -466,6 +470,26 @@ export function SettingsTab(): ReactElement | null {
         "SETTINGS",
         `Failed to open app data directory: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  };
+
+  const openLogFolder = async (): Promise<void> => {
+    if (logFolderPending) return;
+
+    setLogFolderPending(true);
+    setLogFolderError("");
+
+    try {
+      await invoke("open_log_folder");
+      void logInfo("SETTINGS", "Opened diagnostic log folder");
+    } catch (error) {
+      setLogFolderError(t("settings.diagnostics.openFailed"));
+      void logError(
+        "SETTINGS",
+        `Failed to open log folder: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setLogFolderPending(false);
     }
   };
 
@@ -1519,6 +1543,67 @@ export function SettingsTab(): ReactElement | null {
                   margin: 0,
                 }}
               >
+                {t("settings.diagnostics.title")}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={logFolderPending}
+              onClick={() => {
+                void openLogFolder();
+              }}
+              className="btn"
+              style={{
+                minHeight: CONTROL_HEIGHT,
+                width: "100%",
+                justifyContent: "center",
+                padding: "0 10px",
+                borderRadius: CONTROL_RADIUS,
+                fontSize: CONTROL_FONT_SIZE,
+              }}
+            >
+              {t("common.open")}
+            </button>
+          </div>
+          <input
+            type="text"
+            value={logPath}
+            readOnly
+            aria-label={t("settings.diagnostics.title")}
+            className="input"
+            style={{
+              height: 40,
+              padding: "8px 10px",
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              fontSize: 11,
+            }}
+          />
+          {logFolderError && (
+            <div role="alert" style={{ fontSize: 12, color: "var(--danger)" }}>
+              {logFolderError}
+            </div>
+          )}
+        </div>
+
+        <div style={GROUPED_SETTINGS_SECTION_STYLE}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: SETTING_ROW_COLUMNS,
+              alignItems: "center",
+              gap: SETTING_ROW_GAP,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "var(--text-hi)",
+                  margin: 0,
+                }}
+              >
                 {t("settings.recordingAudio.title")}
               </div>
             </div>
@@ -1596,8 +1681,6 @@ export function SettingsTab(): ReactElement | null {
             </button>
           </div>
         </div>
-
-        <DiagnosticsSection />
 
         <div style={GROUPED_SETTINGS_LAST_SECTION_STYLE}>
           <div
