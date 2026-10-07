@@ -47,6 +47,13 @@ Enable **Start minimized** in Settings to keep the main Talkis window hidden on 
 
 ## Latest Changes
 
+### v0.4.11
+
+- Recordings with effectively silent microphone input now show a persistent warning to check microphone muting and the selected device. The warning appears after the widget returns to idle; silent audio still skips transcription and paste.
+- Windows widget recovery now checks the actual native always-on-top flag and repairs its loss without moving the window or taking keyboard focus. Changes in visibility, minimization and desktop cloaking are logged to investigate unexpected disappearance; the original reported incident still needs confirmation from a new log.
+- Hidden notification and text-overlay windows now request background activity, and failures to show notifications are logged with a persistent error fallback.
+- Settings include **Diagnostic log**, using the same Open button and read-only path field as **App data directory**. The log retains a current file and three archives of up to 2 MiB each, preserves the pre-opened crash handle and limits oversized log messages.
+
 ### v0.4.10
 
 - Settings can hide the floating desktop widget while keeping dictation hotkeys active. The choice survives restarts and is respected by the watchdog, tray actions and repeated launches.

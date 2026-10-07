@@ -1,6 +1,6 @@
 [package]
 name = "talkis"
-version = "0.4.10"
+version = "0.4.11"
 description = "Talkis - Voice to Text Desktop Widget"
 authors = ["trixter"]
 license = "AGPL-3.0-or-later"
@@ -13,7 +13,7 @@ default-members = ["."]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.10"
+version = "0.4.11"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 
