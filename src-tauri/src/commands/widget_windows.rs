@@ -5,7 +5,7 @@ use windows_sys::Win32::Foundation::{GetLastError, SetLastError, HWND};
 use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, IsIconic, IsWindowVisible, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_EX_TOPMOST,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_TOPMOST,
 };
 
 use crate::logger;
@@ -56,6 +56,30 @@ fn restore_native_topmost(hwnd: HWND, force_front: bool) -> Result<bool, String>
     Ok(!was_topmost)
 }
 
+fn restore_native_visibility(hwnd: HWND) -> Result<bool, String> {
+    if unsafe { IsWindowVisible(hwnd) } != 0 {
+        return Ok(false);
+    }
+
+    // Tao can skip show() when its cached VISIBLE flag survived an external hide.
+    let success = unsafe {
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+        )
+    };
+    if success == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+
+    Ok(true)
+}
+
 /// Observe actual Windows presentation without logging every watchdog tick.
 pub(super) fn log_presentation(win: &WebviewWindow, reason: &str) -> Result<(), String> {
     let hwnd = win.hwnd().map_err(|error| error.to_string())?.0 as HWND;
@@ -94,13 +118,30 @@ pub(super) fn ensure_topmost(win: &WebviewWindow, force_front: bool) -> Result<b
     restore_native_topmost(hwnd, force_front)
 }
 
+/// Call only after confirming that the saved widget preference permits showing it.
+pub(super) fn ensure_visible(win: &WebviewWindow) -> Result<bool, String> {
+    let hwnd = win.hwnd().map_err(|error| error.to_string())?.0 as HWND;
+    restore_native_visibility(hwnd)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DestroyWindow, GetForegroundWindow, GetWindowRect, HWND_NOTOPMOST,
+        CreateWindowExW, DestroyWindow, GetForegroundWindow, GetWindowRect,
+        SetLayeredWindowAttributes, ShowWindow, HWND_NOTOPMOST, LWA_ALPHA, SW_HIDE, WS_EX_LAYERED,
         WS_EX_TOPMOST, WS_POPUP,
     };
+
+    struct TestWindow(HWND);
+
+    impl Drop for TestWindow {
+        fn drop(&mut self) {
+            unsafe {
+                DestroyWindow(self.0);
+            }
+        }
+    }
 
     #[test]
     fn repairs_actual_topmost_loss_without_showing_moving_or_focusing_the_window() {
@@ -122,14 +163,6 @@ mod tests {
             )
         };
         assert!(!hwnd.is_null(), "{}", std::io::Error::last_os_error());
-        struct TestWindow(HWND);
-        impl Drop for TestWindow {
-            fn drop(&mut self) {
-                unsafe {
-                    DestroyWindow(self.0);
-                }
-            }
-        }
         let _window = TestWindow(hwnd);
         let foreground = unsafe { GetForegroundWindow() };
         let mut before = windows_sys::Win32::Foundation::RECT::default();
@@ -154,6 +187,54 @@ mod tests {
         assert!(native_topmost(hwnd).unwrap());
         assert!(!restore_native_topmost(hwnd, false).unwrap());
         assert_eq!(unsafe { IsWindowVisible(hwnd) }, 0);
+        assert_eq!(unsafe { GetForegroundWindow() }, foreground);
+        let mut after = windows_sys::Win32::Foundation::RECT::default();
+        assert_ne!(unsafe { GetWindowRect(hwnd, &mut after) }, 0);
+        assert_eq!(
+            (before.left, before.top, before.right, before.bottom),
+            (after.left, after.top, after.right, after.bottom)
+        );
+    }
+
+    #[test]
+    fn repairs_external_hide_without_moving_or_focusing_the_window() {
+        let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_LAYERED,
+                class.as_ptr(),
+                class.as_ptr(),
+                WS_POPUP,
+                100,
+                100,
+                129,
+                54,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        assert!(!hwnd.is_null(), "{}", std::io::Error::last_os_error());
+        let _window = TestWindow(hwnd);
+        // Keep the test window transparent so the desktop is not disturbed.
+        assert_ne!(
+            unsafe { SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA) },
+            0
+        );
+        let foreground = unsafe { GetForegroundWindow() };
+        let mut before = windows_sys::Win32::Foundation::RECT::default();
+        assert_ne!(unsafe { GetWindowRect(hwnd, &mut before) }, 0);
+        assert!(restore_native_visibility(hwnd).unwrap());
+        assert_ne!(unsafe { IsWindowVisible(hwnd) }, 0);
+        assert!(!restore_native_visibility(hwnd).unwrap());
+
+        unsafe { ShowWindow(hwnd, SW_HIDE) };
+        assert_eq!(unsafe { IsWindowVisible(hwnd) }, 0);
+        assert!(restore_native_visibility(hwnd).unwrap());
+        assert_ne!(unsafe { IsWindowVisible(hwnd) }, 0);
+        assert!(native_topmost(hwnd).unwrap());
+        assert!(!restore_native_visibility(hwnd).unwrap());
         assert_eq!(unsafe { GetForegroundWindow() }, foreground);
         let mut after = windows_sys::Win32::Foundation::RECT::default();
         assert_ne!(unsafe { GetWindowRect(hwnd, &mut after) }, 0);

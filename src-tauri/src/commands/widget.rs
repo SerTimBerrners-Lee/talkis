@@ -197,6 +197,13 @@ fn restore_widget_on_main_thread(
 
     #[cfg(windows)]
     {
+        if widget_windows::ensure_visible(win)? {
+            logger::log_info(
+                "WIDGET",
+                &format!("Recovered native visibility: reason={reason}"),
+            );
+            restored = true;
+        }
         let repaired_topmost = widget_windows::ensure_topmost(win, restored || bring_to_front)?;
         if repaired_topmost {
             logger::log_info(
